@@ -1,0 +1,26 @@
+[
+    {
+        "merged": "com.jarvis.pineapple.app-debug-74:/drawable_ic_jarvis.xml.flat",
+        "source": "com.jarvis.pineapple.app-main-76:/drawable/ic_jarvis.xml"
+    },
+    {
+        "merged": "com.jarvis.pineapple.app-debug-74:/xml_accessibility_service_config.xml.flat",
+        "source": "com.jarvis.pineapple.app-main-76:/xml/accessibility_service_config.xml"
+    },
+    {
+        "merged": "com.jarvis.pineapple.app-debug-74:/xml_voice_interaction.xml.flat",
+        "source": "com.jarvis.pineapple.app-main-76:/xml/voice_interaction.xml"
+    },
+    {
+        "merged": "com.jarvis.pineapple.app-debug-74:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.jarvis.pineapple.app-main-76:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.jarvis.pineapple.app-debug-74:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.jarvis.pineapple.app-main-76:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.jarvis.pineapple.app-debug-74:/xml_shortcuts.xml.flat",
+        "source": "com.jarvis.pineapple.app-main-76:/xml/shortcuts.xml"
+    }
+]

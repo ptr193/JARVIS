@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.jarvis.pineapple.app-mergeReleaseResources-68:/values-ldltr-v21/values-ldltr-v21.xml",
+            "map": [
+                {
+                    "source": "/root/.gradle/caches/8.14.5/transforms/305b91d5aa5750b38175bfeccfec33f1/transformed/appcompat-1.6.1/res/values-ldltr-v21/values-ldltr-v21.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "112",
+                        "endOffsets": "163"
+                    }
+                }
+            ]
+        }
+    ]
+}
