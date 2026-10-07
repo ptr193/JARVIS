@@ -1,10 +1,14 @@
 package com.jarvis.pineapple.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.content.Intent
+import android.graphics.Path
+import android.os.Build
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import androidx.annotation.RequiresApi
 
 /**
  * JARVIS 辅助功能服务。
@@ -50,17 +54,14 @@ class JarvisAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 跨应用操作：执行点击
+     * 跨应用操作：执行点击（需 API 24+）
      */
+    @RequiresApi(Build.VERSION_CODES.N)
     fun performClick(x: Float, y: Float) {
-        // 通过 dispatchGesture 实现点击
-        android.graphics.Path().apply {
-            moveTo(x, y)
-        }.let { path ->
-            val gesture = android.accessibilityservice.GestureDescription.Builder()
-                .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 100))
-                .build()
-            dispatchGesture(gesture, null, null)
-        }
+        val path = Path().apply { moveTo(x, y) }
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
+            .build()
+        dispatchGesture(gesture, null, null)
     }
 }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jarvis.pineapple.health.HealthModulesTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-07T14:43:04.226Z" hostname="all-in-one-86-2th8j" time="0.006">
+  <properties/>
+  <testcase name="VitalSignsMonitor default vital signs" classname="com.jarvis.pineapple.health.HealthModulesTest" time="0.0"/>
+  <testcase name="FatigueMonitor detects low eye aspect ratio" classname="com.jarvis.pineapple.health.HealthModulesTest" time="0.001"/>
+  <testcase name="HealthManager tracks medications" classname="com.jarvis.pineapple.health.HealthModulesTest" time="0.001"/>
+  <testcase name="HealthManager analyzeTrend returns string" classname="com.jarvis.pineapple.health.HealthModulesTest" time="0.002"/>
+  <testcase name="FatigueMonitor detects excessive yawns" classname="com.jarvis.pineapple.health.HealthModulesTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

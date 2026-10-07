@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.system
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -8,16 +9,21 @@ import android.provider.Settings
 
 /**
  * 系统设置控制：WiFi/蓝牙/飞行模式、截屏、打开任意 App、媒体控制
+ * 调用方需确保已获得相应运行时权限。
  */
 class SystemSettingsController(private val context: Context) {
 
+    @SuppressLint("MissingPermission")
     fun setWifiEnabled(enabled: Boolean) {
+        @Suppress("DEPRECATION")
         val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         @Suppress("DEPRECATION")
         wifi.isWifiEnabled = enabled
     }
 
+    @SuppressLint("MissingPermission")
     fun setBluetoothEnabled(enabled: Boolean) {
+        @Suppress("DEPRECATION")
         val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         if (enabled) adapter?.enable() else adapter?.disable()
     }
@@ -43,10 +49,6 @@ class SystemSettingsController(private val context: Context) {
 
     /** 媒体控制 */
     fun playPause() {
-        val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-            // 通过 MediaSession 控制
-        }
         val intent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
             putExtra(Intent.EXTRA_KEY_EVENT, android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
         }

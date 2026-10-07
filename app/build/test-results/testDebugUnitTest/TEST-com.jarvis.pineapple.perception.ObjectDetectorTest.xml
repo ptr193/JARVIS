@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jarvis.pineapple.perception.ObjectDetectorTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-10-07T14:43:04.234Z" hostname="all-in-one-86-2th8j" time="0.009">
+  <properties/>
+  <testcase name="detectThreat returns LOW for safe objects" classname="com.jarvis.pineapple.perception.ObjectDetectorTest" time="0.007"/>
+  <testcase name="detectThreat returns HIGH for dangerous objects" classname="com.jarvis.pineapple.perception.ObjectDetectorTest" time="0.001"/>
+  <testcase name="detect returns empty list when no model" classname="com.jarvis.pineapple.perception.ObjectDetectorTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

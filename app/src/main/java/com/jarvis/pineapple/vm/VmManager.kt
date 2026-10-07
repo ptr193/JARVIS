@@ -28,8 +28,14 @@ class VmManager {
     private val _vms = MutableStateFlow<List<VirtualMachine>>(emptyList())
     val vms: StateFlow<List<VirtualMachine>> = _vms.asStateFlow()
 
+    private var counter = 0
+
     fun create(name: String, distro: String): VirtualMachine {
-        val vm = VirtualMachine(id = "vm_${System.currentTimeMillis()}", name = name, distro = distro)
+        val vm = VirtualMachine(
+            id = "vm_${System.currentTimeMillis()}_${counter++}",
+            name = name,
+            distro = distro
+        )
         _vms.value = _vms.value + vm
         return vm
     }

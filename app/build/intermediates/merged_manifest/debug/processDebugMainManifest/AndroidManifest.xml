@@ -63,6 +63,9 @@
     <uses-feature
         android:name="android.hardware.bluetooth"
         android:required="false" />
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
 
     <permission
         android:name="com.jarvis.pineapple.debug.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
@@ -108,7 +111,7 @@
                 android:value="JARVIS voice wake and assistant keep-alive" />
         </service>
 
-        <!-- Quick Settings Tile -->
+        <!-- Quick Settings Tile (API 24+) -->
         <service
             android:name="com.jarvis.pineapple.service.JarvisTileService"
             android:exported="true"

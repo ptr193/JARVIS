@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jarvis.pineapple.smarthome.SmartHomeAdapterTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-10-07T14:43:04.275Z" hostname="all-in-one-86-2th8j" time="0.005">
+  <properties/>
+  <testcase name="removeDevice removes by id" classname="com.jarvis.pineapple.smarthome.SmartHomeAdapterTest" time="0.003"/>
+  <testcase name="groupControl invokes action for group members" classname="com.jarvis.pineapple.smarthome.SmartHomeAdapterTest" time="0.001"/>
+  <testcase name="addDevice appends to list" classname="com.jarvis.pineapple.smarthome.SmartHomeAdapterTest" time="0.0"/>
+  <testcase name="registerScene and triggerScene fire action" classname="com.jarvis.pineapple.smarthome.SmartHomeAdapterTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

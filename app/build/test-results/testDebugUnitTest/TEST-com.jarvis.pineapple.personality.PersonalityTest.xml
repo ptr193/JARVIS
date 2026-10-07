@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jarvis.pineapple.personality.PersonalityTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-10-07T14:43:04.245Z" hostname="all-in-one-86-2th8j" time="0.003">
+  <properties/>
+  <testcase name="default system prompt contains core principles" classname="com.jarvis.pineapple.personality.PersonalityTest" time="0.001"/>
+  <testcase name="Personality copy keeps name and updates title" classname="com.jarvis.pineapple.personality.PersonalityTest" time="0.001"/>
+  <testcase name="default personality has expected identity" classname="com.jarvis.pineapple.personality.PersonalityTest" time="0.001"/>
+  <testcase name="default system prompt mentions night mode" classname="com.jarvis.pineapple.personality.PersonalityTest" time="0.0"/>
+  <testcase name="default system prompt contains taboo list" classname="com.jarvis.pineapple.personality.PersonalityTest" time="0.0"/>
+  <testcase name="default system prompt contains wake response" classname="com.jarvis.pineapple.personality.PersonalityTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

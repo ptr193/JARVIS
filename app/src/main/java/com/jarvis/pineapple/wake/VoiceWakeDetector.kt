@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.wake
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
  * 语音唤醒：常驻麦克风监听 + 唤醒词检测。
  * 默认唤醒词"嘿 JARVIS"，可自定义。
  * 预留接入轻量级唤醒词引擎（如 PocketSphinx / 本地 KWS）。
+ * 调用方需确保已获得 RECORD_AUDIO 运行时权限。
  */
 class VoiceWakeDetector(private val context: Context) {
 
@@ -25,6 +27,7 @@ class VoiceWakeDetector(private val context: Context) {
     private val _detected = MutableStateFlow(false)
     val detected: StateFlow<Boolean> = _detected.asStateFlow()
 
+    @SuppressLint("MissingPermission")
     fun start() {
         job = CoroutineScope(Dispatchers.IO).launch {
             // 预留：初始化 AudioRecord 并进行唤醒词检测
@@ -46,7 +49,7 @@ class VoiceWakeDetector(private val context: Context) {
                 record.stop()
                 record.release()
             } catch (e: Exception) {
-                // 麦克风权限未授予
+                // 麦克风权限未授予或硬件不可用
             }
         }
     }

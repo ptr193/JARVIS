@@ -1,11 +1,17 @@
 package com.jarvis.pineapple.system
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.os.Build
+import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.annotation.RequiresApi
 
 /**
  * 跨应用操作：通过辅助功能操作其他 App。
  * 提供 UI 节点查找、点击/滑动/输入，带白名单机制。
+ * 注意：手势 API 需要运行在 API 24+ 设备上。
  */
 class CrossAppOperator(private val service: AccessibilityService) {
 
@@ -35,20 +41,21 @@ class CrossAppOperator(private val service: AccessibilityService) {
     /** 输入文本 */
     fun inputText(node: AccessibilityNodeInfo?, text: String): Boolean {
         node ?: return false
-        val args = android.os.Bundle().apply {
+        val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
-    /** 滑动 */
+    /** 滑动（需 API 24+） */
+    @RequiresApi(Build.VERSION_CODES.N)
     fun swipe(startX: Float, startY: Float, endX: Float, endY: Float) {
-        val path = android.graphics.Path().apply {
+        val path = Path().apply {
             moveTo(startX, startY)
             lineTo(endX, endY)
         }
-        val gesture = android.accessibilityservice.GestureDescription.Builder()
-            .addStroke(android.accessibilityservice.GestureDescription.StrokeDescription(path, 0, 300))
+        val gesture = GestureDescription.Builder()
+            .addStroke(GestureDescription.StrokeDescription(path, 0, 300))
             .build()
         service.dispatchGesture(gesture, null, null)
     }

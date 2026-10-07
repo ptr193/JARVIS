@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="conditional_incidents">
+
+    <incident
+        id="UnusedAttribute"
+        severity="warning"
+        message="">
+        <fix-data minSdk="ffffffffffc00000" requiresApi="ffffffffff800000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/xml/accessibility_service_config.xml"
+            line="6"
+            column="5"
+            startOffset="373"
+            endLine="6"
+            endColumn="38"
+            endOffset="406"/>
+        <map>
+            <entry
+                name="message"
+                string="Attribute `canPerformGestures` is only used in API level 24 and higher (current min is %1$s)"/>
+            <api-levels id="minSdk"
+                value="ffffffffffc00000"/>
+            <api-levels id="requiresApi"
+                value="ffffffffff800000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="UnusedAttribute"
+        severity="warning"
+        message="">
+        <fix-data minSdk="ffffffffffc00000" requiresApi="ffffffffff000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/xml/shortcuts.xml"
+            line="4"
+            column="9"
+            startOffset="132"
+            endLine="4"
+            endColumn="41"
+            endOffset="164"/>
+        <map>
+            <entry
+                name="message"
+                string="Attribute `shortcutId` is only used in API level 25 and higher (current min is %1$s)"/>
+            <api-levels id="minSdk"
+                value="ffffffffffc00000"/>
+            <api-levels id="requiresApi"
+                value="ffffffffff000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="UnusedAttribute"
+        severity="warning"
+        message="">
+        <fix-data minSdk="ffffffffffc00000" requiresApi="ffffffffff000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/xml/shortcuts.xml"
+            line="7"
+            column="9"
+            startOffset="247"
+            endLine="7"
+            endColumn="54"
+            endOffset="292"/>
+        <map>
+            <entry
+                name="message"
+                string="Attribute `shortcutShortLabel` is only used in API level 25 and higher (current min is %1$s)"/>
+            <api-levels id="minSdk"
+                value="ffffffffffc00000"/>
+            <api-levels id="requiresApi"
+                value="ffffffffff000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="UnusedAttribute"
+        severity="warning"
+        message="">
+        <fix-data minSdk="ffffffffffc00000" requiresApi="ffffffffff000000"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/xml/shortcuts.xml"
+            line="8"
+            column="9"
+            startOffset="301"
+            endLine="8"
+            endColumn="53"
+            endOffset="345"/>
+        <map>
+            <entry
+                name="message"
+                string="Attribute `shortcutLongLabel` is only used in API level 25 and higher (current min is %1$s)"/>
+            <api-levels id="minSdk"
+                value="ffffffffffc00000"/>
+            <api-levels id="requiresApi"
+                value="ffffffffff000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 24">
+        <fix-replace
+            description="Delete tools:targetApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*debug*MAIN*sourceProvider*0*manifest*0}"
+                startOffset="5013"
+                endOffset="5033"/>
+        </fix-replace>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*manifest*0}"
+            line="98"
+            column="13"
+            startOffset="5013"
+            endLine="98"
+            endColumn="33"
+            endOffset="5033"/>
+        <map>
+            <condition minGE="ffffffffff800000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 24">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/CrossAppOperator.kt"
+                startOffset="1811"
+                endOffset="1846"/>
+        </fix-replace>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/CrossAppOperator.kt"
+            line="51"
+            column="5"
+            startOffset="1811"
+            endLine="51"
+            endColumn="40"
+            endOffset="1846"/>
+        <map>
+            <condition minGE="ffffffffff800000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 24">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/accessibility/JarvisAccessibilityService.kt"
+                startOffset="1775"
+                endOffset="1810"/>
+        </fix-replace>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/accessibility/JarvisAccessibilityService.kt"
+            line="59"
+            column="5"
+            startOffset="1775"
+            endLine="59"
+            endColumn="40"
+            endOffset="1810"/>
+        <map>
+            <condition minGE="ffffffffff800000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 24">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/service/JarvisTileService.kt"
+                startOffset="384"
+                endOffset="419"/>
+        </fix-replace>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/service/JarvisTileService.kt"
+            line="16"
+            column="1"
+            startOffset="384"
+            endLine="16"
+            endColumn="36"
+            endOffset="419"/>
+        <map>
+            <condition minGE="ffffffffff800000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 26">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/PhoneController.kt"
+                startOffset="674"
+                endOffset="709"/>
+        </fix-replace>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/PhoneController.kt"
+            line="26"
+            column="5"
+            startOffset="674"
+            endLine="26"
+            endColumn="40"
+            endOffset="709"/>
+        <map>
+            <condition minGE="fffffffffe000000"/>
+        </map>
+    </incident>
+
+    <incident
+        id="ObsoleteSdkInt"
+        severity="warning"
+        message="Unnecessary; SDK_INT is always >= 28">
+        <fix-replace
+            description="Delete @RequiresApi"
+            replacement=""
+            priority="0">
+            <range
+                file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/security/SecurityModules.kt"
+                startOffset="587"
+                endOffset="622"/>
+        </fix-replace>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/security/SecurityModules.kt"
+            line="21"
+            column="5"
+            startOffset="587"
+            endLine="21"
+            endColumn="40"
+            endOffset="622"/>
+        <map>
+            <condition minGE="fffffffff8000000"/>
+        </map>
+    </incident>
+
+</incidents>

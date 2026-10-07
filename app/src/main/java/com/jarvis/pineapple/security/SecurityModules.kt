@@ -1,6 +1,8 @@
 package com.jarvis.pineapple.security
 
 import android.content.Context
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.fragment.app.FragmentActivity
@@ -16,6 +18,7 @@ class BiometricAuth(private val context: Context) {
             BiometricManager.BIOMETRIC_SUCCESS
     }
 
+    @RequiresApi(Build.VERSION_CODES.P)
     fun authenticate(activity: FragmentActivity, callback: BiometricPrompt.AuthenticationCallback) {
         val executor = context.mainExecutor
         val prompt = BiometricPrompt(activity, executor, callback)

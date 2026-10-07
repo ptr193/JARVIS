@@ -3,7 +3,6 @@ package com.jarvis.pineapple.autonomous
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import java.util.PriorityQueue
 
 /**
  * 自主任务执行：任务调度器 + 工具调用
@@ -12,12 +11,20 @@ class TaskScheduler {
 
     data class Task(val id: String, val name: String, val priority: Int, val action: suspend () -> Unit)
 
-    private val queue = PriorityQueue<Task>(compareByDescending { it.priority })
+    // 使用 MutableList 替代 PriorityQueue，避免 API 24+ 依赖
+    private val queue = mutableListOf<Task>()
 
-    fun schedule(task: Task) { queue.add(task) }
+    fun schedule(task: Task) {
+        queue.add(task)
+        // 按优先级降序排序，确保高优先级任务在前
+        queue.sortByDescending { it.priority }
+    }
 
     suspend fun runNext() {
-        queue.poll()?.action?.invoke()
+        if (queue.isNotEmpty()) {
+            val task = queue.removeAt(0)
+            task.action.invoke()
+        }
     }
 
     fun hasPending(): Boolean = queue.isNotEmpty()
