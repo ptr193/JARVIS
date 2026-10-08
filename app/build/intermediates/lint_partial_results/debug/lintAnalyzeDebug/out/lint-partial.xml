@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="partial_results">
+    <map id="UnsafeImplicitIntentLaunch">
+            <map id="actionsSent">
+                    <map id="android.intent.action.CALL (used to start an activity)">
+                        <location id="0"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/PhoneController.kt"
+                            line="20"
+                            column="22"
+                            startOffset="497"
+                            endLine="20"
+                            endColumn="79"
+                            endOffset="554"/>
+                    </map>
+                    <map id="android.intent.action.VIEW (used to start an activity)">
+                        <location id="0"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/NavigationController.kt"
+                            line="21"
+                            column="28"
+                            startOffset="640"
+                            endLine="21"
+                            endColumn="91"
+                            endOffset="703"/>
+                    </map>
+                    <map id="android.settings.AIRPLANE_MODE_SETTINGS (used to start an activity)">
+                        <location id="0"
+                            file="${:app*debug*MAIN*sourceProvider*0*javaDir*0}/com/jarvis/pineapple/system/SystemSettingsController.kt"
+                            line="33"
+                            column="22"
+                            startOffset="1010"
+                            endLine="33"
+                            endColumn="68"
+                            endOffset="1056"/>
+                    </map>
+            </map>
+    </map>
+    <map id="UnsafeIntentLaunch">
+            <map id="unprotected">
+                <entry
+                    name="com.jarvis.pineapple.receiver.BootReceiver"
+                    boolean="true"/>
+                <entry
+                    name="com.jarvis.pineapple.ui.MainActivity"
+                    boolean="true"/>
+            </map>
+    </map>
+    <map id="UnusedResources">
+        <location id="R.color.jarvis_accent"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/colors.xml"
+            line="5"
+            column="12"
+            startOffset="158"
+            endLine="5"
+            endColumn="32"
+            endOffset="178"/>
+        <location id="R.color.jarvis_blue"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/colors.xml"
+            line="3"
+            column="12"
+            startOffset="62"
+            endLine="3"
+            endColumn="30"
+            endOffset="80"/>
+        <location id="R.color.jarvis_dark"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/colors.xml"
+            line="4"
+            column="12"
+            startOffset="110"
+            endLine="4"
+            endColumn="30"
+            endOffset="128"/>
+        <location id="R.string.default_wake_word"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/strings.xml"
+            line="6"
+            column="13"
+            startOffset="215"
+            endLine="6"
+            endColumn="37"
+            endOffset="239"/>
+        <location id="R.string.model_default"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/strings.xml"
+            line="10"
+            column="13"
+            startOffset="381"
+            endLine="10"
+            endColumn="33"
+            endOffset="401"/>
+        <location id="R.string.send"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/strings.xml"
+            line="9"
+            column="13"
+            startOffset="345"
+            endLine="9"
+            endColumn="24"
+            endOffset="356"/>
+        <location id="R.string.settings"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/strings.xml"
+            line="8"
+            column="13"
+            startOffset="305"
+            endLine="8"
+            endColumn="28"
+            endOffset="320"/>
+        <location id="R.string.vm"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/strings.xml"
+            line="7"
+            column="13"
+            startOffset="270"
+            endLine="7"
+            endColumn="22"
+            endOffset="279"/>
+        <location id="R.string.wake_response"
+            file="${:app*debug*MAIN*sourceProvider*0*resDir*0}/values/strings.xml"
+            line="5"
+            column="13"
+            startOffset="167"
+            endLine="5"
+            endColumn="33"
+            endOffset="187"/>
+        <entry
+            name="model"
+            string="color[jarvis_blue(D),jarvis_dark(D),jarvis_accent(D)],drawable[ic_jarvis(U)],mipmap[ic_launcher(U),ic_launcher_round(U)],string[app_name(U),accessibility_label(U),wake_response(D),default_wake_word(D),vm(D),settings(D),send(D),model_default(D)],style[Theme_JARVIS(U)],xml[shortcuts(U),accessibility_service_config(U),voice_interaction(U)];f^3^6,10^7;;;"/>
+    </map>
+
+</incidents>

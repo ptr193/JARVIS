@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<incidents format="6" by="lint 8.7.3" type="incidents">
+
+    <incident
+        id="SystemPermissionTypo"
+        severity="warning"
+        message="Did you mean `com.android.alarm.permission.SET_ALARM`?">
+        <fix-replace
+            description="Replace with com.android.alarm.permission.SET_ALARM"
+            oldString="android.permission.SET_ALARM"
+            replacement="com.android.alarm.permission.SET_ALARM"
+            priority="0"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*manifest*0}"
+            line="28"
+            column="36"
+            startOffset="1742"
+            endLine="28"
+            endColumn="64"
+            endOffset="1770"/>
+    </incident>
+
+    <incident
+        id="SystemPermissionTypo"
+        severity="warning"
+        message="Did you mean `android.permission.BLUETOOTH`?">
+        <fix-replace
+            description="Replace with android.permission.BLUETOOTH"
+            oldString="android.permission.BLUETOOTH_SCO"
+            replacement="android.permission.BLUETOOTH"
+            priority="0"/>
+        <location
+            file="${:app*debug*MAIN*sourceProvider*0*manifest*0}"
+            line="46"
+            column="36"
+            startOffset="2803"
+            endLine="46"
+            endColumn="68"
+            endOffset="2835"/>
+    </incident>
+
+</incidents>

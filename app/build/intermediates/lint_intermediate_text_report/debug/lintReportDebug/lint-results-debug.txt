@@ -1,0 +1,107 @@
+/workspace/app/src/main/res/xml/accessibility_service_config.xml:6: Warning: Attribute canPerformGestures is only used in API level 24 and higher (current min is 23) [UnusedAttribute]
+    android:canPerformGestures="true"
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/xml/shortcuts.xml:4: Warning: Attribute shortcutId is only used in API level 25 and higher (current min is 23) [UnusedAttribute]
+        android:shortcutId="wake_jarvis"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/xml/shortcuts.xml:7: Warning: Attribute shortcutShortLabel is only used in API level 25 and higher (current min is 23) [UnusedAttribute]
+        android:shortcutShortLabel="@string/app_name"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/xml/shortcuts.xml:8: Warning: Attribute shortcutLongLabel is only used in API level 25 and higher (current min is 23) [UnusedAttribute]
+        android:shortcutLongLabel="@string/app_name">
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedAttribute":
+   This check finds attributes set in XML files that were introduced in a
+   version newer than the oldest version targeted by your application (with
+   the minSdkVersion attribute).
+
+   This is not an error; the application will simply ignore the attribute.
+   However, if the attribute is important to the appearance or functionality
+   of your application, you should consider finding an alternative way to
+   achieve the same result with only available attributes, and then you can
+   optionally create a copy of the layout in a layout-vNN folder which will be
+   used on API NN or higher where you can take advantage of the newer
+   attribute.
+
+   Note: This check does not only apply to attributes. For example, some tags
+   can be unused too, such as the new <tag> element in layouts introduced in
+   API 21.
+
+/workspace/app/src/main/AndroidManifest.xml:28: Warning: Did you mean com.android.alarm.permission.SET_ALARM? [SystemPermissionTypo]
+    <uses-permission android:name="android.permission.SET_ALARM" />
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/AndroidManifest.xml:46: Warning: Did you mean android.permission.BLUETOOTH? [SystemPermissionTypo]
+    <uses-permission android:name="android.permission.BLUETOOTH_SCO" />
+                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SystemPermissionTypo":
+   This check looks for required permissions that look like well-known system
+   permissions or permissions from the Android SDK, but aren't, and may be
+   typos.
+
+   Please double check the permission value you have supplied.
+
+/workspace/app/src/main/AndroidManifest.xml:59: Warning: The attribute android:allowBackup is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute android:dataExtractionRules specifying an @xml resource which configures cloud backups and device transfers on Android 12 and higher. [DataExtractionRules]
+        android:allowBackup="false"
+                             ~~~~~
+
+   Explanation for issues of type "DataExtractionRules":
+   Before Android 12, the attributes android:allowBackup and
+   android:fullBackupContent were used to configure all forms of backup,
+   including cloud backups, device-to-device transfers and adb backup.
+
+   In Android 12 and higher, these attributes have been deprecated and will
+   only apply to cloud backups. You should instead use the attribute
+   android:dataExtractionRules, specifying an @xml resource that configures
+   which files to back up, for cloud backups and for device-to-device
+   transfers, separately. If your minSdkVersion supports older versions,
+   you'll still want to specify an android:fullBackupContent resource if the
+   default behavior is not right for your app.
+
+   https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   https://goo.gle/DataExtractionRules
+
+/workspace/app/src/main/res/values/colors.xml:3: Warning: The resource R.color.jarvis_blue appears to be unused [UnusedResources]
+    <color name="jarvis_blue">#FF1E88E5</color>
+           ~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/values/colors.xml:4: Warning: The resource R.color.jarvis_dark appears to be unused [UnusedResources]
+    <color name="jarvis_dark">#FF0D1117</color>
+           ~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/values/colors.xml:5: Warning: The resource R.color.jarvis_accent appears to be unused [UnusedResources]
+    <color name="jarvis_accent">#FF39FF14</color>
+           ~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/values/strings.xml:5: Warning: The resource R.string.wake_response appears to be unused [UnusedResources]
+    <string name="wake_response">在，先生。</string>
+            ~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/values/strings.xml:6: Warning: The resource R.string.default_wake_word appears to be unused [UnusedResources]
+    <string name="default_wake_word">嘿 JARVIS</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/values/strings.xml:7: Warning: The resource R.string.vm appears to be unused [UnusedResources]
+    <string name="vm">虚拟机</string>
+            ~~~~~~~~~
+/workspace/app/src/main/res/values/strings.xml:8: Warning: The resource R.string.settings appears to be unused [UnusedResources]
+    <string name="settings">设置</string>
+            ~~~~~~~~~~~~~~~
+/workspace/app/src/main/res/values/strings.xml:9: Warning: The resource R.string.send appears to be unused [UnusedResources]
+    <string name="send">发送</string>
+            ~~~~~~~~~~~
+/workspace/app/src/main/res/values/strings.xml:10: Warning: The resource R.string.model_default appears to be unused [UnusedResources]
+    <string name="model_default">本地模型</string>
+            ~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedResources":
+   Unused resources make applications larger and slow down builds.
+
+
+   The unused resource check can ignore tests. If you want to include
+   resources that are only referenced from tests, consider packaging them in a
+   test source set instead.
+
+   You can include test sources in the unused resource check by setting the
+   system property lint.unused-resources.include-tests =true, and to exclude
+   them (usually for performance reasons), use
+   lint.unused-resources.exclude-tests =true.
+   ,
+
+0 errors, 16 warnings

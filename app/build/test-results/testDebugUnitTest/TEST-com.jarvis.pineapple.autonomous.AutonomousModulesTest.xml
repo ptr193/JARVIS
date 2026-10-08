@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.jarvis.pineapple.autonomous.AutonomousModulesTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-10-07T14:43:04.115Z" hostname="all-in-one-86-2th8j" time="0.084">
+  <properties/>
+  <testcase name="EmergencyProtocol emits event on trigger" classname="com.jarvis.pineapple.autonomous.AutonomousModulesTest" time="0.011"/>
+  <testcase name="MemorySystem stores and recalls" classname="com.jarvis.pineapple.autonomous.AutonomousModulesTest" time="0.001"/>
+  <testcase name="ProactiveNotifier threshold alert" classname="com.jarvis.pineapple.autonomous.AutonomousModulesTest" time="0.005"/>
+  <testcase name="TaskScheduler schedules and runs by priority" classname="com.jarvis.pineapple.autonomous.AutonomousModulesTest" time="0.062"/>
+  <testcase name="MemorySystem short term evicts oldest when full" classname="com.jarvis.pineapple.autonomous.AutonomousModulesTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

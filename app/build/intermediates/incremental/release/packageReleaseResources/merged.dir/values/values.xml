@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="jarvis_accent">#FF39FF14</color>
+    <color name="jarvis_blue">#FF1E88E5</color>
+    <color name="jarvis_dark">#FF0D1117</color>
+    <string name="accessibility_label">JARVIS 辅助功能</string>
+    <string name="app_name">JARVIS</string>
+    <string name="default_wake_word">嘿 JARVIS</string>
+    <string name="model_default">本地模型</string>
+    <string name="send">发送</string>
+    <string name="settings">设置</string>
+    <string name="vm">虚拟机</string>
+    <string name="wake_response">在，先生。</string>
+    <style name="Theme.JARVIS" parent="android:Theme.Material.Light.NoActionBar"/>
+</resources>

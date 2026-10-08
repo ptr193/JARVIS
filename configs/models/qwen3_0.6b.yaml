@@ -1,0 +1,40 @@
+# Qwen 3 0.6B 模型适配配置
+# 推理框架：LiteRT-LM (Android)
+# 模型格式：TFLite (.tflite)
+
+model:
+  id: qwen3_0.6b
+  name: "Qwen 3 0.6B"
+  source: LOCAL_LITERT
+  description: "通义千问 Qwen 3 0.6B 超小参数模型"
+  priority: 50
+  file_format: tflite
+  default_filename: "qwen3_0_6b.tflite"
+
+inference:
+  backend: litert-lm
+  max_tokens: 1024
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repetition_penalty: 1.05
+  enable_profiler: false
+
+quantization:
+  type: int8
+  note: "0.6B int8 约 0.6-0.8 GB，体积最小"
+
+resources:
+  min_ram_mb: 1536
+  min_storage_mb: 800
+  num_threads: 2
+  use_gpu: false
+
+context:
+  max_context_tokens: 2048
+
+limitations:
+  - "超小模型，推理速度快但能力有限"
+  - "适合简单指令和快速响应场景"
+  - "需要用户自行准备 .tflite 模型文件"
+  - "Qwen 系列遵循 Qwen 许可证"
