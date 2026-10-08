@@ -1,6 +1,6 @@
 # Gemma 4 12B 模型适配配置
 # 推理框架：LiteRT-LM (Android)
-# 模型格式：TFLite (.tflite)
+# 模型格式：LiteRT-LM (.litertlm)
 
 model:
   id: gemma4_12b
@@ -8,8 +8,10 @@ model:
   source: LOCAL_LITERT
   description: "Google Gemma 4 12B 参数大模型"
   priority: 50
-  file_format: tflite
-  default_filename: "gemma4_12b.tflite"
+  file_format: litertlm
+  default_filename: "gemma4_12b.litertlm"
+  download_url: "https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm/resolve/main/gemma-4-12B-it.litertlm"
+  hf_repo: "litert-community/gemma-4-12B-it-litert-lm"
 
 inference:
   backend: litert-lm
@@ -38,5 +40,5 @@ context:
 limitations:
   - "12B 模型对设备内存要求极高，仅在高端设备上可用"
   - "推理速度较慢，建议作为备选而非默认"
-  - "需要用户自行准备 .tflite 模型文件"
+  - "需将 .litertlm 模型文件放入应用私有目录 context.filesDir/models/"
   - "Gemma 系列遵循 Gemma 许可证"

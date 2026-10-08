@@ -11,10 +11,10 @@ import java.io.File
 
 /**
  * 本地模型基类（LiteRT-LM 适配层）。
- * 通过 LiteRT-LM 的 LlmInferenceSession 加载 .tflite 模型并执行推理。
+ * 通过 LiteRT-LM 的 LlmInferenceSession 加载 .litertlm 模型并执行推理。
  *
  * 模型文件由用户自行准备，放入应用私有目录：
- *   context.filesDir/models/<modelId>.tflite
+ *   context.filesDir/models/<modelId>.litertlm
  *
  * 若模型文件不存在，generate() 会返回明确的提示信息，
  * 而非伪造 AI 回复。
@@ -98,17 +98,17 @@ abstract class LocalModel(
     protected fun modelMissingMessage(): String {
         val path = modelFile().absolutePath
         return "模型文件未就绪：$path\n" +
-                "请将 ${info.name} 的 .tflite 模型文件放置到上述路径。"
+                "请将 ${info.name} 的 .litertlm 模型文件放置到上述路径。"
     }
 }
 
 /**
  * 用户自有本地模型（默认，最高优先级）。
- * 模型文件名由用户在设置中指定，默认 user_model.tflite。
+ * 模型文件名由用户在设置中指定，默认 user_model.litertlm。
  */
 class UserLocalModel(
     context: Context,
-    customFileName: String = "user_model.tflite"
+    customFileName: String = "user_model.litertlm"
 ) : LocalModel(
     info = ModelInfo(
         id = "local_user",
@@ -151,7 +151,7 @@ class LiteRtModel(
         topK = topK
     ),
     context = context,
-    modelFileName = "${id}.tflite"
+    modelFileName = "${id}.litertlm"
 )
 
 /**

@@ -1,0 +1,49 @@
+# Build
+build/
+.gradle/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android / Local
+local.properties
+*.iml
+.idea/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Native
+*.so
+*.o
+*.a
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Models (large binaries, not stored in git)
+configs/models/files/
+*.tflite
+*.litertlm
+*.bin
+*.safetensors
+*.gguf
+
+# Secrets
+secrets.properties
+*.jks
+*.keystore
+
+# Test / coverage
+.coverage
+htmlReport/
+coverage/
+
+# Node (if any)
+node_modules/

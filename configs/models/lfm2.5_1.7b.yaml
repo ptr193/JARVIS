@@ -1,15 +1,20 @@
-# LFM 2.5 1.7B 模型适配配置
+# LFM 2.5 模型适配配置
+# 注：原计划指定 LFM2.5 1.7B，但 Liquid AI 官方 LFM2.5 系列并无 1.7B 规格，
+#     实际可选规格为 230M / 1.2B / 2.6B。此处采用最接近 1.7B 的 1.2B Instruct (int8)。
 # 推理框架：LiteRT-LM (Android)
-# 模型格式：TFLite (.tflite)
+# 模型格式：LiteRT-LM (.litertlm)
 
 model:
   id: lfm2.5_1.7b
-  name: "LFM 2.5 1.7B"
+  name: "LFM 2.5 1.2B Instruct (int8)"
   source: LOCAL_LITERT
-  description: "Light Foundation Model 2.5 1.7B 参数"
+  description: "Liquid AI LFM2.5-1.2B-Instruct int8（替代原计划 LFM2.5 1.7B）"
   priority: 50
-  file_format: tflite
-  default_filename: "lfm2_5_1_7b.tflite"
+  file_format: litertlm
+  default_filename: "lfm2_5_1_7b.litertlm"
+  download_url: "https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm"
+  hf_repo: "litert-community/LFM2.5-1.2B-Instruct"
+  note: "原计划 1.7B 规格不存在，已替换为最接近的 LFM2.5-1.2B-Instruct int8"
 
 inference:
   backend: litert-lm
@@ -35,5 +40,6 @@ context:
 
 limitations:
   - "轻量级模型，适合中低端设备"
-  - "需要用户自行准备 .tflite 模型文件"
+  - "需将 .litertlm 模型文件放入应用私有目录 context.filesDir/models/"
   - "长文本生成能力有限"
+  - "实际下载的是 LFM2.5-1.2B-Instruct int8（1.7B 规格不存在）"
