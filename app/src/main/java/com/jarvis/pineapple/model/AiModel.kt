@@ -21,7 +21,11 @@ data class ModelInfo(
     val source: ModelSource,
     val description: String = "",
     val priority: Int = 0,
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val maxTokens: Int = 2048,
+    val temperature: Float = 0.7f,
+    val topP: Float = 0.95f,
+    val topK: Int = 40
 )
 
 /**

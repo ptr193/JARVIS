@@ -1,0 +1,42 @@
+# Gemma 4 12B 模型适配配置
+# 推理框架：LiteRT-LM (Android)
+# 模型格式：TFLite (.tflite)
+
+model:
+  id: gemma4_12b
+  name: "Gemma 4 12B"
+  source: LOCAL_LITERT
+  description: "Google Gemma 4 12B 参数大模型"
+  priority: 50
+  file_format: tflite
+  default_filename: "gemma4_12b.tflite"
+
+inference:
+  backend: litert-lm
+  max_tokens: 4096
+  temperature: 0.7
+  top_p: 0.95
+  top_k: 40
+  repetition_penalty: 1.0
+  enable_profiler: false
+
+quantization:
+  type: int8
+  note: "12B 模型建议 int8 量化，否则体积过大"
+
+# 资源要求
+resources:
+  # 12B int8 约 12-14 GB
+  min_ram_mb: 16384
+  min_storage_mb: 14336
+  num_threads: 8
+  use_gpu: false
+
+context:
+  max_context_tokens: 8192
+
+limitations:
+  - "12B 模型对设备内存要求极高，仅在高端设备上可用"
+  - "推理速度较慢，建议作为备选而非默认"
+  - "需要用户自行准备 .tflite 模型文件"
+  - "Gemma 系列遵循 Gemma 许可证"

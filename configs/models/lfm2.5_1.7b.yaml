@@ -1,0 +1,39 @@
+# LFM 2.5 1.7B 模型适配配置
+# 推理框架：LiteRT-LM (Android)
+# 模型格式：TFLite (.tflite)
+
+model:
+  id: lfm2.5_1.7b
+  name: "LFM 2.5 1.7B"
+  source: LOCAL_LITERT
+  description: "Light Foundation Model 2.5 1.7B 参数"
+  priority: 50
+  file_format: tflite
+  default_filename: "lfm2_5_1_7b.tflite"
+
+inference:
+  backend: litert-lm
+  max_tokens: 2048
+  temperature: 0.7
+  top_p: 0.9
+  top_k: 50
+  repetition_penalty: 1.05
+  enable_profiler: false
+
+quantization:
+  type: int8
+  note: "1.7B int8 约 1.7-2.0 GB"
+
+resources:
+  min_ram_mb: 3072
+  min_storage_mb: 2048
+  num_threads: 4
+  use_gpu: false
+
+context:
+  max_context_tokens: 4096
+
+limitations:
+  - "轻量级模型，适合中低端设备"
+  - "需要用户自行准备 .tflite 模型文件"
+  - "长文本生成能力有限"

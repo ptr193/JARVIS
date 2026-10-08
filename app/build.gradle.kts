@@ -110,7 +110,9 @@ dependencies {
     // Biometric
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
 
-    // Room-like helper via SQLDelight only; add room for calendar-free persistence convenience
+    // LiteRT-LM：端侧 LLM 推理框架（Gemma 4 / LFM / Qwen 等模型）
+    implementation("com.google.ai.litert:litert-lm-api:1.0.0-alpha02")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

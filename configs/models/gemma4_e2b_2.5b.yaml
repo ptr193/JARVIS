@@ -1,0 +1,46 @@
+# Gemma 4 E2B 2.5B 模型适配配置
+# 推理框架：LiteRT-LM (Android)
+# 模型格式：TFLite (.tflite)
+
+model:
+  id: gemma4_e2b_2.5b
+  name: "Gemma 4 E2B 2.5B"
+  source: LOCAL_LITERT
+  description: "Google Gemma 4 2.5B 参数 Edge-to-Cloud 模型"
+  priority: 50
+  file_format: tflite
+  default_filename: "gemma4_e2b_2_5b.tflite"
+
+inference:
+  backend: litert-lm
+  # LiteRT-LM LlmInferenceSession 配置
+  max_tokens: 2048
+  temperature: 0.7
+  top_p: 0.95
+  top_k: 40
+  repetition_penalty: 1.0
+  enable_profiler: false
+
+# 量化（LiteRT-LM 支持 int8 / fp16）
+quantization:
+  type: int8
+  note: "使用模型转换工具将原始权重量化为 int8 以减小体积"
+
+# 资源要求
+resources:
+  # 2.5B int8 约 2.5-3.0 GB
+  min_ram_mb: 4096
+  min_storage_mb: 3072
+  # 推荐线程数
+  num_threads: 4
+  use_gpu: false
+
+# 上下文长度
+context:
+  max_context_tokens: 8192
+
+# 已知限制
+limitations:
+  - "需要用户自行准备 .tflite 模型文件并放入应用私有目录"
+  - "2.5B 模型在低端设备上可能推理缓慢"
+  - "Gemma 系列遵循 Gemma 许可证"
