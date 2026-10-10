@@ -1,8 +1,8 @@
 package com.jarvis.pineapple.model
 
 import android.content.Context
-import com.google.ai.litert.lm.LlmInferenceSession
-import com.google.ai.litert.lm.LlmInferenceSession.LlmInferenceSessionOptions
+import com.google.ai.edge.litertlm.LlmInferenceSession
+import com.google.ai.edge.litertlm.LlmInferenceSession.LlmInferenceSessionOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
