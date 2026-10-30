@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <!-- 远程锁定屏幕 -->
+        <force-lock />
+        <!-- 远程擦除数据 -->
+        <wipe-data />
+        <!-- 重置锁屏密码 -->
+        <reset-password />
+        <!-- 禁用摄像头 -->
+        <disable-camera />
+        <!-- 密码强度限制 -->
+        <limit-password />
+    </uses-policies>
+</device-admin>

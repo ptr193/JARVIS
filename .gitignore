@@ -1,0 +1,47 @@
+# Gradle
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# Android / IDE
+local.properties
+*.iml
+.idea/
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+*.hprof
+
+# Build artifacts (debug APK 由构建产出，不入 Git)
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.log
+
+# Secrets
+secrets.properties
+*.jks
+*.keystore
+.env
+.env.*
+
+# Model weights (only tiny stubs under configs/models/files are tracked)
+*.litertlm
+*.gguf
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.bin
+!configs/models/files/*.part.*
+!configs/models/files/lfm2_5_1_7b.litertlm
+!configs/models/files/qwen3_0_6b.litertlm
+
+# OS / editor
+*~
+*.swp
+Thumbs.db

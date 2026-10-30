@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:sessionService="com.jarvis.pineapple.assistant.JarvisVoiceInteractionSessionService"
+    android:recognitionService="com.jarvis.pineapple.assistant.JarvisRecognitionService"
+    android:settingsActivity="com.jarvis.pineapple.ui.MainActivity"
+    android:supportsAssist="true" />

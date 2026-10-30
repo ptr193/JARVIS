@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 应用内更新 APK（下载到 cacheDir） -->
+    <cache-path name="cache" path="." />
+    <!-- 截图、导出文件（filesDir） -->
+    <files-path name="files" path="." />
+    <!-- 外部私有目录（导出到公共可见位置时） -->
+    <external-files-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+</paths>

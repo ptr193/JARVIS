@@ -1,0 +1,113 @@
+-- JARVIS 数据库表结构
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS skills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    package_name TEXT,
+    installed INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS generic_records (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    source TEXT,
+    metadata TEXT,
+    timestamp INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vm_instances (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    distro TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'STOPPED',
+    created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS smart_devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    online INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS health_records (
+    id TEXT PRIMARY KEY,
+    heart_rate INTEGER,
+    temperature REAL,
+    timestamp INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS memories (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    category TEXT,
+    updated_at INTEGER NOT NULL
+);
+
+selectAllConversations:
+SELECT * FROM conversations ORDER BY created_at DESC;
+
+insertConversation:
+INSERT INTO conversations(id, title, created_at) VALUES (?, ?, ?);
+
+insertMessage:
+INSERT INTO messages(id, conversation_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?);
+
+selectMessagesForConversation:
+SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC;
+
+-- ==================== 通用记录（信息处理 #21） ====================
+
+insertGenericRecord:
+INSERT OR REPLACE INTO generic_records(id, type, title, content, source, metadata, timestamp)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectGenericRecords:
+SELECT * FROM generic_records
+WHERE (:type IS NULL OR type = :type)
+  AND (:keyword IS NULL OR title LIKE '%' || :keyword || '%' OR content LIKE '%' || :keyword || '%')
+  AND (:startTime IS NULL OR timestamp >= :startTime)
+  AND (:endTime IS NULL OR timestamp <= :endTime)
+ORDER BY timestamp DESC
+LIMIT :limitCount;
+
+selectGenericRecordById:
+SELECT * FROM generic_records WHERE id = ?;
+
+selectGenericRecordsByType:
+SELECT * FROM generic_records WHERE type = ? ORDER BY timestamp DESC;
+
+selectGenericRecordTypes:
+SELECT DISTINCT type FROM generic_records ORDER BY type;
+
+countGenericRecords:
+SELECT COUNT(*) FROM generic_records;
+
+countGenericRecordsByType:
+SELECT COUNT(*) FROM generic_records WHERE type = ?;
+
+deleteGenericRecord:
+DELETE FROM generic_records WHERE id = ?;
+
+deleteGenericRecordsByType:
+DELETE FROM generic_records WHERE type = ?;
+
+deleteAllGenericRecords:
+DELETE FROM generic_records;
