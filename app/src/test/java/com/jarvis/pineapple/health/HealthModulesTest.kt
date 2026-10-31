@@ -39,6 +39,20 @@ class HealthModulesTest {
     }
 
     @Test
+    fun `addMedication schedules reminder via AlarmManager path`() {
+        val scheduled = mutableListOf<String>()
+        val now = 1_700_000_000_000L
+        val m = HealthManager { id, title, description, triggerTime ->
+            scheduled.add("$id|$title|$description|$triggerTime")
+        }
+        m.addMedication(HealthManager.Medication("阿司匹林", "100mg", now))
+        assertEquals(1, scheduled.size)
+        assertTrue(scheduled.first().contains("用药提醒：阿司匹林"))
+        assertTrue(scheduled.first().contains("剂量 100mg"))
+        assertTrue(scheduled.first().endsWith(now.toString()))
+    }
+
+    @Test
     fun `HealthManager analyzeTrend returns string`() {
         val m = HealthManager()
         val result = m.analyzeTrend(emptyList())

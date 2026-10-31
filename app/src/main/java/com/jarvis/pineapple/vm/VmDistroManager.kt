@@ -34,6 +34,8 @@ enum class DistroCategory {
     GENERAL, SECURITY, SERVER, DESKTOP, LIGHTWEIGHT, IOT
 }
 
+const val KALI_MINIMAL_ARM64_SHA256 = "96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60"
+
 /**
  * 下载进度
  */
@@ -160,24 +162,27 @@ class VmDistroManager(
                         )
                     }
 
-                    // SHA-256 校验
-                    if (distro.checksumSha256.isNotBlank()) {
-                        updateProgress(
-                            DownloadProgress(
-                                distroId = distroId,
-                                progress = 1f,
-                                status = DownloadStatus.VERIFYING,
-                                totalBytes = archive.length(),
-                                downloadedBytes = archive.length(),
-                                currentUrl = url
-                            )
+                    // SHA-256 校验：空校验和视为失败，禁止未校验安装
+                    if (distro.checksumSha256.isBlank()) {
+                        lastError = "发行版缺少 SHA-256 校验和，拒绝安装"
+                        archive.delete()
+                        continue
+                    }
+                    updateProgress(
+                        DownloadProgress(
+                            distroId = distroId,
+                            progress = 1f,
+                            status = DownloadStatus.VERIFYING,
+                            totalBytes = archive.length(),
+                            downloadedBytes = archive.length(),
+                            currentUrl = url
                         )
-                        val actual = TarExtractor.sha256(archive)
-                        if (!actual.equals(distro.checksumSha256, ignoreCase = true)) {
-                            lastError = "SHA-256 校验失败（期望 ${distro.checksumSha256}, 实际 $actual）"
-                            archive.delete()
-                            continue
-                        }
+                    )
+                    val actual = TarExtractor.sha256(archive)
+                    if (!actual.equals(distro.checksumSha256, ignoreCase = true)) {
+                        lastError = "SHA-256 校验失败（期望 ${distro.checksumSha256}, 实际 $actual）"
+                        archive.delete()
+                        continue
                     }
 
                     // 解压
@@ -276,6 +281,7 @@ class VmDistroManager(
                 "https://mirrors.ustc.edu.cn/kali/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz"
             ),
             sizeBytes = 340_000_000L,
+            checksumSha256 = KALI_MINIMAL_ARM64_SHA256,
             category = DistroCategory.SECURITY,
             description = "Kali Linux（NetHunter 最小 rootfs）：渗透测试与安全研究首选，含全套安全工具（REQ-02 首发必选）",
             packageManager = "apt",

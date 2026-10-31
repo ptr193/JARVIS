@@ -48,18 +48,40 @@ class HavenVmManager(
 
     // ==================== 生命周期 ====================
 
+    data class CreateVmResult(
+        val vm: HavenVm? = null,
+        val error: String? = null
+    ) {
+        val isSuccess: Boolean get() = vm != null
+    }
+
     /**
      * 创建虚拟机（若对应发行版未安装则先下载）。
+     * 失败时 [CreateVmResult.error] 为中文原因：发行版未知 / 未下载 / rootfs 为空 / PRoot 未安装。
      */
-    suspend fun createVm(name: String, distroId: String): HavenVm? {
+    suspend fun createVm(name: String, distroId: String): CreateVmResult {
         _isCreating.value = true
         try {
-            val distro = distroManager.findDistro(distroId) ?: return null
+            if (!prootManager.isProotInstalled()) {
+                return CreateVmResult(error = createFailureReason(prootInstalled = false))
+            }
+            val distro = distroManager.findDistro(distroId)
+                ?: return CreateVmResult(error = createFailureReason(distroExists = false))
             if (!distro.isDownloaded) {
-                if (!distroManager.downloadDistro(distroId)) return null
+                if (!distroManager.downloadDistro(distroId)) {
+                    val progress = distroManager.getDownloadProgress(distroId)
+                    return CreateVmResult(
+                        error = createFailureReason(
+                            distroDownloaded = false,
+                            downloadError = progress?.errorMessage
+                        )
+                    )
+                }
             }
             val rootfs = distroManager.rootfsDir(distroId)
-            if (!rootfs.exists() || rootfs.listFiles().isNullOrEmpty()) return null
+            if (!rootfs.exists() || rootfs.listFiles().isNullOrEmpty()) {
+                return CreateVmResult(error = createFailureReason(rootfsReady = false))
+            }
 
             val vm = HavenVm(
                 id = "vm_${System.currentTimeMillis()}",
@@ -70,7 +92,7 @@ class HavenVmManager(
                 rootfsPath = rootfs.absolutePath
             )
             _vms.value = _vms.value + vm
-            return vm
+            return CreateVmResult(vm = vm)
         } finally {
             _isCreating.value = false
         }
@@ -205,4 +227,20 @@ class HavenVmManager(
     /** context 保留用于未来的会话存储/日志扩展。 */
     @Suppress("unused")
     private fun storageDir(): File = File(context.filesDir, "vm")
+
+    companion object {
+        fun createFailureReason(
+            prootInstalled: Boolean = true,
+            distroExists: Boolean = true,
+            distroDownloaded: Boolean = true,
+            rootfsReady: Boolean = true,
+            downloadError: String? = null
+        ): String {
+            if (!prootInstalled) return "PRoot 未安装"
+            if (!distroExists) return "未知发行版"
+            if (!distroDownloaded) return downloadError?.takeIf { it.isNotBlank() } ?: "发行版未下载"
+            if (!rootfsReady) return "rootfs 为空"
+            return "创建虚拟机失败"
+        }
+    }
 }

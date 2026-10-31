@@ -31,7 +31,8 @@ private const val TAG = "HealthMonitor"
  */
 class HealthMonitor(
     private val context: Context,
-    private val cryptoManager: CryptoManager
+    private val cryptoManager: CryptoManager,
+    private val reminderScheduler: MedicationReminderScheduler? = null
 ) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -106,11 +107,13 @@ class HealthMonitor(
             }
 
             val device = adapter.getRemoteDevice(deviceAddress)
-            val gatt = device.connectGatt(context, false, object : android.bluetooth.BluetoothGattCallback() {
+            device.connectGatt(context, false, object : android.bluetooth.BluetoothGattCallback() {
                 override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
                     if (newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED) {
                         Log.i("HealthMonitor", "Connected to heart rate monitor: $deviceAddress")
                         gatt.discoverServices()
+                    } else if (newState == android.bluetooth.BluetoothGatt.STATE_DISCONNECTED) {
+                        Log.w("HealthMonitor", "Heart rate monitor disconnected: $deviceAddress")
                     }
                 }
 
@@ -128,7 +131,8 @@ class HealthMonitor(
                 }
             })
             Log.i("HealthMonitor", "Connecting to heart rate monitor: $deviceAddress")
-            true
+            // connectGatt 仅表示请求已发出，在 STATE_CONNECTED 之前不得报告成功
+            false
         } catch (e: Exception) {
             Log.e("HealthMonitor", "Failed to connect heart rate monitor", e)
             false
@@ -375,6 +379,12 @@ class HealthMonitor(
         val current = _medicationRecords.value.toMutableList()
         current.add(medication)
         _medicationRecords.value = current.sortedBy { it.scheduledTime }
+        reminderScheduler?.schedule(
+            id = "health_med_${medication.id}",
+            title = "用药提醒：${medication.medicationName}",
+            description = "剂量 ${medication.dosage}",
+            triggerTime = medication.scheduledTime
+        )
     }
 
     /**

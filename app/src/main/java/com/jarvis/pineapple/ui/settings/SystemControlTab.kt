@@ -210,10 +210,11 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         Row {
             OutlinedButton(onClick = {
                 val light = deviceControl.lightStates.value.firstOrNull()
-                if (light == null) showMsg("暂无智能家居设备")
+                if (light == null) showMsg("未检测到设备")
                 else {
-                    deviceControl.turnOnLight(light.deviceId)
-                    showMsg("已开灯：${light.deviceName}")
+                    scope.launch {
+                        showMsg(deviceControl.turnOnLight(light.deviceId))
+                    }
                 }
             }) { Text("开灯") }
             Spacer(Modifier.width(8.dp))

@@ -232,5 +232,16 @@ class DeviceTransport(context: Context) {
         private const val KEY_GATEWAY_TOKEN = "gateway_token"
         private const val SSDP_GROUP = "239.255.255.250"
         private const val SSDP_PORT = 1900
+
+        fun emptyScanMessage(configured: Boolean, deviceCount: Int): String {
+            if (deviceCount > 0) return "发现 ${deviceCount} 台设备"
+            return if (!configured) "未配置网关" else "未检测到设备"
+        }
+
+        fun controlResult(configured: Boolean, deviceKnown: Boolean, delivered: Boolean): String {
+            if (!configured) return "未配置网关"
+            if (!deviceKnown) return "未检测到设备"
+            return if (delivered) "已下发" else "指令未送达"
+        }
     }
 }

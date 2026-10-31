@@ -213,15 +213,32 @@ class FatigueMonitor {
 }
 
 /**
+ * 用药提醒调度接口。生产路径接到 [com.jarvis.pineapple.system.CommunicationManager]。
+ */
+fun interface MedicationReminderScheduler {
+    fun schedule(id: String, title: String, description: String, triggerTime: Long)
+}
+
+/**
  * 健康管理：用药提醒、健康趋势。
  */
-class HealthManager {
+class HealthManager(
+    private val reminderScheduler: MedicationReminderScheduler? = null
+) {
 
     data class Medication(val name: String, val dose: String, val timeMillis: Long)
 
     private val medications = mutableListOf<Medication>()
 
-    fun addMedication(m: Medication) { medications.add(m) }
+    fun addMedication(m: Medication) {
+        medications.add(m)
+        reminderScheduler?.schedule(
+            id = "med_${m.name}_${m.timeMillis}",
+            title = "用药提醒：${m.name}",
+            description = "剂量 ${m.dose}",
+            triggerTime = m.timeMillis
+        )
+    }
 
     fun getDueMedications(now: Long): List<Medication> =
         medications.filter { it.timeMillis <= now }

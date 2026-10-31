@@ -130,8 +130,12 @@ class SmartHomeManager(private val context: Context) {
     /**
      * 开始设备发现
      */
+    private val _discoveryStatus = MutableStateFlow("")
+    val discoveryStatus: StateFlow<String> = _discoveryStatus.asStateFlow()
+
     fun startDiscovery(protocols: List<ProtocolType> = ProtocolType.values().toList()) {
         _isDiscovering.value = true
+        _discoveryStatus.value = ""
         scope.launch {
             val found = mutableListOf<SmartDevice>()
             val ssdp = transport.ssdpDiscover()
@@ -169,6 +173,7 @@ class SmartHomeManager(private val context: Context) {
             }
             _devices.value = current
             _isDiscovering.value = false
+            _discoveryStatus.value = DeviceTransport.emptyScanMessage(transport.isConfigured, current.size)
             Log.i(TAG, "发现 ${filtered.size} 个设备（SSDP=${ssdp.size} 网关=${gatewayDevices.size}）")
         }
     }
@@ -190,12 +195,20 @@ class SmartHomeManager(private val context: Context) {
         }
     }
 
-    /** 向设备/网关下发指令；未配置网关时静默失败（本地状态仍乐观更新）。 */
-    private fun dispatch(deviceId: String, command: String, params: Map<String, Any?> = emptyMap()) {
-        scope.launch {
-            val ok = transport.sendCommand(deviceId, command, params)
-            if (!ok) Log.d(TAG, "指令未送达（未配置网关）: $deviceId $command")
+    /**
+     * 向设备/网关下发指令。未配置网关或设备不存在时返回中文失败原因，不伪造成功。
+     */
+    suspend fun dispatch(deviceId: String, command: String, params: Map<String, Any?> = emptyMap()): String {
+        val known = _devices.value.any { it.id == deviceId }
+        if (!transport.isConfigured || !known) {
+            return DeviceTransport.controlResult(transport.isConfigured, known, delivered = false)
         }
+        val ok = transport.sendCommand(deviceId, command, params)
+        return DeviceTransport.controlResult(configured = true, deviceKnown = true, delivered = ok)
+    }
+
+    private fun dispatchAsync(deviceId: String, command: String, params: Map<String, Any?> = emptyMap()) {
+        scope.launch { dispatch(deviceId, command, params) }
     }
 
     /**
@@ -241,17 +254,23 @@ class SmartHomeManager(private val context: Context) {
     /**
      * 开灯
      */
-    fun turnOnLight(deviceId: String) {
-        dispatch(deviceId, "on")
-        updateDeviceState(deviceId) { it.copy(isOn = true) }
+    suspend fun turnOnLight(deviceId: String): String {
+        val result = dispatch(deviceId, "on")
+        if (result == "已下发") {
+            updateDeviceState(deviceId) { it.copy(isOn = true) }
+        }
+        return result
     }
 
     /**
      * 关灯
      */
-    fun turnOffLight(deviceId: String) {
-        dispatch(deviceId, "off")
-        updateDeviceState(deviceId) { it.copy(isOn = false) }
+    suspend fun turnOffLight(deviceId: String): String {
+        val result = dispatch(deviceId, "off")
+        if (result == "已下发") {
+            updateDeviceState(deviceId) { it.copy(isOn = false) }
+        }
+        return result
     }
 
     /**
@@ -259,7 +278,7 @@ class SmartHomeManager(private val context: Context) {
      */
     fun setLightBrightness(deviceId: String, brightness: Int) {
         val value = brightness.coerceIn(0, 100)
-        dispatch(deviceId, "brightness", mapOf("value" to value))
+        dispatchAsync(deviceId, "brightness", mapOf("value" to value))
         updateDeviceState(deviceId) { it.copy(brightness = value) }
     }
 
@@ -267,7 +286,7 @@ class SmartHomeManager(private val context: Context) {
      * 设置色温
      */
     fun setLightColorTemperature(deviceId: String, temperature: Int) {
-        dispatch(deviceId, "color_temperature", mapOf("value" to temperature))
+        dispatchAsync(deviceId, "color_temperature", mapOf("value" to temperature))
         updateDeviceState(deviceId) { it.copy(brightness = it.brightness) }
     }
 
@@ -276,7 +295,7 @@ class SmartHomeManager(private val context: Context) {
      */
     fun setTargetTemperature(deviceId: String, temperature: Float) {
         val value = temperature.coerceIn(16f, 30f)
-        dispatch(deviceId, "target_temperature", mapOf("value" to value))
+        dispatchAsync(deviceId, "target_temperature", mapOf("value" to value))
         updateDeviceState(deviceId) { it.copy(targetTemperature = value) }
     }
 
@@ -284,7 +303,7 @@ class SmartHomeManager(private val context: Context) {
      * 打开窗帘
      */
     fun openCurtain(deviceId: String) {
-        dispatch(deviceId, "position", mapOf("value" to 100))
+        dispatchAsync(deviceId, "position", mapOf("value" to 100))
         updateDeviceState(deviceId) { it.copy(position = 100) }
     }
 
@@ -292,7 +311,7 @@ class SmartHomeManager(private val context: Context) {
      * 关闭窗帘
      */
     fun closeCurtain(deviceId: String) {
-        dispatch(deviceId, "position", mapOf("value" to 0))
+        dispatchAsync(deviceId, "position", mapOf("value" to 0))
         updateDeviceState(deviceId) { it.copy(position = 0) }
     }
 
@@ -301,7 +320,7 @@ class SmartHomeManager(private val context: Context) {
      */
     fun setCurtainPosition(deviceId: String, position: Int) {
         val value = position.coerceIn(0, 100)
-        dispatch(deviceId, "position", mapOf("value" to value))
+        dispatchAsync(deviceId, "position", mapOf("value" to value))
         updateDeviceState(deviceId) { it.copy(position = value) }
     }
 
@@ -309,7 +328,7 @@ class SmartHomeManager(private val context: Context) {
      * 开锁
      */
     fun unlock(deviceId: String) {
-        dispatch(deviceId, "unlock")
+        dispatchAsync(deviceId, "unlock")
         updateDeviceState(deviceId) { it.copy(isLocked = false) }
     }
 
@@ -317,7 +336,7 @@ class SmartHomeManager(private val context: Context) {
      * 关锁
      */
     fun lock(deviceId: String) {
-        dispatch(deviceId, "lock")
+        dispatchAsync(deviceId, "lock")
         updateDeviceState(deviceId) { it.copy(isLocked = true) }
     }
 
@@ -338,7 +357,7 @@ class SmartHomeManager(private val context: Context) {
             CameraAction.TILT_UP -> "tilt_up"
             CameraAction.TILT_DOWN -> "tilt_down"
         }
-        dispatch(deviceId, command)
+        dispatchAsync(deviceId, command)
         when (action) {
             CameraAction.START_STREAMING, CameraAction.START_RECORDING ->
                 updateDeviceState(deviceId) { it.copy(isOn = true) }
@@ -426,12 +445,12 @@ class SmartHomeManager(private val context: Context) {
     }
 
     private fun turnOnDevice(deviceId: String) {
-        dispatch(deviceId, "on")
+        dispatchAsync(deviceId, "on")
         updateDeviceState(deviceId) { it.copy(isOn = true) }
     }
 
     private fun turnOffDevice(deviceId: String) {
-        dispatch(deviceId, "off")
+        dispatchAsync(deviceId, "off")
         updateDeviceState(deviceId) { it.copy(isOn = false) }
     }
 

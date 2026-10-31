@@ -192,7 +192,21 @@ val appModule = module {
     single { IntrusionDetector(get()) }
 
     // Health
-    single { HealthMonitor(get(), get()) }
+    single<com.jarvis.pineapple.health.MedicationReminderScheduler> {
+        val comm = get<CommunicationManager>()
+        com.jarvis.pineapple.health.MedicationReminderScheduler { id, title, description, triggerTime ->
+            comm.addReminder(
+                CommunicationManager.Reminder(
+                    id = id,
+                    title = title,
+                    description = description,
+                    triggerTime = triggerTime
+                )
+            )
+        }
+    }
+    single { HealthMonitor(get(), get(), get()) }
+    single { com.jarvis.pineapple.health.HealthManager(get()) }
     single { TelemedicineManager(get()) }
 
     // Info processing

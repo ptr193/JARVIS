@@ -25,10 +25,16 @@ import java.net.URL
  *
  * 所有操作均为真实实现，不依赖任何模拟输出。
  */
-class ProotManager(private val context: Context) {
+class ProotManager internal constructor(
+    private val filesDir: File,
+    private val cacheDir: File,
+    private val abiProvider: () -> Array<String> = { Build.SUPPORTED_ABIS }
+) {
 
-    private val prootDir = File(context.filesDir, "proot")
-    private val rootfsDir = File(context.filesDir, "rootfs")
+    constructor(context: Context) : this(context.filesDir, context.cacheDir)
+
+    private val prootDir = File(filesDir, "proot")
+    private val rootfsDir = File(filesDir, "rootfs")
     private val binDir = File(prootDir, "bin")
 
     private val _isReady = MutableStateFlow(false)
@@ -104,6 +110,13 @@ class ProotManager(private val context: Context) {
             "LANG" to "C.UTF-8",
             "MOZ_FAKE_NO_SANDBOX" to "1"
         )
+
+        fun requireArm64(abi: String) {
+            if (!abi.startsWith("arm64")) {
+                val shown = abi.ifBlank { "unknown" }
+                throw IllegalStateException("当前 ABI 为 $shown，仅支持 arm64-v8a 的 PRoot 二进制")
+            }
+        }
     }
 
     private fun prootBinary(): File = File(binDir, "proot")
@@ -127,24 +140,28 @@ class ProotManager(private val context: Context) {
     /**
      * 下载 PRoot 二进制（多镜像回退 + SHA-256 校验）。
      */
+    fun resolveSupportedAbi(): String {
+        val abi = abiProvider().firstOrNull().orEmpty()
+        requireArm64(abi)
+        return abi
+    }
+
     private suspend fun downloadProotBinary() = withContext(Dispatchers.IO) {
         val target = prootBinary()
-        val isArm64 = Build.SUPPORTED_ABIS.firstOrNull()?.startsWith("arm64") ?: true
-        val urls = if (isArm64) PROOT_URLS_ARM64 else PROOT_URLS_ARM64 // arm 版镜像同路径，按需替换文件名
-        val expectedSha = if (isArm64) PROOT_SHA256_ARM64 else ""
+        resolveSupportedAbi()
+        val urls = PROOT_URLS_ARM64
+        val expectedSha = PROOT_SHA256_ARM64
 
         var lastError: Exception? = null
         for (url in urls) {
             try {
                 val tmp = File(binDir, "proot.tmp")
                 downloadToFile(url, tmp)
-                if (expectedSha.isNotEmpty()) {
-                    val actual = TarExtractor.sha256(tmp)
-                    if (!actual.equals(expectedSha, ignoreCase = true)) {
-                        tmp.delete()
-                        lastError = IllegalStateException("PRoot 校验失败: $actual")
-                        continue
-                    }
+                val actual = TarExtractor.sha256(tmp)
+                if (!actual.equals(expectedSha, ignoreCase = true)) {
+                    tmp.delete()
+                    lastError = IllegalStateException("PRoot 校验失败: $actual")
+                    continue
                 }
                 if (target.exists()) target.delete()
                 if (!tmp.renameTo(target)) {
@@ -167,7 +184,7 @@ class ProotManager(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 if (!targetDir.exists()) targetDir.mkdirs()
-                val tempFile = File(context.cacheDir, "rootfs_${System.currentTimeMillis()}.archive")
+                val tempFile = File(cacheDir, "rootfs_${System.currentTimeMillis()}.archive")
                 downloadToFile(archiveUrl, tempFile, onProgress)
                 TarExtractor.extract(tempFile, targetDir)
                 tempFile.delete()
@@ -221,9 +238,9 @@ class ProotManager(private val context: Context) {
             val env = pb.environment()
             env.clear()
             env.putAll(config.env)
-            env["PROOT_TMP_DIR"] = context.cacheDir.absolutePath
+            env["PROOT_TMP_DIR"] = cacheDir.absolutePath
             env["PROOT_NO_SECCOMP"] = "1"
-            pb.directory(context.cacheDir)
+            pb.directory(cacheDir)
             pb.redirectErrorStream(true)
 
             val process = pb.start()

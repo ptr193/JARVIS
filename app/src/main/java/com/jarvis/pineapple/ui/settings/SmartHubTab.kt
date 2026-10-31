@@ -73,7 +73,9 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
 
     val vitalSigns = remember { VitalSignsMonitor(context) }
     val fatigue = remember { FatigueMonitor() }
-    val health = remember { HealthManager() }
+    val health = remember {
+        runCatching { GlobalContext.get().get<HealthManager>() }.getOrElse { HealthManager() }
+    }
     val ar = remember { CameraArInterface(context) }
 
     // ---------- 环境感知 ----------
@@ -96,6 +98,7 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
     // ---------- 智能家居 ----------
     val homeDevices by smartHome.devices.collectAsState()
     val discovering by smartHome.isDiscovering.collectAsState()
+    val discoveryStatus by smartHome.discoveryStatus.collectAsState()
 
     // ---------- 健康 ----------
     var heartRate by remember { mutableStateOf<Int?>(null) }
@@ -225,6 +228,9 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
 
     SectionCard("智能家居") {
         Text("设备：${homeDevices.size} 台 · 发现中：${if (discovering) "是" else "否"}", fontSize = 13.sp)
+        if (discoveryStatus.isNotBlank()) {
+            Text(discoveryStatus, fontSize = 12.sp)
+        }
         homeDevices.take(5).forEach { d ->
             Text("· ${d.name}（${d.type}）${if (d.state.isOn) " 开" else " 关"}", fontSize = 12.sp)
         }
@@ -238,9 +244,13 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
         }
         homeDevices.firstOrNull { it.type == SmartHomeManager.DeviceType.LIGHT }?.let { d ->
             Row {
-                Button(onClick = { smartHome.turnOnLight(d.id) }) { Text("开灯") }
+                Button(onClick = {
+                    scope.launch { showMsg(smartHome.turnOnLight(d.id)) }
+                }) { Text("开灯") }
                 Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { smartHome.turnOffLight(d.id) }) { Text("关灯") }
+                OutlinedButton(onClick = {
+                    scope.launch { showMsg(smartHome.turnOffLight(d.id)) }
+                }) { Text("关灯") }
             }
         }
     }

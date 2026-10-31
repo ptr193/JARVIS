@@ -92,15 +92,23 @@ class DeviceControlManager(private val context: Context) {
     /**
      * 开灯
      */
-    fun turnOnLight(deviceId: String) {
-        updateLightState(deviceId) { it.copy(isOn = true) }
+    suspend fun turnOnLight(deviceId: String): String {
+        if (!transport.isConfigured) return "未配置网关"
+        if (_lightStates.value.none { it.deviceId == deviceId }) return "未检测到设备"
+        val ok = transport.sendCommand(deviceId, "on")
+        if (ok) updateLightState(deviceId) { it.copy(isOn = true) }
+        return if (ok) "已下发" else "指令未送达"
     }
 
     /**
      * 关灯
      */
-    fun turnOffLight(deviceId: String) {
-        updateLightState(deviceId) { it.copy(isOn = false) }
+    suspend fun turnOffLight(deviceId: String): String {
+        if (!transport.isConfigured) return "未配置网关"
+        if (_lightStates.value.none { it.deviceId == deviceId }) return "未检测到设备"
+        val ok = transport.sendCommand(deviceId, "off")
+        if (ok) updateLightState(deviceId) { it.copy(isOn = false) }
+        return if (ok) "已下发" else "指令未送达"
     }
 
     /**

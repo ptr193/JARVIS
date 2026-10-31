@@ -203,13 +203,14 @@ fun VirtualMachineScreen(
                     },
                     onCreateVm = { id ->
                         scope.launch {
-                            val vm = havenVmManager.createVm("", id)
+                            val result = havenVmManager.createVm("", id)
+                            val vm = result.vm
                             if (vm != null) {
                                 activeVmId = vm.id
                                 selectedTab = 2
                                 showMsg("虚拟机 '${vm.name}' 已创建")
                             } else {
-                                showMsg("创建虚拟机失败")
+                                showMsg(result.error ?: "创建虚拟机失败")
                             }
                         }
                     },
