@@ -53,3 +53,13 @@ Entries discovered by the Agent during task execution should follow this format:
   - 本沙箱初始无 JDK / Android SDK，构建前需安装 JDK 17 与 Android SDK platform-35
   - 压缩包内 `root/jarvis-final` 为旧副本，已丢弃，不以该目录为准
   - 规格权威顺序：产品规格书 → 产品计划书 → 补充计划 → 补充内容规格书 → 人格灵魂描述
+
+[Project Knowledge Summary]
+- Date: 2026-10-31
+- Context: Discovered by Agent while performing 阶段 1 构建基线
+- Category: Build Methods
+- Instructions:
+  - 构建命令：`JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew testDebugUnitTest assembleDebug --no-daemon --max-workers=2`
+  - Gradle wrapper 使用 8.11.1；`gradle.properties` 中 `org.gradle.jvmargs=-Xmx1536m`、`kotlin.daemon.jvmargs=-Xmx1g`，4G 堆会触发 cgroup OOM
+  - Debug 签名需要 `/root/.android/debug.keystore`（storepass/keypass=android，alias=androiddebugkey）
+  - `assembleDebug` 用于阶段验收；Debug APK 交付给用户实机审查仍按阶段 12；未实机通过前禁止 `assembleRelease`

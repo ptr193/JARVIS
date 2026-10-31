@@ -6,7 +6,7 @@
   - 推送到 origin/main
   - 验收：工作区无 zip；main 含源码与计划
 
-- [ ] 1. 构建基线可编译
+- [x] 1. 构建基线可编译
   - 安装 JDK 17 与 Android SDK 35
   - 修正 AGP/Gradle/Kotlin 版本冲突（若有）
   - 运行 `./gradlew testDebugUnitTest` 与 `assembleDebug`
