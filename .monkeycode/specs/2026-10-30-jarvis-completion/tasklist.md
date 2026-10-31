@@ -18,11 +18,11 @@
   - 无模型时返回明确错误
   - [x]* 1.1.1 运行 PersonalityTest、ChatMessageTest、ConversationPipelineIntegrationTest
 
-- [ ] 1.2 唤醒、保活、默认助手
+- [x] 1.2 唤醒、保活、默认助手
   - WakeEngine 真实监听或权限提示；KeepAliveService 前台通知
-  - [ ]* 1.2.1 运行 KeepAliveServiceOrderingTest、WakeWordPipelineIntegrationTest
+  - [x]* 1.2.1 运行 KeepAliveServiceOrderingTest、WakeWordPipelineIntegrationTest
 
-- [ ] 2. 检查点 - 确保所有测试通过
+- [x] 2. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
 - [ ] 2.1 虚拟机 PRoot 真实路径

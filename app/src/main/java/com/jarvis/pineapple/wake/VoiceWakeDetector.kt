@@ -60,6 +60,9 @@ class VoiceWakeDetector(private val context: Context) {
     private val _listening = MutableStateFlow(false)
     val listening: StateFlow<Boolean> = _listening.asStateFlow()
 
+    private val _unavailableReason = MutableStateFlow<String?>(null)
+    val unavailableReason: StateFlow<String?> = _unavailableReason.asStateFlow()
+
     /** 唤醒回调（唤醒词命中时触发，附置信度）。 */
     var onWake: ((Float) -> Unit)? = null
 
@@ -68,17 +71,22 @@ class VoiceWakeDetector(private val context: Context) {
     // ==================== 生命周期 ====================
 
     @SuppressLint("MissingPermission")
-    fun start() {
-        if (job?.isActive == true) return
+    fun start(): Boolean {
+        if (job?.isActive == true) return true
         if (!hasAudioPermission()) {
-            Log.e(TAG, "缺少录音权限，无法启动唤醒监听")
-            return
+            val reason = NO_MIC_PERMISSION
+            _unavailableReason.value = reason
+            _listening.value = false
+            Log.e(TAG, reason)
+            return false
         }
+        _unavailableReason.value = null
         _detected.value = false
         _listening.value = true
         job = CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
             if (wakeMode == WakeMode.SYSTEM_ASR) runSystemAsrLoop() else runAudioLoop()
         }
+        return true
     }
 
     fun stop() {
@@ -341,5 +349,6 @@ class VoiceWakeDetector(private val context: Context) {
     companion object {
         private const val TAG = "VoiceWakeDetector"
         private const val MAX_SILENCE_FRAMES = 12
+        const val NO_MIC_PERMISSION = "未授予麦克风权限，语音唤醒不可用。其他唤醒方式仍可使用。"
     }
 }

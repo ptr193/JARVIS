@@ -111,6 +111,45 @@ class KeepAliveServiceOrderingTest {
         )
     }
 
+    @Test
+    fun missingMicPermissionSurfacesChineseReasonWithoutBlockingOtherSources() {
+        val voiceSrc = readSource("app/src/main/java/com/jarvis/pineapple/wake/VoiceWakeDetector.kt")
+        assertTrue(
+            "缺麦克风权限必须给出中文原因",
+            voiceSrc.contains("未授予麦克风权限，语音唤醒不可用")
+        )
+        assertTrue(
+            "缺权限时其他唤醒方式仍应可用",
+            voiceSrc.contains("其他唤醒方式仍可使用")
+        )
+        val wakeSrc = readSource("app/src/main/java/com/jarvis/pineapple/wake/WakeEngine.kt")
+        assertTrue(
+            "WakeEngine 必须汇总不可用原因供 UI 展示",
+            wakeSrc.contains("unavailableReasons")
+        )
+        val chatSrc = readSource("app/src/main/java/com/jarvis/pineapple/ui/chat/ChatScreen.kt")
+        assertTrue(
+            "聊天页必须展示唤醒不可用原因",
+            chatSrc.contains("unavailableReasons")
+        )
+    }
+
+    @Test
+    fun defaultAssistantSessionNotifiesHomeLongPress() {
+        val sessionSrc = readSource(
+            "app/src/main/java/com/jarvis/pineapple/assistant/JarvisVoiceInteractionSessionService.kt"
+        )
+        assertTrue(
+            "默认助手会话必须通知 Home 长按检测器",
+            sessionSrc.contains("HomeLongPressDetector.notifyHomeLongPress")
+        )
+        val detectorSrc = readSource("app/src/main/java/com/jarvis/pineapple/wake/HomeLongPressDetector.kt")
+        assertTrue(
+            "HomeLongPressDetector 必须暴露供 VoiceInteractionService 调用的入口",
+            detectorSrc.contains("fun notifyHomeLongPress")
+        )
+    }
+
     // ==================== 工具 ====================
 
     private fun readSource(relativePath: String): String {

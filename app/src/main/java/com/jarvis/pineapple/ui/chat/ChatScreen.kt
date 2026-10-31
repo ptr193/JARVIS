@@ -73,10 +73,12 @@ fun ChatScreen(
     onNavigateToSettings: () -> Unit = {}
 ) {
     val speechManager = org.koin.androidx.compose.get<com.jarvis.pineapple.speech.SpeechManager>()
+    val wakeEngine = org.koin.androidx.compose.get<com.jarvis.pineapple.wake.WakeEngine>()
     val messages by viewModel.messages.collectAsState()
     val isGenerating by viewModel.isGenerating.collectAsState()
     val activeModelName by viewModel.activeModelName.collectAsState()
     val schedulingInfo by viewModel.lastSchedulingInfo.collectAsState()
+    val wakeUnavailable by wakeEngine.unavailableReasons.collectAsState()
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -143,6 +145,21 @@ fun ChatScreen(
         ) {
             items(messages, key = { it.id }) { msg ->
                 MessageBubble(msg)
+            }
+        }
+
+        if (wakeUnavailable.isNotEmpty()) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = wakeUnavailable.joinToString("\n"),
+                    modifier = Modifier.padding(12.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
             }
         }
 

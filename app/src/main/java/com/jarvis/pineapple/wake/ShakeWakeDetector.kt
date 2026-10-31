@@ -31,9 +31,17 @@ class ShakeWakeDetector(private val context: Context) : SensorEventListener {
     private val _detected = MutableStateFlow(false)
     val detected: StateFlow<Boolean> = _detected.asStateFlow()
 
-    fun start() {
-        if (accelerometer == null) return
+    private val _unavailableReason = MutableStateFlow<String?>(null)
+    val unavailableReason: StateFlow<String?> = _unavailableReason.asStateFlow()
+
+    fun start(): Boolean {
+        if (accelerometer == null) {
+            _unavailableReason.value = NO_ACCELEROMETER
+            return false
+        }
+        _unavailableReason.value = null
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        return true
     }
 
     fun stop() {
@@ -79,4 +87,8 @@ class ShakeWakeDetector(private val context: Context) : SensorEventListener {
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+
+    companion object {
+        const val NO_ACCELEROMETER = "未检测到加速度传感器，摇一摇唤醒不可用。其他唤醒方式仍可使用。"
+    }
 }

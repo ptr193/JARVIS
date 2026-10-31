@@ -6,8 +6,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -29,6 +32,9 @@ class WakeEngine(private val context: Context) {
 
     private val _wakeEvents = MutableSharedFlow<WakeEvent>(extraBufferCapacity = 16)
     val wakeEvents: SharedFlow<WakeEvent> = _wakeEvents.asSharedFlow()
+
+    private val _unavailableReasons = MutableStateFlow<List<String>>(emptyList())
+    val unavailableReasons: StateFlow<List<String>> = _unavailableReasons.asStateFlow()
 
     private val enabledSources = mutableSetOf(
         WakeSource.VOICE, WakeSource.POWER_BUTTON, WakeSource.NOTIFICATION,
@@ -60,14 +66,20 @@ class WakeEngine(private val context: Context) {
     fun start() {
         mainJob?.cancel()
         mainJob = scope.launch {
-            if (WakeSource.VOICE in enabledSources) voiceWakeDetector.start()
+            val reasons = mutableListOf<String>()
+            if (WakeSource.VOICE in enabledSources && !voiceWakeDetector.start()) {
+                voiceWakeDetector.unavailableReason.value?.let { reasons.add(it) }
+            }
             if (WakeSource.POWER_BUTTON in enabledSources) powerButtonWakeDetector.start()
             if (WakeSource.NOTIFICATION in enabledSources) notificationWakeDetector.start()
-            if (WakeSource.SHAKE in enabledSources) shakeWakeDetector.start()
+            if (WakeSource.SHAKE in enabledSources && !shakeWakeDetector.start()) {
+                shakeWakeDetector.unavailableReason.value?.let { reasons.add(it) }
+            }
             if (WakeSource.BLUETOOTH in enabledSources) bluetoothWakeDetector.start()
             if (WakeSource.TILE in enabledSources) { /* Tile 由 TileService 自动触发 */ }
             if (WakeSource.APP_ICON in enabledSources) appIconWakeDetector.start()
             if (WakeSource.HOME_LONG_PRESS in enabledSources) homeLongPressDetector.start()
+            _unavailableReasons.value = reasons
 
             launch {
                 voiceWakeDetector.detected.collect { detected ->
@@ -161,10 +173,18 @@ class WakeEngine(private val context: Context) {
         if (enabled) {
             enabledSources.add(source)
             when (source) {
-                WakeSource.VOICE -> voiceWakeDetector.start()
+                WakeSource.VOICE -> {
+                    if (!voiceWakeDetector.start()) {
+                        voiceWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
+                    }
+                }
                 WakeSource.POWER_BUTTON -> powerButtonWakeDetector.start()
                 WakeSource.NOTIFICATION -> notificationWakeDetector.start()
-                WakeSource.SHAKE -> shakeWakeDetector.start()
+                WakeSource.SHAKE -> {
+                    if (!shakeWakeDetector.start()) {
+                        shakeWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
+                    }
+                }
                 WakeSource.BLUETOOTH -> bluetoothWakeDetector.start()
                 WakeSource.TILE -> Unit
                 WakeSource.APP_ICON -> appIconWakeDetector.start()
@@ -186,4 +206,12 @@ class WakeEngine(private val context: Context) {
     }
 
     fun isEnabled(source: WakeSource): Boolean = source in enabledSources
+
+    private fun noteUnavailable(reason: String) {
+        if (reason.isBlank()) return
+        val current = _unavailableReasons.value
+        if (reason !in current) {
+            _unavailableReasons.value = current + reason
+        }
+    }
 }

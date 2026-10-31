@@ -34,6 +34,7 @@ class HomeLongPressDetector(private val context: Context) {
 
     fun start() {
         if (job?.isActive == true) return
+        activeInstance = this
         job = scope.launch {
             while (isActive) {
                 _isAssistant.value = isDefaultAssistant()
@@ -45,6 +46,7 @@ class HomeLongPressDetector(private val context: Context) {
     fun stop() {
         job?.cancel()
         job = null
+        if (activeInstance === this) activeInstance = null
     }
 
     /** 当前应用是否为系统默认数字助手。 */
@@ -71,5 +73,12 @@ class HomeLongPressDetector(private val context: Context) {
 
     companion object {
         private const val TAG = "HomeLongPressDetector"
+
+        @Volatile
+        private var activeInstance: HomeLongPressDetector? = null
+
+        fun notifyHomeLongPress() {
+            activeInstance?.onHomeLongPress()
+        }
     }
 }
