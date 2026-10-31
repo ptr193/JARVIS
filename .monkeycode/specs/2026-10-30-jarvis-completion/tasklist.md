@@ -13,10 +13,10 @@
   - 将真实结果写入 `docs/test_report_stage1.md`
   - 验收：两条命令退出码 0，或文档记录不可达卡点
 
-- [ ] 1.1 人格、对话、模型调度
+- [x] 1.1 人格、对话、模型调度
   - 接通 Chat / Personality / ModelScheduler 与导航中的模型选择、语音聊天
   - 无模型时返回明确错误
-  - [ ]* 1.1.1 运行 PersonalityTest、ChatMessageTest、ConversationPipelineIntegrationTest
+  - [x]* 1.1.1 运行 PersonalityTest、ChatMessageTest、ConversationPipelineIntegrationTest
 
 - [ ] 1.2 唤醒、保活、默认助手
   - WakeEngine 真实监听或权限提示；KeepAliveService 前台通知

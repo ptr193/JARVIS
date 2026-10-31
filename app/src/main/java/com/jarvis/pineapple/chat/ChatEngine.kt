@@ -7,6 +7,7 @@ import com.jarvis.pineapple.info.IntelligenceItem
 import com.jarvis.pineapple.model.AiModel
 import com.jarvis.pineapple.model.ModelCapabilityScheduler
 import com.jarvis.pineapple.model.ModelScheduler
+import com.jarvis.pineapple.model.ModelState
 import com.jarvis.pineapple.personality.PersonalityRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -74,7 +75,18 @@ class ChatEngine(
             return flowOf(reply)
         }
 
-        val primaryModel: AiModel = modelScheduler.getActive()
+        val loadedModel = modelScheduler.resolveOrLoad()
+        if (loadedModel == null) {
+            val error = ModelScheduler.NO_MODEL_MESSAGE
+            _lastSchedulingInfo.value = error
+            conversation.messages.add(ChatMessage(role = Role.ASSISTANT, content = error, isStreaming = false))
+            _messages.value = conversation.messages.toList()
+            _isGenerating.value = false
+            conversationRepository.updateMessages(conversation.messages.toList())
+            return flowOf(error)
+        }
+
+        val primaryModel: AiModel = loadedModel
         val personality = personalityRepository.personality.first()
         val systemPrompt = personalityRepository.buildSystemPrompt(personality)
 
@@ -129,11 +141,15 @@ class ChatEngine(
         conversation.messages.add(aiMsg)
         _messages.value = conversation.messages.toList()
 
-        val activeModel = if (decision.shouldSchedule && decision.assistantModel != null) {
+        val candidate = if (decision.shouldSchedule && decision.assistantModel != null) {
             decision.assistantModel
         } else {
             primaryModel
         }
+        if (candidate.state != ModelState.READY) {
+            candidate.load()
+        }
+        val activeModel = if (candidate.state == ModelState.READY) candidate else primaryModel
 
         val flow = activeModel.stream(fullPrompt, systemPrompt)
         val collected = StringBuilder()

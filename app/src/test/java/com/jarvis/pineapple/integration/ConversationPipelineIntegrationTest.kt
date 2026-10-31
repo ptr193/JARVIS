@@ -3,6 +3,7 @@ package com.jarvis.pineapple.integration
 import com.jarvis.pineapple.chat.ChatMessage
 import com.jarvis.pineapple.chat.Conversation
 import com.jarvis.pineapple.chat.Role
+import com.jarvis.pineapple.model.ModelScheduler
 import com.jarvis.pineapple.personality.DEFAULT_SYSTEM_PROMPT
 import com.jarvis.pineapple.personality.Personality
 import com.jarvis.pineapple.speech.SupportedLanguages
@@ -54,6 +55,18 @@ class ConversationPipelineIntegrationTest {
         assertEquals(20, context.size)
         assertEquals("turn-6", context.first().content)
         assertEquals("turn-25", context.last().content)
+    }
+
+    @Test
+    fun `missing model surfaces explicit chinese error instead of fake reply`() {
+        val error = ModelScheduler.NO_MODEL_MESSAGE
+        assertTrue(error.contains("无可用模型"))
+        assertTrue(error.contains("导入本地模型") || error.contains("API"))
+        val conv = Conversation(title = "无模型")
+        conv.messages.add(ChatMessage(role = Role.USER, content = "你好"))
+        conv.messages.add(ChatMessage(role = Role.ASSISTANT, content = error))
+        assertEquals(error, conv.messages.last().content)
+        assertTrue("错误回复不得伪装成正常对话", conv.messages.last().content.startsWith("无可用模型"))
     }
 
     @Test
