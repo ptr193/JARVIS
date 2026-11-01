@@ -21,7 +21,7 @@ class CalendarController(private val context: Context) {
     )
 
     fun createEvent(event: Event): Boolean {
-        if (!hasWriteCalendarPermission()) return false
+        if (!PermissionGate.calendarWriteAllowed(hasWriteCalendarPermission())) return false
         val values = ContentValues().apply {
             put(CalendarContract.Events.DTSTART, event.startTime)
             put(CalendarContract.Events.DTEND, event.endTime)

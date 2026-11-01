@@ -46,6 +46,11 @@ class ObjectDetector(context: Context) {
 
     companion object {
         private val DANGEROUS_LABELS = setOf("knife", "gun", "weapon", "fire", "smoke")
+        const val CAMERA_PERMISSION_DENIED = "无相机权限，无法进行目标检测"
+
+        fun ensureCameraPermission(granted: Boolean): String? =
+            if (granted) null else CAMERA_PERMISSION_DENIED
+
 
         /** 威胁等级判定（纯函数，无 Android 依赖） */
         fun classifyThreat(objects: List<DetectedObject>): ThreatLevel {

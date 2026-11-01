@@ -12,7 +12,7 @@ import androidx.core.content.ContextCompat
 class SmsController(private val context: Context) {
 
     fun send(phoneNumber: String, message: String): Boolean {
-        if (!hasSendSmsPermission()) return false
+        if (!PermissionGate.smsSendAllowed(hasSendSmsPermission())) return false
         val smsManager = context.getSystemService(SmsManager::class.java)
         smsManager.sendTextMessage(phoneNumber, null, message, null, null)
         return true

@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,8 +41,10 @@ import org.koin.core.context.GlobalContext
  */
 @Composable
 fun SecurityTab(showMsg: (String) -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val security = remember { GlobalContext.get().get<SecurityManager>() }
+    val antiTheft = remember { com.jarvis.pineapple.security.AntiTheftManager(context) }
 
     var securityRisk by remember { mutableStateOf("点击下方按钮评估") }
     var privacyRisk by remember { mutableStateOf("点击下方按钮评估") }
@@ -60,7 +63,17 @@ fun SecurityTab(showMsg: (String) -> Unit) {
                 TextButton(onClick = {
                     showWipeConfirm = false
                     val ok = security.remoteWipeData()
-                    showMsg(if (ok) "已下发擦除指令" else "擦除失败：设备管理器未激活")
+                    if (ok) showMsg("已下发擦除指令")
+                    else {
+                        showMsg("擦除失败：设备管理器未激活")
+                        runCatching {
+                            val activity = context as? android.app.Activity
+                            if (activity != null) antiTheft.requestAdmin(activity)
+                            else context.startActivity(
+                                SecurityManager.adminActivationIntent().addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    }
                 }) { Text("确认擦除") }
             },
             dismissButton = {
@@ -148,7 +161,17 @@ fun SecurityTab(showMsg: (String) -> Unit) {
         Row {
             Button(onClick = {
                 val ok = security.lockDevice()
-                showMsg(if (ok) "设备已锁定" else "锁定失败：设备管理器未激活")
+                if (ok) showMsg("设备已锁定")
+                else {
+                    showMsg("锁定失败：设备管理器未激活")
+                    runCatching {
+                        val activity = context as? android.app.Activity
+                        if (activity != null) antiTheft.requestAdmin(activity)
+                        else context.startActivity(
+                            SecurityManager.adminActivationIntent().addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                }
             }) { Text("立即锁定") }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {

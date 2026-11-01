@@ -46,4 +46,13 @@ class ObjectDetectorTest {
             ObjectDetector.classifyThreat(emptyList())
         )
     }
+
+    @Test
+    fun `ensureCameraPermission returns chinese error when denied`() {
+        assertEquals(
+            ObjectDetector.CAMERA_PERMISSION_DENIED,
+            ObjectDetector.ensureCameraPermission(granted = false)
+        )
+        assertEquals(null, ObjectDetector.ensureCameraPermission(granted = true))
+    }
 }

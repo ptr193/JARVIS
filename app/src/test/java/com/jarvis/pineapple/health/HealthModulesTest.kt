@@ -65,4 +65,13 @@ class HealthModulesTest {
         assertEquals(0, v.heartRate)
         assertEquals("", v.source)
     }
+
+    @Test
+    fun `measurement fails without heart rate hardware`() {
+        assertEquals(
+            VitalSignsMonitor.NO_HEART_RATE_HARDWARE,
+            VitalSignsMonitor.unavailableMessage(hasSensor = false)
+        )
+        assertEquals(null, VitalSignsMonitor.unavailableMessage(hasSensor = true))
+    }
 }

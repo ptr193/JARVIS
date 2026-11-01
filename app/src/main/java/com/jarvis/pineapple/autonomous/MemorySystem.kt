@@ -36,11 +36,17 @@ data class MemoryEntry(
 /**
  * 本地长期记忆系统（REQ-11）。
  */
-class MemorySystem(private val context: Context) {
+class MemorySystem internal constructor(
+    private val memoryFile: File,
+    private val archiveDir: File
+) {
+
+    constructor(context: Context) : this(
+        File(context.filesDir, "memory/memories.json"),
+        File(context.filesDir, "memory/archive")
+    )
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-    private val memoryFile = File(context.filesDir, "memory/memories.json")
-    private val archiveDir = File(context.filesDir, "memory/archive")
 
     private val _memories = MutableStateFlow<List<MemoryEntry>>(emptyList())
     val memories: StateFlow<List<MemoryEntry>> = _memories.asStateFlow()

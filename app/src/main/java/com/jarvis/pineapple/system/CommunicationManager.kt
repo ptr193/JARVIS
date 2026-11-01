@@ -167,7 +167,13 @@ class CommunicationManager(private val context: Context) {
         return _travelArrangements.value.filter { it.departureTime > now }
     }
 
-    private fun addToCalendar(arrangement: TravelArrangement) {
+    private fun addToCalendar(arrangement: TravelArrangement): Boolean {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.WRITE_CALENDAR
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
         val values = android.content.ContentValues().apply {
             put(CalendarContract.Events.DTSTART, arrangement.departureTime)
             put(CalendarContract.Events.DTEND, arrangement.arrivalTime)
@@ -175,7 +181,7 @@ class CommunicationManager(private val context: Context) {
             put(CalendarContract.Events.DESCRIPTION, "${arrangement.origin} -> ${arrangement.destination}")
             put(CalendarContract.Events.EVENT_TIMEZONE, Calendar.getInstance().timeZone.id)
         }
-        context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        return context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null
     }
 
     // ==================== 行程规划（#56） ====================

@@ -96,18 +96,32 @@ class EmergencyProtocol(private val context: Context) {
     private val _emergencies = MutableSharedFlow<EmergencyType>(extraBufferCapacity = 8)
     val emergencies: SharedFlow<EmergencyType> = _emergencies.asSharedFlow()
 
-    fun trigger(type: EmergencyType) {
+    fun trigger(type: EmergencyType): String {
         _emergencies.tryEmit(type)
-        executeEmergencyResponse(type)
+        val result = executeEmergencyResponse(type)
+        lastResult = result
+        return result
     }
 
+    var lastResult: String = ""
+        private set
+
     @SuppressLint("MissingPermission")
-    private fun executeEmergencyResponse(type: EmergencyType) {
+    private fun executeEmergencyResponse(type: EmergencyType): String {
         val location = lastKnownLocation()
+        val missing = mutableListOf<String>()
+        if (!hasPermission(Manifest.permission.SEND_SMS)) missing += "缺少 SEND_SMS"
+        if (!hasPermission(Manifest.permission.CALL_PHONE)) missing += "缺少 CALL_PHONE"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+        ) {
+            missing += "缺少 POST_NOTIFICATIONS"
+        }
         postNotification(type, location)
         sendLocationToContacts(type, location)
         dialEmergency(type)
         recordEvent(type, location)
+        return missingMessage(missing)
     }
 
     private fun postNotification(type: EmergencyType, location: String) {
@@ -217,6 +231,10 @@ class EmergencyProtocol(private val context: Context) {
 
     companion object {
         private const val TAG = "EmergencyProtocol"
+
+        fun missingMessage(missing: List<String>): String {
+            return if (missing.isEmpty()) "应急流程已执行" else missing.joinToString("；")
+        }
         private const val CHANNEL_ID = "jarvis_emergency"
         private const val NOTIFICATION_ID = 9001
     }

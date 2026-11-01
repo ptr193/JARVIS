@@ -17,7 +17,7 @@ import androidx.core.content.ContextCompat
 class PhoneController(private val context: Context) {
 
     fun call(phoneNumber: String): Boolean {
-        if (!hasCallPermission()) return false
+        if (!PermissionGate.phoneCallAllowed(hasCallPermission())) return false
         val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$phoneNumber")).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

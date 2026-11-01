@@ -263,10 +263,10 @@ class PerceptionManager(private val context: Context) : SensorEventListener {
      */
     @android.annotation.SuppressLint("MissingPermission")
     private fun captureCameraFrame(front: Boolean): ByteArray? {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(
-                context, android.Manifest.permission.CAMERA
-            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-        ) {
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.CAMERA
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (ObjectDetector.ensureCameraPermission(granted) != null) {
             return null
         }
         val manager = context.getSystemService(Context.CAMERA_SERVICE)

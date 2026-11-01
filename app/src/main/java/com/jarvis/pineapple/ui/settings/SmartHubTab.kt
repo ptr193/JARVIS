@@ -220,8 +220,7 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
             }) { Text("调度任务") }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
-                emergencyProtocol.trigger(EmergencyProtocol.EmergencyType.MEDICAL)
-                showMsg("已触发医疗应急流程")
+                showMsg(emergencyProtocol.trigger(EmergencyProtocol.EmergencyType.MEDICAL))
             }) { Text("触发应急") }
         }
     }
@@ -262,15 +261,13 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
         Row {
             Button(onClick = {
                 scope.launch {
-                    if (!vitalSigns.hasHeartRateSensor()) {
-                        showMsg("设备无心率传感器")
-                        return@launch
-                    }
                     val bpm = vitalSigns.measureHeartRate()
                     heartRate = bpm
                     if (bpm > 0) {
                         vitalHistory.add(VitalSignsMonitor.VitalSigns(bpm, "sensor"))
                         trendText = health.analyzeTrend(vitalHistory)
+                    } else {
+                        showMsg(VitalSignsMonitor.NO_HEART_RATE_HARDWARE)
                     }
                 }
             }) { Text("测量心率") }

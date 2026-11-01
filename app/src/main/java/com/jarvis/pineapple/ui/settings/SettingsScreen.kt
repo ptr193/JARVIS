@@ -893,10 +893,28 @@ private fun LogTab(
 
     Row {
         Button(onClick = {
-            // 导出日志到文件
+            val logDir = java.io.File(context.filesDir, "logs")
+            val latest = logDir.listFiles { f -> f.isFile }?.maxByOrNull { it.lastModified() }
+            val crashText = runCatching { com.jarvis.pineapple.util.CrashRecorder.readAll(context) }.getOrDefault("")
+            if (latest == null && (crashText.isBlank() || crashText == "（无崩溃记录）")) {
+                showMsg("暂无日志文件")
+                return@Button
+            }
             val logFile = java.io.File(context.filesDir, "logs/jarvis_log_${System.currentTimeMillis()}.txt")
             logFile.parentFile?.mkdirs()
-            logFile.writeText("JARVIS 日志导出\n时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())}\n")
+            val header = "JARVIS 日志导出\n时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())}\n"
+            val body = buildString {
+                append(header)
+                if (latest != null) {
+                    append("\n########## ${latest.name} ##########\n")
+                    append(runCatching { latest.readText() }.getOrDefault("（读取失败）"))
+                }
+                if (crashText.isNotBlank() && crashText != "（无崩溃记录）") {
+                    append("\n\n")
+                    append(crashText)
+                }
+            }
+            logFile.writeText(body)
             showMsg("日志已导出: ${logFile.absolutePath}")
         }) { Text("导出日志") }
         Spacer(Modifier.width(8.dp))
@@ -1046,15 +1064,38 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     Spacer(Modifier.height(16.dp))
     Text("界面自定义", style = MaterialTheme.typography.bodyMedium)
     Spacer(Modifier.height(8.dp))
-    Button(onClick = {
-        // 更换背景图
-        showMsg("更换背景图功能已触发")
-    }) { Text("更换背景图") }
+    val uiRepo = remember {
+        runCatching {
+            org.koin.core.context.GlobalContext.get().get<com.jarvis.pineapple.ui.theme.UiCustomizationRepository>()
+        }.getOrElse { com.jarvis.pineapple.ui.theme.UiCustomizationRepository(context) }
+    }
+    val currentColor by uiRepo.themeColor.collectAsState()
+    val bgPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            uiRepo.setBackgroundUri(uri.toString())
+            showMsg("背景图已更新")
+        }
+    }
+    Button(onClick = { bgPicker.launch(arrayOf("image/*")) }) { Text("更换背景图") }
     Spacer(Modifier.height(8.dp))
-    Button(onClick = {
-        // 自定义主题颜色
-        showMsg("自定义主题颜色功能已触发")
-    }) { Text("自定义主题颜色") }
+    Text("主题颜色", fontSize = 13.sp)
+    com.jarvis.pineapple.ui.theme.UiCustomizationRepository.PRESET_COLORS.forEach { (name, argb) ->
+        val selected = currentColor == argb
+        OutlinedButton(onClick = {
+            uiRepo.setThemeColor(argb)
+            showMsg("主题色已设为$name")
+        }) { Text(if (selected) "当前：$name" else name) }
+        Spacer(Modifier.height(4.dp))
+    }
+    OutlinedButton(onClick = {
+        uiRepo.clearThemeColor()
+        showMsg("已恢复默认主题色")
+    }) { Text("恢复默认主题色") }
 }
 
 /** 将开关状态同步到真实的 WakeEngine（唤醒源启停）。 */

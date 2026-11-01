@@ -4,12 +4,17 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 /**
  * 单元测试：自主决策模块（仅测试无 Android Context 依赖的类）
  */
 class AutonomousModulesTest {
+
+    @get:Rule
+    val tmp = TemporaryFolder()
 
     @Test
     fun `TaskScheduler schedules and runs by priority`() {
@@ -50,5 +55,27 @@ class AutonomousModulesTest {
         val notifier = ProactiveNotifier()
         notifier.notify("test_type", "test_message", ProactiveNotifier.Severity.CRITICAL)
         assertTrue(true)
+    }
+
+    @Test
+    fun `emergency protocol reports missing permissions`() {
+        assertEquals(
+            "缺少 SEND_SMS；缺少 CALL_PHONE",
+            EmergencyProtocol.missingMessage(listOf("缺少 SEND_SMS", "缺少 CALL_PHONE"))
+        )
+        assertEquals("应急流程已执行", EmergencyProtocol.missingMessage(emptyList()))
+    }
+
+    @Test
+    fun `memory system export then import restores facts`() {
+        val src = MemorySystem(tmp.newFile("memories.json"), tmp.newFolder("archive"))
+        src.rememberFact("用户喜欢红茶")
+        val json = src.exportMemories()
+        assertTrue(json.contains("用户喜欢红茶"))
+
+        val dest = MemorySystem(tmp.newFile("imported.json"), tmp.newFolder("archive2"))
+        assertTrue(dest.importMemories(json))
+        assertEquals(1, dest.search("红茶").size)
+        assertFalse(dest.importMemories("{not-json"))
     }
 }

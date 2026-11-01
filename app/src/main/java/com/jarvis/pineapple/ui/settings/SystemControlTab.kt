@@ -162,11 +162,20 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     SectionCard("系统设置与媒体 (#57-#60)") {
         Text(systemInfo, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row {
-            Button(onClick = { settings.setWifiEnabled(true); systemInfo = "已请求开启 WiFi"; showMsg(systemInfo) }) { Text("开 WiFi") }
+            Button(onClick = {
+                systemInfo = if (settings.setWifiEnabled(true)) "已请求开启 WiFi" else "缺少 CHANGE_WIFI_STATE 权限"
+                showMsg(systemInfo)
+            }) { Text("开 WiFi") }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { settings.setWifiEnabled(false); systemInfo = "已请求关闭 WiFi"; showMsg(systemInfo) }) { Text("关 WiFi") }
+            OutlinedButton(onClick = {
+                systemInfo = if (settings.setWifiEnabled(false)) "已请求关闭 WiFi" else "缺少 CHANGE_WIFI_STATE 权限"
+                showMsg(systemInfo)
+            }) { Text("关 WiFi") }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { settings.setBluetoothEnabled(true); systemInfo = "已请求开启蓝牙"; showMsg(systemInfo) }) { Text("开蓝牙") }
+            OutlinedButton(onClick = {
+                systemInfo = if (settings.setBluetoothEnabled(true)) "已请求开启蓝牙" else "缺少 BLUETOOTH 权限"
+                showMsg(systemInfo)
+            }) { Text("开蓝牙") }
         }
         Row {
             Button(onClick = { media.playPause(); systemInfo = "播放/暂停已切换"; showMsg(systemInfo) }) { Text("播放/暂停") }

@@ -25,46 +25,46 @@
 - [x] 2. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
-- [ ] 2.1 虚拟机 PRoot 真实路径
+- [x] 2.1 虚拟机 PRoot 真实路径
   - ABI 匹配二进制、真实下载校验、终端走 ProotManager
   - 缺失组件时中文错误，禁止假 shell
-  - [ ]* 2.1.1 运行 VmManagerTest、VmSubsystemIntegrationTest
+  - [x]* 2.1.1 运行 VmManagerTest、VmSubsystemIntegrationTest
 
-- [ ] 2.2 系统控制与权限门面
+- [x] 2.2 系统控制与权限门面
   - 电话短信日程提醒导航媒体设置跨应用；无权限不假成功
   - 提醒到期发通知
-  - [ ]* 2.2.1 运行 PermissionControllerTest
+  - [x]* 2.2.1 运行 PermissionControllerTest
 
-- [ ] 3. 检查点 - 确保所有测试通过
+- [x] 3. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
-- [ ] 3.1 智能家居真实传输或明确未检测到
+- [x] 3.1 智能家居真实传输或明确未检测到
   - DeviceTransport 真实请求；扫描空列表可测试
-  - [ ]* 3.1.1 运行 SmartHomeAdapterTest、SmartHubSubsystemIntegrationTest
+  - [x]* 3.1.1 运行 SmartHomeAdapterTest、SmartHubSubsystemIntegrationTest
 
-- [ ] 3.2 感知层去掉硬编码成功
+- [x] 3.2 感知层去掉硬编码成功
   - 传感器/ML Kit 真实调用；无相机权限失败可测
-  - [ ]* 3.2.1 运行 ObjectDetectorTest
+  - [x]* 3.2.1 运行 ObjectDetectorTest
 
-- [ ] 3.3 健康模块去掉假生命体征
+- [x] 3.3 健康模块去掉假生命体征
   - 无硬件时测量失败；用药提醒注册 AlarmManager
-  - [ ]* 3.3.1 运行 HealthModulesTest
+  - [x]* 3.3.1 运行 HealthModulesTest
 
-- [ ] 4. 检查点 - 确保所有测试通过
+- [x] 4. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
-- [ ] 4.1 安全中心与设备管理员
+- [x] 4.1 安全中心与设备管理员
   - Manifest + device_admin；未激活拒绝 lock/wipe
   - 加密走 CryptoManager
 
-- [ ] 4.2 自主决策、记忆、调度、插件
+- [x] 4.2 自主决策、记忆、调度、插件
   - 启动注册能力画像；记忆导入导出；应急动作走系统 API 或报缺权限
-  - [ ]* 4.2.1 运行 AutonomousModulesTest
+  - [x]* 4.2.1 运行 AutonomousModulesTest
 
-- [ ] 4.3 设置十标签绑定真实 Manager
+- [x] 4.3 设置十标签绑定真实 Manager
   - 禁止假日志/假声线/空 onClick
 
-- [ ] 5. 检查点 - 确保所有测试通过
+- [x] 5. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
 - [ ] 5.1 全量回归并打包 Debug APK

@@ -1105,4 +1105,17 @@ class SecurityManager(private val context: Context) {
     enum class SecurityProtocol {
         LOCKDOWN, DATA_WIPE, SECURE_BOOT, ENCRYPTED_COMMUNICATION
     }
+
+    companion object {
+        const val ADMIN_INACTIVE = "设备管理器未激活"
+        const val ADMIN_ACTIVATION_ACTION = "android.app.action.ADD_DEVICE_ADMIN"
+
+        fun lockResult(adminActive: Boolean): Boolean = adminActive
+
+        fun wipeResult(adminActive: Boolean): Boolean = adminActive
+
+        fun adminActivationIntent(): android.content.Intent {
+            return android.content.Intent(ADMIN_ACTIVATION_ACTION)
+        }
+    }
 }

@@ -1,7 +1,9 @@
 package com.jarvis.pineapple.security
 
+import com.jarvis.pineapple.system.PermissionGate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,5 +45,32 @@ class PermissionControllerTest {
     fun `default level is owner`() {
         val c = PermissionController()
         assertEquals(PermissionLevel.OWNER, c.getLevel())
+    }
+
+    @Test
+    fun `permission gate denies without fake success`() {
+        assertFalse(PermissionGate.phoneCallAllowed(false))
+        assertFalse(PermissionGate.smsSendAllowed(false))
+        assertFalse(PermissionGate.calendarWriteAllowed(false))
+        assertFalse(PermissionGate.wifiChangeAllowed(false))
+        assertFalse(PermissionGate.bluetoothChangeAllowed(false))
+        assertFalse(PermissionGate.brightnessWriteAllowed(false))
+        assertEquals("缺少 CALL_PHONE 权限", PermissionGate.deniedMessage("CALL_PHONE"))
+        assertEquals("缺少 SEND_SMS 权限", PermissionGate.allowOrDenied(false, "SEND_SMS"))
+        assertNull(PermissionGate.allowOrDenied(true, "CALL_PHONE"))
+        assertTrue(PermissionGate.phoneCallAllowed(true))
+    }
+
+    @Test
+    fun `lock and wipe refuse when device admin inactive`() {
+        assertFalse(SecurityManager.lockResult(false))
+        assertFalse(SecurityManager.wipeResult(false))
+        assertTrue(SecurityManager.lockResult(true))
+        assertTrue(SecurityManager.wipeResult(true))
+        assertEquals("设备管理器未激活", SecurityManager.ADMIN_INACTIVE)
+        assertEquals(
+            "android.app.action.ADD_DEVICE_ADMIN",
+            SecurityManager.ADMIN_ACTIVATION_ACTION
+        )
     }
 }

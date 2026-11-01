@@ -16,18 +16,33 @@ class SystemSettingsController(
 ) {
 
     @SuppressLint("MissingPermission")
-    fun setWifiEnabled(enabled: Boolean) {
+    fun setWifiEnabled(enabled: Boolean): Boolean {
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.CHANGE_WIFI_STATE
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!PermissionGate.wifiChangeAllowed(granted)) return false
         @Suppress("DEPRECATION")
         val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         @Suppress("DEPRECATION")
         wifi.isWifiEnabled = enabled
+        return true
     }
 
     @SuppressLint("MissingPermission")
-    fun setBluetoothEnabled(enabled: Boolean) {
+    fun setBluetoothEnabled(enabled: Boolean): Boolean {
+        val permission = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            android.Manifest.permission.BLUETOOTH_CONNECT
+        } else {
+            android.Manifest.permission.BLUETOOTH_ADMIN
+        }
+        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+            context, permission
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!PermissionGate.bluetoothChangeAllowed(granted)) return false
         @Suppress("DEPRECATION")
         val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         if (enabled) adapter?.enable() else adapter?.disable()
+        return true
     }
 
     fun toggleAirplaneMode() {
@@ -69,7 +84,9 @@ class SystemSettingsController(
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
     }
 
-    fun setBrightness(brightness: Int) {
+    fun setBrightness(brightness: Int): Boolean {
+        if (!PermissionGate.brightnessWriteAllowed(Settings.System.canWrite(context))) return false
         Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
+        return true
     }
 }

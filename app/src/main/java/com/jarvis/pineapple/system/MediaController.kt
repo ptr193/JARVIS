@@ -46,13 +46,15 @@ class MediaController(private val context: Context) {
     }
 
     /** 设置屏幕亮度 (0-255) */
-    fun setBrightness(brightness: Int) {
+    fun setBrightness(brightness: Int): Boolean {
+        if (!PermissionGate.brightnessWriteAllowed(Settings.System.canWrite(context))) return false
         val clamped = brightness.coerceIn(0, 255)
         Settings.System.putInt(
             context.contentResolver,
             Settings.System.SCREEN_BRIGHTNESS,
             clamped
         )
+        return true
     }
 
     /** 播放/暂停（通过媒体会话） */

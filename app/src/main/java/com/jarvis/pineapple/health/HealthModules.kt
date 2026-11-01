@@ -183,6 +183,11 @@ class VitalSignsMonitor(private val context: Context) {
         private val HR_MEASUREMENT: UUID = UUID.fromString("00002A37-0000-1000-8000-00805F9B34FB")
         private val CLIENT_CHARACTERISTIC_CONFIG: UUID =
             UUID.fromString("00002902-0000-1000-8000-00805F9B34FB")
+
+        const val NO_HEART_RATE_HARDWARE = "设备无心率传感器"
+
+        fun unavailableMessage(hasSensor: Boolean): String? =
+            if (hasSensor) null else NO_HEART_RATE_HARDWARE
     }
 }
 
