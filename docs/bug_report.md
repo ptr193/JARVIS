@@ -224,4 +224,16 @@
 
 ---
 
-*文档版本：v2.4 | 生成日期：2026-10-22 | 上一版本：v2.3（2026-10-21）*
+---
+
+## 8. 2026-11-01 阶段 5.1 记录
+
+- **单元测试**：`./gradlew testDebugUnitTest` → 102/102 通过。
+- **Debug 构建**：`./gradlew assembleDebug` EXIT=0，产物 `apk/jarvis-debug.apk`（218,835,095 B）。
+- **lintDebug**：34 errors / 49 warnings，按计划记录、不以警告阻断 Debug 交付。
+  - MissingPermission 17（BLE GATT / 电话，运行时已有权限门面）
+  - NewApi 15（ShortcutInfo API 25 vs minSdk 24）
+  - StateFlowValueCalledInComposition 2
+- **未做**：`assembleRelease`（等待实机清单）。
+
+*文档版本：v2.5 | 生成日期：2026-11-01 | 上一版本：v2.4（2026-10-22）*

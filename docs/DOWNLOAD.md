@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-10-20 | 版本：v0.0.1（Debug，未经实机验证）
+> 生成日期：2026-11-01 | 版本：v0.0.1（Debug，未经实机验证）
 
 ---
 
@@ -27,31 +27,27 @@
 
 ```text
 版本：   v0.0.1-debug
-路径：   JARVIS/apk/jarvis-debug.apk
-大小：   218,721,777 字节（208.6 MB）
-SHA256： 613d87a1fb4d99152c26440da9c27960e3785c29b255e4480dc356305ae2c741
-构建：   2026-10-22 14:30 UTC
-构建命令：gradle -Pandroid.aapt2FromMavenOverride=<aapt2> clean assembleDebug
+路径：   apk/jarvis-debug.apk
+大小：   218,835,095 字节（208.7 MB）
+SHA256： 92da4ca5ac09e4857ba7020b04ad52a9250a87583867b9c905128f836ffb0ffd
+构建：   2026-11-01 16:21 UTC
+构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
+Git：    origin/main 00683f1
 ```
 
 **完整性校验：**
 
 ```bash
-sha256sum jarvis-debug.apk
-# 期望：613d87a1fb4d99152c26440da9c27960e3785c29b255e4480dc356305ae2c741
+sha256sum apk/jarvis-debug.apk
 ```
 
-> APK 时间戳（14:30）晚于全部源码最新修改时间，即 APK 与当前源码一致。
->
-> 本次构建针对**第二轮模拟器测试**修复启动崩溃（BUG-2026-1025）。
-> 第二轮证明第一版修复（仅调整 onCreate 内顺序）**不足以解决**问题，
-> 因为 5 秒时限的时钟在 `startForegroundService()` 被调用时即开始，
-> 而崩溃根因是主线程被唤醒引擎初始化阻塞。本版改为：
-> ① 唤醒引擎初始化移出主线程（`Dispatchers.Default`）；
-> ② 保活服务延后至首帧渲染完成后启动（`decorView.post`）；
-> ③ 自主任务循环首轮延后 15 秒，避开冷启动窗口；
-> ④ `onStartCommand` 增加幂等 `startForeground()` 兜底。
-> 详见 `docs/bug_report.md`。
+期望：
+
+```text
+92da4ca5ac09e4857ba7020b04ad52a9250a87583867b9c905128f836ffb0ffd
+```
+
+本包对应 2.1–4.3 失败关闭路径与设置页真实绑定。大文件不入 Git，工作区路径为 `apk/jarvis-debug.apk`。Release 仍阻断。
 
 ---
 
@@ -84,7 +80,7 @@ sha256sum jarvis-debug.apk
 ## 5. 源码包
 
 - 源码位于本目录，可直接使用。
-- 无 git 仓库（当前环境非 git 环境），以目录形式交付。
+- 远程仓库 `https://github.com/ptr193/JARVIS`，分支 `main`。
 - 构建产物 `app/build/` 为中间产物，可删除后重新构建。
 
 ---
@@ -98,4 +94,4 @@ sha256sum jarvis-debug.apk
 
 ---
 
-*文档版本：v2.0 | 生成日期：2026-10-20*
+*文档版本：v3.0 | 生成日期：2026-11-01*

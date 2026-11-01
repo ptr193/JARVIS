@@ -67,7 +67,7 @@
 - [x] 5. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
-- [ ] 5.1 全量回归并打包 Debug APK
+- [x] 5.1 全量回归并打包 Debug APK
   - testDebugUnitTest、lintDebug 记录、assembleDebug
   - 更新 bug_report / regression_test_report / DOWNLOAD.md
   - 验收：测试全绿；Debug APK 可供用户实机
