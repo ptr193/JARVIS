@@ -1,0 +1,4 @@
+[2026-11-03 00:51:05.438] [JarvisApp] onCreate 开始
+[2026-11-03 00:51:05.548] [JarvisApp] onCreate 完成，等待 MainActivity 启动
+[2026-11-03 00:51:05.612] [MainActivity] onCreate 开始
+[2026-11-03 00:51:05.794] [MainActivity] setContent 完成，等待首帧

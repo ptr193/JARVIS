@@ -1,0 +1,8 @@
+JARVIS 启动日志
+时间: 2026-11-03 00:51:05
+包名: com.jarvis.pineapple.debug
+设备: HONOR ALT-AN00
+Android: 14 (API 34)
+ABI: arm64-v8a, armeabi-v7a, armeabi
+ROM: ALT-AN10 8.0.0.617(C00E603R104P1)
+CPU_ABI: arm64-v8a
