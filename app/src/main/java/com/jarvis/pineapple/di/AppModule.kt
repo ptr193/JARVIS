@@ -103,7 +103,7 @@ val appModule = module {
 
     // Model layer
     single { UserLocalModel(get()) }
-    single { ModelScheduler(userModel = get(), liteRtModels = BuiltInModels.liteRtModels(get())).also { ModelRegistry.scheduler = it } }
+    single { ModelScheduler(userModel = get<UserLocalModel>(), liteRtModels = BuiltInModels.liteRtModels(get())).also { ModelRegistry.scheduler = it } }
     single { ModelCapabilityScheduler(get()).also { it.registerDefaultProfiles() } }
     single { ModelDownloadManager(get()) }
     single { ModelImportManager(get()) }

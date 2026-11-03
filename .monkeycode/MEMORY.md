@@ -32,8 +32,8 @@ Entries discovered by the Agent during task execution should follow this format:
 ## Entries
 
 [仓库协作与交付流程]
-- Date: 2026-10-30
-- Context: 用户导入 JARVIS 压缩包并给出后续工作前提
+- Date: 2026-11-02
+- Context: 用户导入 JARVIS 压缩包并给出后续工作前提；后续补充 APK 压缩与直链要求
 - Instructions:
   - 仅使用 origin/main，不使用其他分支
   - 每完成一个可验收步骤后立即提交并推送到原仓库 `https://github.com/ptr193/JARVIS`
@@ -42,6 +42,8 @@ Entries discovered by the Agent during task execution should follow this format:
   - Debug APK 仅在设计文档闭环后打包，由用户实机审查
   - 未完成实机测试前禁止打包 Release
   - GitHub token 只用于 push，不得写入仓库、文档或聊天回复
+  - APK 体积大于 100MB 时先打成 `.7z` 再上传，上传后提供压缩包下载直链
+  - 压缩包已解压入仓，禁止重复解压
 
 [Project Knowledge Summary]
 - Date: 2026-10-30

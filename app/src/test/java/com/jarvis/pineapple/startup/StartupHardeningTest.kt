@@ -153,4 +153,23 @@ class StartupHardeningTest {
             moduleSrc.contains("single { DatabaseQueryEngine(get()) }")
         )
     }
+
+    @Test
+    fun modelSchedulerBindsUserLocalModelNotAiModelInterface() {
+        val moduleSrc = readSource(
+            "app/src/main/java/com/jarvis/pineapple/di/AppModule.kt"
+        )
+        assertTrue(
+            "UserLocalModel 必须按具体类型注册",
+            moduleSrc.contains("single { UserLocalModel(get()) }")
+        )
+        assertTrue(
+            "ModelScheduler.userModel 必须 get<UserLocalModel>()，禁止无类型 get() 解析 AiModel 接口（BUG-2026-1103）",
+            moduleSrc.contains("ModelScheduler(userModel = get<UserLocalModel>()")
+        )
+        assertTrue(
+            "AppModule 不得把 AiModel 接口注册成唯一 bean 定义来源",
+            !moduleSrc.contains("single<AiModel>")
+        )
+    }
 }

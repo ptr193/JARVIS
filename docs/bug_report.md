@@ -236,4 +236,15 @@
   - StateFlowValueCalledInComposition 2
 - **未做**：`assembleRelease`（等待实机清单）。
 
-*文档版本：v2.5 | 生成日期：2026-11-01 | 上一版本：v2.4（2026-10-22）*
+---
+
+## 9. 2026-11-03 实机启动闪退（BUG-2026-1103）— P0
+
+- **发现阶段**：用户 HONOR ALT-AN00（Android 14 / API 34）安装 `apk/jarvis-debug.apk.7z` 后启动即闪退
+- **现象**：`JarvisApp.onCreate` 与 `MainActivity.setContent` 完成，Compose 首帧解析 `ModelScheduler` 时崩溃
+- **堆栈**：`org.koin.core.error.InstanceCreationException` → `NoBeanDefFoundException: No definition found for type 'com.jarvis.pineapple.model.AiModel'`
+- **根因**：`AppModule` 以具体类型注册 `single { UserLocalModel(get()) }`，但 `ModelScheduler(userModel = get())` 的无类型 `get()` 按构造参数接口 `AiModel` 解析，Koin 找不到该 bean
+- **修复**：改为 `get<UserLocalModel>()`；`StartupHardeningTest.modelSchedulerBindsUserLocalModelNotAiModelInterface` 锁死该绑定
+- **验证**：`./gradlew testDebugUnitTest` BUILD SUCCESSFUL（2026-11-03）
+
+*文档版本：v2.6 | 生成日期：2026-11-03 | 上一版本：v2.5（2026-11-01）*
