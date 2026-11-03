@@ -82,7 +82,7 @@
   - 确认 debug.keystore 可用
   - 对应 Requirement 2.1
 
-- [ ] 6.1 验证现有测试与 Debug 构建仍可通过
+- [x] 6.1 验证现有测试与 Debug 构建仍可通过
   - 运行 `./gradlew testDebugUnitTest`
   - 运行 `./gradlew assembleDebug`
   - 将结果写入 `docs/test_report_stage1.md` 更新段

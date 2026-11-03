@@ -99,4 +99,19 @@ APK：app/build/outputs/apk/debug/app-debug.apk  218,738,213 B
 
 ---
 
-*文档版本：v2.1 | 生成日期：2026-10-31 | 上一版本：v2.0（2026-10-20，64 用例）*
+---
+
+## 6. 2026-11-03 复测（BUG-2026-1103）
+
+| 项目 | 结果 |
+|------|------|
+| `testDebugUnitTest` | BUILD SUCCESSFUL，约 3m 1s |
+| `assembleDebug` | BUILD SUCCESSFUL，约 5m 24s |
+| APK | `apk/jarvis-debug.apk` 218,754,597 B |
+| 7z | `apk/jarvis-debug.apk.7z` 79,368,100 B |
+| APK SHA256 | `a4e6923b51adef4966d09019318fa1448eb88a1da184f02549b035cd9936c50c` |
+| 7z SHA256 | `fde219eee139bea585cf6d30891e91e16dabebb6c5f494bb4f3f3c5b02b71f7b` |
+
+本轮新增 `StartupHardeningTest.modelSchedulerBindsUserLocalModelNotAiModelInterface`，锁死 `get<UserLocalModel>()`。
+
+*文档版本：v2.2 | 生成日期：2026-11-03 | 上一版本：v2.1（2026-10-31）*

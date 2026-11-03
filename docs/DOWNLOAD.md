@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-01 | 版本：v0.0.1（Debug，未经实机验证）
+> 生成日期：2026-11-03 | 版本：v0.0.1（Debug，含 BUG-2026-1103 启动闪退修复）
 
 ---
 
@@ -25,29 +25,43 @@
 
 ## 2. Debug APK（可直接下载）
 
+APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
+
 ```text
-版本：   v0.0.1-debug
-路径：   apk/jarvis-debug.apk
-大小：   218,835,095 字节（208.7 MB）
-SHA256： 92da4ca5ac09e4857ba7020b04ad52a9250a87583867b9c905128f836ffb0ffd
-构建：   2026-11-01 16:21 UTC
+版本：   v0.0.1-debug（BUG-2026-1103）
+压缩包： apk/jarvis-debug.apk.7z
+压缩包大小： 79,368,100 字节（75.7 MB）
+压缩包 SHA256： fde219eee139bea585cf6d30891e91e16dabebb6c5f494bb4f3f3c5b02b71f7b
+APK 大小： 218,754,597 字节（208.6 MB）
+APK SHA256： a4e6923b51adef4966d09019318fa1448eb88a1da184f02549b035cd9936c50c
+构建：   2026-11-03
 构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
-Git：    origin/main 00683f1
+Git：    origin/main（本提交）
+直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
 ```
 
-**完整性校验：**
+**下载与校验：**
 
 ```bash
-sha256sum apk/jarvis-debug.apk
+# 下载压缩包
+# https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
+
+sha256sum apk/jarvis-debug.apk.7z
 ```
 
 期望：
 
 ```text
-92da4ca5ac09e4857ba7020b04ad52a9250a87583867b9c905128f836ffb0ffd
+fde219eee139bea585cf6d30891e91e16dabebb6c5f494bb4f3f3c5b02b71f7b
 ```
 
-本包对应 2.1–4.3 失败关闭路径与设置页真实绑定。大文件不入 Git，工作区路径为 `apk/jarvis-debug.apk`。Release 仍阻断。
+解压后校验 APK：
+
+```text
+a4e6923b51adef4966d09019318fa1448eb88a1da184f02549b035cd9936c50c
+```
+
+本包修复 HONOR ALT-AN00 启动时 Koin 无法创建 `ModelScheduler` 的闪退（BUG-2026-1103）。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
 
 ---
 
@@ -94,4 +108,4 @@ sha256sum apk/jarvis-debug.apk
 
 ---
 
-*文档版本：v3.0 | 生成日期：2026-11-01*
+*文档版本：v3.1 | 生成日期：2026-11-03*
