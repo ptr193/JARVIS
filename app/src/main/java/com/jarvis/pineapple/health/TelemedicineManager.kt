@@ -90,7 +90,7 @@ class TelemedicineManager(private val context: Context) {
      */
     private fun loadConfiguredDoctors(): List<DoctorInfo> {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val raw = prefs.getString(KEY_DOCTORS, null) ?: return DEFAULT_DOCTORS
+        val raw = prefs.getString(KEY_DOCTORS, null) ?: return emptyList()
         return try {
             val arr = org.json.JSONArray(raw)
             (0 until arr.length()).map { i ->
@@ -105,7 +105,7 @@ class TelemedicineManager(private val context: Context) {
                 )
             }
         } catch (e: Exception) {
-            DEFAULT_DOCTORS
+            emptyList()
         }
     }
 
@@ -129,17 +129,31 @@ class TelemedicineManager(private val context: Context) {
             .edit().putString(KEY_DOCTORS, arr.toString()).apply()
     }
 
+    data class ConsultationStart(
+        val success: Boolean,
+        val message: String,
+        val session: ConsultationSession? = null
+    )
+
     /**
-     * 发起会诊
+     * 发起会诊。未配置平台地址或无医生时失败关闭，不写入会话。
      */
-    fun initiateConsultation(doctorId: String, patientId: String): ConsultationSession {
+    fun initiateConsultation(doctorId: String, patientId: String): ConsultationStart {
         val doctor = _doctors.value.find { it.doctorId == doctorId }
+        val reason = consultationUnavailableReason(telemedicineEndpoint(), doctor != null)
+        if (reason != null) {
+            _sessionState.value = SessionState(
+                status = SessionStatus.ERROR,
+                error = reason
+            )
+            return ConsultationStart(success = false, message = reason)
+        }
 
         val session = ConsultationSession(
             sessionId = "consult_${System.currentTimeMillis()}",
             doctorId = doctorId,
-            doctorName = doctor?.name ?: "未知医生",
-            doctorSpecialty = doctor?.specialty ?: "未知科室",
+            doctorName = doctor!!.name,
+            doctorSpecialty = doctor.specialty,
             patientId = patientId,
             patientName = "患者",
             status = SessionStatus.CONNECTING,
@@ -160,8 +174,16 @@ class TelemedicineManager(private val context: Context) {
             startTime = System.currentTimeMillis()
         )
 
-        return session
+        return ConsultationStart(
+            success = true,
+            message = "已向 ${session.doctorName} 发起会诊",
+            session = session
+        )
     }
+
+    private fun telemedicineEndpoint(): String =
+        context.getSharedPreferences("jarvis_health", Context.MODE_PRIVATE)
+            .getString("telemedicine_endpoint", "")?.trim().orEmpty()
 
     /**
      * 接受会诊
@@ -364,16 +386,13 @@ class TelemedicineManager(private val context: Context) {
     companion object {
         private const val PREFS = "jarvis_telemedicine"
         private const val KEY_DOCTORS = "doctors"
+        const val NO_ENDPOINT = "未配置远程医疗平台地址，请在设置中填写 telemedicine_endpoint"
+        const val NO_DOCTOR = "暂无在线医生"
 
-        /**
-         * 默认专家目录。对接真实医疗平台后由平台接口覆盖（REQ-05：接口即插即用）。
-         * 这些条目用于在未接入平台时提供可查看/可发起会话的本地目录，非伪造在线状态。
-         */
-        internal val DEFAULT_DOCTORS: List<DoctorInfo> = listOf(
-            DoctorInfo("dr_general_01", "全科在线医生", "全科", "平台医生池", 4.8f, true),
-            DoctorInfo("dr_cardio_01", "心血管科医生", "心血管科", "平台医生池", 4.7f, true),
-            DoctorInfo("dr_pediatrics_01", "儿科医生", "儿科", "平台医生池", 4.9f, true),
-            DoctorInfo("dr_derm_01", "皮肤科医生", "皮肤科", "平台医生池", 4.6f, true)
-        )
+        fun consultationUnavailableReason(endpoint: String?, doctorAvailable: Boolean): String? {
+            if (endpoint.isNullOrBlank()) return NO_ENDPOINT
+            if (!doctorAvailable) return NO_DOCTOR
+            return null
+        }
     }
 }

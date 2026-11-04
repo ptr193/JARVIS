@@ -74,4 +74,33 @@ class HealthModulesTest {
         )
         assertEquals(null, VitalSignsMonitor.unavailableMessage(hasSensor = true))
     }
+
+    @Test
+    fun `consultation fails closed without platform endpoint`() {
+        assertEquals(
+            TelemedicineManager.NO_ENDPOINT,
+            TelemedicineManager.consultationUnavailableReason("", true)
+        )
+        assertEquals(
+            TelemedicineManager.NO_ENDPOINT,
+            TelemedicineManager.consultationUnavailableReason(null, false)
+        )
+        assertTrue(TelemedicineManager.NO_ENDPOINT.contains("未配置远程医疗平台地址"))
+    }
+
+    @Test
+    fun `consultation fails closed without doctor when endpoint is set`() {
+        assertEquals(
+            TelemedicineManager.NO_DOCTOR,
+            TelemedicineManager.consultationUnavailableReason("https://telemed.example.com/api", false)
+        )
+    }
+
+    @Test
+    fun `consultation allowed only with endpoint and doctor`() {
+        assertEquals(
+            null,
+            TelemedicineManager.consultationUnavailableReason("https://telemed.example.com/api", true)
+        )
+    }
 }

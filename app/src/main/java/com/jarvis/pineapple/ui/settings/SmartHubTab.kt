@@ -293,7 +293,8 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
         doctors.take(3).forEach { Text("· ${it.name} ${it.specialty} @ ${it.hospital}", fontSize = 12.sp) }
         Button(onClick = {
             val d = doctors.firstOrNull()
-            if (d == null) showMsg("暂无在线医生") else showMsg("已向 ${d.name} 发起会诊")
+            val result = telemedicine.initiateConsultation(d?.doctorId.orEmpty(), "local")
+            showMsg(result.message)
         }) { Text("发起会诊") }
     }
 
