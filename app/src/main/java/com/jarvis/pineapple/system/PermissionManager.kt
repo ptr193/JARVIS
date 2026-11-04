@@ -53,6 +53,11 @@ object PermissionManager {
         android.Manifest.permission.RECORD_AUDIO
     )
 
+    /** 相机相关权限 */
+    val CAMERA_PERMISSIONS = arrayOf(
+        android.Manifest.permission.CAMERA
+    )
+
     /**
      * 检查权限是否已授予
      */
@@ -114,6 +119,13 @@ object PermissionManager {
      */
     fun requestMicrophonePermissions(activity: Activity) {
         requestPermissions(activity, MICROPHONE_PERMISSIONS, 1006)
+    }
+
+    /**
+     * 请求相机权限
+     */
+    fun requestCameraPermissions(activity: Activity) {
+        requestPermissions(activity, CAMERA_PERMISSIONS, 1007)
     }
 
     /**

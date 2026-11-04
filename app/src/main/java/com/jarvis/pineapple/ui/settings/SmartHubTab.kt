@@ -45,6 +45,7 @@ import com.jarvis.pineapple.perception.EnvironmentPerception
 import com.jarvis.pineapple.perception.PerceptionManager
 import com.jarvis.pineapple.perception.Position3D
 import com.jarvis.pineapple.smarthome.SmartHomeManager
+import com.jarvis.pineapple.ui.camera.CameraCaptureSection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -295,6 +296,12 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
             if (d == null) showMsg("暂无在线医生") else showMsg("已向 ${d.name} 发起会诊")
         }) { Text("发起会诊") }
     }
+
+    CameraCaptureSection(
+        showMsg = showMsg,
+        showFaceActions = false,
+        showPerceptionActions = true
+    )
 
     SectionCard("AR / 全息") {
         Text(arText, fontSize = 13.sp)

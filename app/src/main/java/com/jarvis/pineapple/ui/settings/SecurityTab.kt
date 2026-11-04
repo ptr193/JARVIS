@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.security.SecurityManager
+import com.jarvis.pineapple.ui.camera.CameraCaptureSection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,6 +85,12 @@ fun SecurityTab(showMsg: (String) -> Unit) {
 
     Text("安全中心", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
+
+    CameraCaptureSection(
+        showMsg = showMsg,
+        showFaceActions = true,
+        showPerceptionActions = false
+    )
 
     SectionCard("安全风险评估 (#45)") {
         Text(securityRisk, fontSize = 13.sp)

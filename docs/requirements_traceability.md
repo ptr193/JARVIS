@@ -74,7 +74,7 @@
 | 30 | 数据记录 | `info/InfoProcessor.kt` | DONE | `logData()`，本轮接入 |
 | 31 | 数据回放 | `info/InfoProcessor.kt` | DONE | `replayData()` 时间窗口回放，本轮接入 |
 | 32 | 数字重建 | `info/InfoProcessor.kt` | DONE | `reconstruct2D/3D()` 真实实现（需输入图像） |
-| 33 | 场景还原 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt` | PARTIAL | 三维重建需多视角输入，能力存在但无采集入口 |
+| 33 | 场景还原 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 场景还原」可拍照后调用 `reconstruct2D` |
 
 ---
 
@@ -82,8 +82,8 @@
 
 | # | 功能 | 代码文件 | 状态 | 证据 |
 |---|------|---------|------|------|
-| 34 | 人脸识别 | `security/SecurityManager.kt`、`perception/MLKitFaceDetector.kt` | PARTIAL | MLKit 真实检测；UI 未接相机预览采集 |
-| 35 | 身份比对 | `security/SecurityManager.kt` | PARTIAL | `compareFaces()` 真实实现；需图像输入 |
+| 34 | 人脸识别 | `security/SecurityManager.kt`、`perception/MLKitFaceDetector.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 安全中心「打开相机拍照 → 人脸识别」走 ML Kit |
+| 35 | 身份比对 | `security/SecurityManager.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 安全中心采集参考人脸后再比对 `compareFaces()` |
 | 36 | 虹膜扫描 | `security/SecurityManager.kt` | RESERVED | 接口 `scanIris()` 预留（普通相机无法采集虹膜） |
 | 37 | 生物验证 | `security/SecurityModules.kt`、`security/SecurityManager.kt` | DONE | `BiometricPrompt` 真实接入 |
 | 38 | 访问权限分级 | `security/SecurityManager.kt`、`ui/settings/SecurityTab.kt` | DONE | `checkPermissionUsage()` 真实扫描，本轮接入 UI |
@@ -156,7 +156,7 @@
 | 91 | 习惯学习 | `perception/BehaviorPredictor.kt` | DONE | `getBehaviorStatistics()`，本轮接入 |
 | 92 | 场景识别 | `perception/EnvironmentPerception.kt` | DONE | `recognizeScene()`，本轮接入 UI |
 | 93 | 环境感知 | `perception/PerceptionManager.kt` | DONE | 本轮接入：智能中枢环境面板 |
-| 94 | 物体检测 | `perception/MLKitObjectDetector.kt`、`perception/ObjectDetector.kt` | PARTIAL | MLKit 真实；UI 未接相机预览 |
+| 94 | 物体检测 | `perception/MLKitObjectDetector.kt`、`perception/ObjectDetector.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 物体检测」走 ML Kit |
 | 95 | 物体追踪 | `perception/PerceptionManager.kt` | DONE | `updateTrackedObjects()`/`markObject()` |
 | 96 | 姿态识别 | `perception/PerceptionManager.kt` | DONE | `getPhoneOrientation()`，本轮接入 |
 | 97 | 手势识别 | `perception/HolographicInterface.kt` | DONE | `handleGesture()` 真实处理 |
@@ -181,8 +181,8 @@
 | 109 | 文字识别 | `perception/PerceptionManager.kt` | DONE | OCR 能力 |
 | 110 | 条形码 | `info/InfoProcessor.kt` | DONE | 已实现 |
 | 111 | 二维码 | `info/InfoProcessor.kt` | DONE | 已实现 |
-| 112 | 文档扫描 | `perception/PerceptionManager.kt` | PARTIAL | 需相机采集入口 |
-| 113 | 实时翻译视觉 | `chat/TranslationEngine.kt` | PARTIAL | 文本翻译已通，视觉链路待相机 |
+| 112 | 文档扫描 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 文档扫描」可拍照后调用 `reconstruct2D` |
+| 113 | 实时翻译视觉 | `chat/TranslationEngine.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 视觉翻译」检测标签后走 `TranslationEngine` |
 | 114 | 全息投影 | `perception/HolographicInterface.kt` | RESERVED | 需全息硬件，接口预留 |
 | 115 | AR 界面 | `perception/HolographicInterface.kt` | DONE | `CameraArInterface` 真实实现，本轮接入 UI |
 | 116 | 精准抓取 | `perception/HolographicInterface.kt` | RESERVED | 需机械臂硬件 |
@@ -235,14 +235,14 @@
 
 | 状态 | 数量 | 占比 |
 |------|------|------|
-| DONE | 112 | 77.8% |
-| PARTIAL | 10 | 6.9% |
+| DONE | 118 | 81.9% |
+| PARTIAL | 4 | 2.8% |
 | RESERVED | 22 | 15.3% |
 | MISSING | 0 | 0% |
 | **合计** | **144** | 100% |
 
-**PARTIAL 明细（10 项）**：#33 场景还原、#34 人脸识别、#35 身份比对、#72 外接显示、#94 物体检测、#99 睡眠监测、#112 文档扫描、#113 实时翻译视觉、其余同源。
-**PARTIAL 共同原因**：均为"能力已实现但需相机/硬件实时采集入口"，非逻辑缺失，不在 REQ-05 禁止的"占位"范畴。
+**PARTIAL 明细（4 项）**：#72 外接显示、#99 睡眠监测，以及同源硬件采集项。
+**PARTIAL 共同原因**：缺外接显示/PPG 长时间采集等硬件条件；相机入口 #33/#34/#35/#94/#112/#113 已于 2026-11-04 接通。
 **RESERVED（22 项）**：#36、#114、#116、#123、#126、#127、#131、#135、#137、#138、#140、#142、#144 等，均为规格书明确预留的科幻/医疗合规/云端算力项。
 
 ---
