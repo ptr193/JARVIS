@@ -247,4 +247,14 @@
 - **修复**：改为 `get<UserLocalModel>()`；`StartupHardeningTest.modelSchedulerBindsUserLocalModelNotAiModelInterface` 锁死该绑定
 - **验证**：`./gradlew testDebugUnitTest` BUILD SUCCESSFUL（2026-11-03）
 
-*文档版本：v2.6 | 生成日期：2026-11-03 | 上一版本：v2.5（2026-11-01）*
+---
+
+## 10. 2026-11-04 远程医疗会诊假成功 — P1
+
+- **发现阶段**：任务 9 失败关闭复核
+- **现象**：智能中枢「发起会诊」在未配置 `telemedicine_endpoint` 时仍用默认医生并提示「已向 … 发起会诊」
+- **根因**：`TelemedicineManager` 硬编码 `DEFAULT_DOCTORS`；UI 未调用 `initiateConsultation`，直接 toast 成功
+- **修复**：去掉默认医生；无平台 URL / 无医生时返回中文错误且不写入会话；`HealthModulesTest` 锁死失败关闭
+- **验证**：`HealthModulesTest` 与 `testDebugUnitTest` BUILD SUCCESSFUL（2026-11-05）
+
+*文档版本：v2.7 | 生成日期：2026-11-05 | 上一版本：v2.6（2026-11-03）*

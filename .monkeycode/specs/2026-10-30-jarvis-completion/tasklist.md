@@ -134,13 +134,13 @@
 - [x] 10. 检查点 - 确保所有测试通过
   - 确保所有测试通过,如有疑问请询问用户
 
-- [ ] 11. 全量回归、打包 Debug APK 并上传 7z
+- [x] 11. 全量回归、打包 Debug APK 并上传 7z
   - `testDebugUnitTest` 全绿后 `assembleDebug`
   - APK 复制到 `apk/jarvis-debug.apk`，压缩为 `apk/jarvis-debug.apk.7z`
   - 更新 `docs/DOWNLOAD.md` SHA256/大小/Git SHA，推送 origin/main
   - 回复压缩包下载直链
   - 对应 Requirement 1.1、Requirement 2.1、Requirement 2.2
 
-- [ ] 11.1 更新回归与 bug 文档
+- [x] 11.1 更新回归与 bug 文档
   - 写入 `docs/regression_test_report.md`、`docs/bug_report.md`、`docs/实施计划.md` 第 8 节状态
   - 对应 Requirement 1.2

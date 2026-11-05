@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-03 | 版本：v0.0.1（Debug，含 BUG-2026-1103 启动闪退修复）
+> 生成日期：2026-11-05 | 版本：v0.0.1（Debug，含相机入口与远程医疗失败关闭）
 
 ---
 
@@ -28,13 +28,13 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（BUG-2026-1103）
+版本：   v0.0.1-debug（相机入口 + 远程医疗失败关闭）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 79,368,100 字节（75.7 MB）
-压缩包 SHA256： fde219eee139bea585cf6d30891e91e16dabebb6c5f494bb4f3f3c5b02b71f7b
-APK 大小： 218,754,597 字节（208.6 MB）
-APK SHA256： a4e6923b51adef4966d09019318fa1448eb88a1da184f02549b035cd9936c50c
-构建：   2026-11-03
+压缩包大小： 79,406,462 字节（75.7 MB）
+压缩包 SHA256： e64c880b89483dcaa69dca05f54839fba2f461dfb051e8b23bb98369971fc228
+APK 大小： 219,077,328 字节（208.9 MB）
+APK SHA256： e6918435c2d764fd27f093a43e551933c3fd374704633fc542a62f4be95c06f2
+构建：   2026-11-05
 构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
 Git：    origin/main（本提交）
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-fde219eee139bea585cf6d30891e91e16dabebb6c5f494bb4f3f3c5b02b71f7b
+e64c880b89483dcaa69dca05f54839fba2f461dfb051e8b23bb98369971fc228
 ```
 
 解压后校验 APK：
 
 ```text
-a4e6923b51adef4966d09019318fa1448eb88a1da184f02549b035cd9936c50c
+e6918435c2d764fd27f093a43e551933c3fd374704633fc542a62f4be95c06f2
 ```
 
-本包修复 HONOR ALT-AN00 启动时 Koin 无法创建 `ModelScheduler` 的闪退（BUG-2026-1103）。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
+本包含相机采集入口与远程医疗无平台 URL 时的失败关闭。BUG-2026-1103 启动闪退修复仍在。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
 
 ---
 
@@ -108,4 +108,4 @@ a4e6923b51adef4966d09019318fa1448eb88a1da184f02549b035cd9936c50c
 
 ---
 
-*文档版本：v3.1 | 生成日期：2026-11-03*
+*文档版本：v3.2 | 生成日期：2026-11-05*
