@@ -47,7 +47,8 @@ fun JarvisTheme(
 
     val colors = if (darkTheme) DarkColors else LightColors
     val finalColors = if (customColor != 0L) {
-        colors.copy(primary = Color(customColor))
+        val accent = Color(UiCustomizationRepository.toArgb(customColor))
+        colors.copy(primary = accent, secondary = accent)
     } else {
         colors
     }

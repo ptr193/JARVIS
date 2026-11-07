@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -44,8 +45,11 @@ import com.jarvis.pineapple.wake.NotificationWakeDetector
 import com.jarvis.pineapple.wake.TileWakeDetector
 import com.jarvis.pineapple.wake.WakeEngine
 import com.jarvis.pineapple.wake.WakeSource
+import com.jarvis.pineapple.model.ModelDownloadManager
+import com.jarvis.pineapple.model.OnboardingGate
 import com.jarvis.pineapple.ui.chat.ChatScreen
 import com.jarvis.pineapple.ui.model.ModelSelectionScreen
+import com.jarvis.pineapple.ui.onboarding.ModelOnboardingScreen
 import com.jarvis.pineapple.ui.settings.SettingsScreen
 import com.jarvis.pineapple.ui.theme.JarvisTheme
 import com.jarvis.pineapple.ui.vm.VirtualMachineScreen
@@ -180,11 +184,32 @@ fun JarvisApp() {
         }
     }
     val modelScheduler = get<ModelScheduler>()
+    val downloadManager = get<ModelDownloadManager>()
     val availableModels by modelScheduler.availableModels.collectAsState()
     val activeModel by modelScheduler.activeModel.collectAsState()
+    val downloadStates by downloadManager.downloadStates.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onboardingPrefs = remember { context.getSharedPreferences(OnboardingGate.PREFS, android.content.Context.MODE_PRIVATE) }
+    var showOnboarding by remember {
+        mutableStateOf(
+            OnboardingGate(
+                hasLocalModel = { downloadStates.values.any { it.status == com.jarvis.pineapple.model.DownloadStatus.COMPLETED } }
+            ).shouldShowWizard() &&
+                !onboardingPrefs.getBoolean(OnboardingGate.KEY_SKIPPED, false) &&
+                !onboardingPrefs.getBoolean(OnboardingGate.KEY_CONFIRMED, false)
+        )
+    }
     val items = listOf(Screen.Chat, Screen.Vm, Screen.Settings)
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+
+    if (showOnboarding) {
+        ModelOnboardingScreen(
+            downloadManager = downloadManager,
+            onFinished = { showOnboarding = false }
+        )
+        return
+    }
 
     Scaffold(
         bottomBar = {

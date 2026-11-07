@@ -27,7 +27,9 @@ data class DistroInfo(
     val localPath: String = "",
     val recommendedCpuCores: Int = 2,
     val recommendedMemoryMb: Int = 2048,
-    val recommendedDiskGb: Int = 20
+    val recommendedDiskGb: Int = 20,
+    val emulatedX86: Boolean = false,
+    val unavailableReason: String? = null
 )
 
 enum class DistroCategory {
@@ -73,8 +75,8 @@ class VmDistroManager(
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
 
-    init {
-        _distros.value = buildCatalog()
+        init {
+        _distros.value = catalog()
         refreshDownloadState()
     }
 
@@ -122,6 +124,10 @@ class VmDistroManager(
      */
     suspend fun downloadDistro(distroId: String): Boolean = withContext(Dispatchers.IO) {
         val distro = findDistro(distroId) ?: return@withContext false
+        if (distro.unavailableReason != null) {
+            fail(distroId, distro.unavailableReason)
+            return@withContext false
+        }
         if (distro.isDownloaded) return@withContext true
 
         _isDownloading.value = true
@@ -269,96 +275,187 @@ class VmDistroManager(
 
     // ==================== 发行版目录 ====================
 
-    private fun buildCatalog(): List<DistroInfo> = listOf(
-        DistroInfo(
-            id = "kali_rolling",
-            name = "Kali Linux",
-            version = "rolling",
-            architecture = "arm64",
-            downloadUrl = "https://kali.download/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz",
-            mirrorUrls = listOf(
-                "https://mirrors.tuna.tsinghua.edu.cn/kali/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz",
-                "https://mirrors.ustc.edu.cn/kali/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz"
-            ),
-            sizeBytes = 340_000_000L,
-            checksumSha256 = KALI_MINIMAL_ARM64_SHA256,
-            category = DistroCategory.SECURITY,
-            description = "Kali Linux（NetHunter 最小 rootfs）：渗透测试与安全研究首选，含全套安全工具（REQ-02 首发必选）",
-            packageManager = "apt",
-            recommendedCpuCores = 2,
-            recommendedMemoryMb = 2048,
-            recommendedDiskGb = 16
-        ),
-        DistroInfo(
-            id = "alpine_3_20",
-            name = "Alpine Linux",
-            version = "3.20.3",
-            architecture = "aarch64",
-            downloadUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
-            mirrorUrls = listOf(
-                "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
-                "https://mirrors.ustc.edu.cn/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz"
-            ),
-            sizeBytes = 3_947_906L,
-            checksumSha256 = "041fa34a81788242df9e78fa69b97ab45b8ec47ddbf88864755610414a7bf3de",
-            category = DistroCategory.LIGHTWEIGHT,
-            description = "极轻量发行版，使用 musl 与 BusyBox，适合容器与嵌入式场景",
-            packageManager = "apk",
-            recommendedCpuCores = 1,
-            recommendedMemoryMb = 512,
-            recommendedDiskGb = 5
-        ),
-        DistroInfo(
-            id = "ubuntu_24_04",
-            name = "Ubuntu",
-            version = "24.04 LTS",
-            architecture = "arm64",
-            downloadUrl = "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
-            mirrorUrls = listOf(
-                "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz"
-            ),
-            sizeBytes = 29_936_675L,
-            checksumSha256 = "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2",
-            category = DistroCategory.SERVER,
-            description = "最流行的 Linux 发行版，LTS 长期支持，软件生态完善",
-            packageManager = "apt",
-            recommendedCpuCores = 2,
-            recommendedMemoryMb = 2048,
-            recommendedDiskGb = 12
-        ),
-        DistroInfo(
-            id = "archlinuxarm",
-            name = "Arch Linux ARM",
-            version = "latest",
-            architecture = "aarch64",
-            downloadUrl = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz",
-            mirrorUrls = listOf(
-                "https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
-            ),
-            sizeBytes = 70_913_104L,
-            category = DistroCategory.GENERAL,
-            description = "滚动更新、高度可定制的发行版，适合高级用户",
-            packageManager = "pacman",
-            recommendedCpuCores = 2,
-            recommendedMemoryMb = 2048,
-            recommendedDiskGb = 15
-        ),
-        DistroInfo(
-            id = "voidlinux",
-            name = "Void Linux",
-            version = "20250202",
-            architecture = "aarch64",
-            downloadUrl = "https://repo-default.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz",
-            mirrorUrls = listOf(
-                "https://mirrors.tuna.tsinghua.edu.cn/voidlinux/live/current/void-aarch64-ROOTFS-20250202.tar.xz"
-            ),
-            sizeBytes = 2_424_076L,
-            category = DistroCategory.LIGHTWEIGHT,
-            description = "独立发行版，使用 runit 初始化系统，轻量且快速",
-            packageManager = "xbps",
-            recommendedCpuCores = 1,
-            recommendedMemoryMb = 1024,
-            recommendedDiskGb = 8
-        )
-    )
+    companion object {
+        const val X86_UNAVAILABLE = "当前设备无法模拟 x86_64"
+
+        fun x86UnavailableReason(emulationReady: Boolean): String? =
+            if (emulationReady) null else X86_UNAVAILABLE
+
+        fun buildCatalog(emulationReady: Boolean = false): List<DistroInfo> {
+            val x86Reason = x86UnavailableReason(emulationReady)
+            return listOf(
+                DistroInfo(
+                    id = "debian_12",
+                    name = "Debian",
+                    version = "12",
+                    architecture = "aarch64",
+                    downloadUrl = "https://github.com/termux/proot-distro/releases/download/v4.27.0/debian-bookworm-aarch64-pd-v4.27.0.tar.xz",
+                    sizeBytes = 95_000_000L,
+                    category = DistroCategory.SERVER,
+                    description = "Debian 12 bookworm，稳定服务器发行版",
+                    packageManager = "apt",
+                    recommendedCpuCores = 2,
+                    recommendedMemoryMb = 1024,
+                    recommendedDiskGb = 8
+                ),
+                DistroInfo(
+                    id = "alpine_3_21",
+                    name = "Alpine Linux",
+                    version = "3.21",
+                    architecture = "aarch64",
+                    downloadUrl = "https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz",
+                    mirrorUrls = listOf(
+                        "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz"
+                    ),
+                    sizeBytes = 4_200_000L,
+                    category = DistroCategory.LIGHTWEIGHT,
+                    description = "Alpine 3.21 极轻量 rootfs",
+                    packageManager = "apk",
+                    recommendedCpuCores = 1,
+                    recommendedMemoryMb = 512,
+                    recommendedDiskGb = 4
+                ),
+                DistroInfo(
+                    id = "debian_13",
+                    name = "Debian",
+                    version = "13",
+                    architecture = "aarch64",
+                    downloadUrl = "https://github.com/termux/proot-distro/releases/download/v4.27.0/debian-trixie-aarch64-pd-v4.27.0.tar.xz",
+                    sizeBytes = 98_000_000L,
+                    category = DistroCategory.SERVER,
+                    description = "Debian 13 trixie",
+                    packageManager = "apt",
+                    recommendedCpuCores = 2,
+                    recommendedMemoryMb = 1024,
+                    recommendedDiskGb = 8
+                ),
+                DistroInfo(
+                    id = "ubuntu_24_04",
+                    name = "Ubuntu",
+                    version = "24.04 LTS",
+                    architecture = "aarch64",
+                    downloadUrl = "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz",
+                    mirrorUrls = listOf(
+                        "https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.5-base-arm64.tar.gz"
+                    ),
+                    sizeBytes = 29_936_675L,
+                    checksumSha256 = "a91d5a93010193712d346d761372b7c9db6dfcf093893161c64ca107f05914f2",
+                    category = DistroCategory.SERVER,
+                    description = "Ubuntu 24.04 LTS",
+                    packageManager = "apt",
+                    recommendedCpuCores = 2,
+                    recommendedMemoryMb = 2048,
+                    recommendedDiskGb = 12
+                ),
+                DistroInfo(
+                    id = "archlinux",
+                    name = "Arch Linux",
+                    version = "latest",
+                    architecture = "aarch64",
+                    downloadUrl = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz",
+                    mirrorUrls = listOf(
+                        "https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
+                    ),
+                    sizeBytes = 70_913_104L,
+                    category = DistroCategory.GENERAL,
+                    description = "Arch Linux ARM 滚动更新",
+                    packageManager = "pacman",
+                    recommendedCpuCores = 2,
+                    recommendedMemoryMb = 2048,
+                    recommendedDiskGb = 15
+                ),
+                DistroInfo(
+                    id = "voidlinux",
+                    name = "Void Linux",
+                    version = "20250202",
+                    architecture = "aarch64",
+                    downloadUrl = "https://repo-default.voidlinux.org/live/current/void-aarch64-ROOTFS-20250202.tar.xz",
+                    mirrorUrls = listOf(
+                        "https://mirrors.tuna.tsinghua.edu.cn/voidlinux/live/current/void-aarch64-ROOTFS-20250202.tar.xz"
+                    ),
+                    sizeBytes = 2_424_076L,
+                    category = DistroCategory.LIGHTWEIGHT,
+                    description = "Void Linux aarch64",
+                    packageManager = "xbps",
+                    recommendedCpuCores = 1,
+                    recommendedMemoryMb = 1024,
+                    recommendedDiskGb = 8
+                ),
+                DistroInfo(
+                    id = "debian_12_x86_64",
+                    name = "Debian",
+                    version = "12",
+                    architecture = "x86_64",
+                    sizeBytes = 110_000_000L,
+                    category = DistroCategory.SERVER,
+                    description = "Debian 12 x86_64 模拟",
+                    packageManager = "apt",
+                    emulatedX86 = true,
+                    unavailableReason = x86Reason
+                ),
+                DistroInfo(
+                    id = "alpine_3_21_x86_64",
+                    name = "Alpine Linux",
+                    version = "3.21",
+                    architecture = "x86_64",
+                    sizeBytes = 5_000_000L,
+                    category = DistroCategory.LIGHTWEIGHT,
+                    description = "Alpine 3.21 x86_64 模拟",
+                    packageManager = "apk",
+                    emulatedX86 = true,
+                    unavailableReason = x86Reason
+                ),
+                DistroInfo(
+                    id = "debian_13_x86_64",
+                    name = "Debian",
+                    version = "13",
+                    architecture = "x86_64",
+                    sizeBytes = 115_000_000L,
+                    category = DistroCategory.SERVER,
+                    description = "Debian 13 x86_64 模拟",
+                    packageManager = "apt",
+                    emulatedX86 = true,
+                    unavailableReason = x86Reason
+                ),
+                DistroInfo(
+                    id = "ubuntu_24_04_x86_64",
+                    name = "Ubuntu",
+                    version = "24.04 LTS",
+                    architecture = "x86_64",
+                    sizeBytes = 35_000_000L,
+                    category = DistroCategory.SERVER,
+                    description = "Ubuntu 24.04 LTS x86_64 模拟",
+                    packageManager = "apt",
+                    emulatedX86 = true,
+                    unavailableReason = x86Reason
+                ),
+                DistroInfo(
+                    id = "archlinux_x86_64",
+                    name = "Arch Linux",
+                    version = "latest",
+                    architecture = "x86_64",
+                    sizeBytes = 80_000_000L,
+                    category = DistroCategory.GENERAL,
+                    description = "Arch Linux x86_64 模拟",
+                    packageManager = "pacman",
+                    emulatedX86 = true,
+                    unavailableReason = x86Reason
+                ),
+                DistroInfo(
+                    id = "voidlinux_x86_64",
+                    name = "Void Linux",
+                    version = "20250202",
+                    architecture = "x86_64",
+                    sizeBytes = 4_000_000L,
+                    category = DistroCategory.LIGHTWEIGHT,
+                    description = "Void Linux x86_64 模拟",
+                    packageManager = "xbps",
+                    emulatedX86 = true,
+                    unavailableReason = x86Reason
+                )
+            )
+        }
+    }
+
+    private fun catalog(): List<DistroInfo> = buildCatalog(emulationReady = false)
 }

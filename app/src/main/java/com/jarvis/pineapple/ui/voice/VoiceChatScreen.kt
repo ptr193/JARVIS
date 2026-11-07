@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.pineapple.system.PermissionManager
+import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 
 /**
  * 语音对话界面。
@@ -47,6 +49,14 @@ fun VoiceChatScreen(
     val ttsState by speechManager.ttsState.collectAsState()
     val wakeState by voiceWakeManager.wakeState.collectAsState()
     val conversationState by speechManager.conversationState.collectAsState()
+    val requestMic = rememberOnDemandPermission(
+        permissions = PermissionManager.MICROPHONE_PERMISSIONS,
+        onGranted = {
+            speechManager.startVoiceConversation()
+            voiceWakeManager.startListening()
+        },
+        onDenied = { }
+    )
 
     Column(
         modifier = Modifier
@@ -102,8 +112,7 @@ fun VoiceChatScreen(
                     speechManager.stopVoiceConversation()
                     voiceWakeManager.stopListening()
                 } else {
-                    speechManager.startVoiceConversation()
-                    voiceWakeManager.startListening()
+                    requestMic()
                 }
             },
             modifier = Modifier

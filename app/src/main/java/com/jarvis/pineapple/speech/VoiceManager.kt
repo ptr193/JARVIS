@@ -82,6 +82,9 @@ class VoiceManager(private val context: Context) {
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
 
+    private val _fallbackNotice = MutableStateFlow<String?>(null)
+    val fallbackNotice: StateFlow<String?> = _fallbackNotice.asStateFlow()
+
     private val httpClient = HttpClient(Android) {
         install(ContentNegotiation)
     }
@@ -98,11 +101,11 @@ class VoiceManager(private val context: Context) {
         val baseUrl = BuildConfig.VOICE_DOWNLOAD_BASE_URL
         return listOf(
             VoicePack(
-                id = "jarvis_zh_cn",
+                id = VoicePolicy.DEFAULT_ID,
                 name = "JARVIS 中文声线",
                 language = "zh-CN",
-                gender = "male",
-                description = "《钢铁侠》中文版 JARVIS 声线，低沉、平稳、略带电子质感的英式管家腔调",
+                gender = VoicePolicy.DEFAULT_GENDER,
+                description = VoicePolicy.DEFAULT_DESCRIPTION,
                 remoteUrl = "${baseUrl}zh_CN-chaowen-medium.onnx",
                 sizeBytes = 63_221_984,
                 isDefault = true,
@@ -205,6 +208,7 @@ class VoiceManager(private val context: Context) {
             } catch (e: Exception) {
                 Log.e("VoiceManager", "downloadVoice failed for ${voicePack.id}", e)
                 _isDownloading.value = false
+                _fallbackNotice.value = VoicePolicy.SOURCE_UNAVAILABLE
                 false
             }
         }
@@ -377,15 +381,24 @@ class VoiceManager(private val context: Context) {
     /**
      * 获取降级声线（系统 TTS）
      */
-    fun getFallbackVoice(): VoicePack {
-        return VoicePack(
-            id = "fallback_system",
-            name = "系统默认声线",
-            language = "zh-CN",
-            gender = "male",
-            description = "系统 TTS 降级声线，保证基本语音输出",
-            modelType = "system"
+    fun getFallbackVoice(): VoicePack = VoicePolicy.fallbackVoice()
+
+    fun resolveSpeakVoice(): VoicePack {
+        val resolved = VoicePolicy.resolveActive(
+            preferred = _activeVoice.value,
+            downloaded = _voices.value.filter { it.isDownloaded }
         )
+        _fallbackNotice.value = resolved.notice
+        if (resolved.usingFallback) {
+            _activeVoice.value = resolved.voice
+        }
+        return resolved.voice
+    }
+
+    fun consumeFallbackNotice(): String? {
+        val notice = _fallbackNotice.value
+        _fallbackNotice.value = null
+        return notice
     }
 
     private fun updateVoiceDownloaded(voiceId: String, localPath: String) {

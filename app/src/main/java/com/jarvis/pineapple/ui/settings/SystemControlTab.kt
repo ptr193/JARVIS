@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.pineapple.system.PermissionManager
+import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 import com.jarvis.pineapple.system.CalendarController
 import com.jarvis.pineapple.system.CommunicationManager
 import com.jarvis.pineapple.system.CrossAppOperator
@@ -71,6 +73,51 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     var remoteInfo by remember { mutableStateOf("无远程会话") }
     var scheduleInfo by remember { mutableStateOf("暂无日程") }
 
+    val requestPhone = rememberOnDemandPermission(
+        permissions = PermissionManager.PHONE_PERMISSIONS,
+        onGranted = {
+            val ok = phone.call(phoneNumber.trim())
+            phoneInfo = if (ok) "已发起通话" else "拨号失败（缺少 CALL_PHONE 权限）"
+            showMsg(phoneInfo)
+        },
+        onDenied = { phoneInfo = it; showMsg(it) }
+    )
+    val requestSms = rememberOnDemandPermission(
+        permissions = PermissionManager.SMS_PERMISSIONS,
+        onGranted = {
+            val ok = sms.send(phoneNumber.trim(), message)
+            phoneInfo = if (ok) "短信已发送" else "发送失败（缺少 SEND_SMS 权限）"
+            showMsg(phoneInfo)
+        },
+        onDenied = { phoneInfo = it; showMsg(it) }
+    )
+    val requestCalendar = rememberOnDemandPermission(
+        permissions = PermissionManager.CALENDAR_PERMISSIONS,
+        onGranted = {
+            val now = System.currentTimeMillis()
+            val ok = calendar.createEvent(
+                CalendarController.Event(
+                    title = destination.ifBlank { "JARVIS 日程" },
+                    startTime = now + 3_600_000,
+                    endTime = now + 7_200_000,
+                    description = "由 JARVIS 创建"
+                )
+            )
+            scheduleInfo = if (ok) "日程已写入系统日历" else "创建失败（缺少日历权限）"
+            showMsg(scheduleInfo)
+        },
+        onDenied = { scheduleInfo = it; showMsg(it) }
+    )
+    val requestLocation = rememberOnDemandPermission(
+        permissions = PermissionManager.LOCATION_PERMISSIONS,
+        onGranted = {
+            navigation.navigateTo(destination.ifBlank { "家" })
+            scheduleInfo = "已发起导航：$destination"
+            showMsg(scheduleInfo)
+        },
+        onDenied = { scheduleInfo = it; showMsg(it) }
+    )
+
     Text("系统操控", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
 
@@ -85,17 +132,9 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         )
         Text(phoneInfo, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row {
-            Button(onClick = {
-                val ok = phone.call(phoneNumber.trim())
-                phoneInfo = if (ok) "已发起通话" else "拨号失败（缺少 CALL_PHONE 权限）"
-                showMsg(phoneInfo)
-            }) { Text("拨打电话") }
+            Button(onClick = { requestPhone() }) { Text("拨打电话") }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = {
-                val ok = sms.send(phoneNumber.trim(), message)
-                phoneInfo = if (ok) "短信已发送" else "发送失败（缺少 SEND_SMS 权限）"
-                showMsg(phoneInfo)
-            }) { Text("发送短信") }
+            OutlinedButton(onClick = { requestSms() }) { Text("发送短信") }
         }
         Row {
             OutlinedButton(onClick = {
@@ -117,25 +156,9 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         )
         Text(scheduleInfo, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row {
-            Button(onClick = {
-                val now = System.currentTimeMillis()
-                val ok = calendar.createEvent(
-                    CalendarController.Event(
-                        title = destination.ifBlank { "JARVIS 日程" },
-                        startTime = now + 3_600_000,
-                        endTime = now + 7_200_000,
-                        description = "由 JARVIS 创建"
-                    )
-                )
-                scheduleInfo = if (ok) "日程已写入系统日历" else "创建失败（缺少日历权限）"
-                showMsg(scheduleInfo)
-            }) { Text("创建日程") }
+            Button(onClick = { requestCalendar() }) { Text("创建日程") }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = {
-                navigation.navigateTo(destination.ifBlank { "家" })
-                scheduleInfo = "已发起导航：$destination"
-                showMsg(scheduleInfo)
-            }) { Text("发起导航") }
+            OutlinedButton(onClick = { requestLocation() }) { Text("发起导航") }
         }
         Text("提醒事项：${communication.reminders.value.size} 条 · 行程：${communication.getUpcomingTravels().size} 条", fontSize = 12.sp)
         Row {

@@ -13,10 +13,14 @@ import java.io.File
  * 对话历史持久化仓库。
  * 使用 JSON 文件存储对话历史，支持多会话管理。
  */
-class ConversationRepository(private val context: Context) {
+class ConversationRepository(
+    private val context: Context? = null,
+    conversationsDirOverride: File? = null
+) {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
-    private val conversationsDir = File(context.filesDir, "conversations")
+    private val conversationsDir: File = conversationsDirOverride
+        ?: File(requireNotNull(context) { "ConversationRepository 需要 Context 或显式目录" }.filesDir, "conversations")
 
     private val _conversations = MutableStateFlow<List<Conversation>>(emptyList())
     val conversations: StateFlow<List<Conversation>> = _conversations.asStateFlow()
@@ -80,8 +84,7 @@ class ConversationRepository(private val context: Context) {
             val file = File(conversationsDir, "${conversation.id}.json")
             val dto = ConversationDto.fromConversation(conversation)
             file.writeText(json.encodeToString(dto))
-        } catch (e: Exception) {
-            // 保存失败时静默处理
+        } catch (_: Exception) {
         }
     }
 

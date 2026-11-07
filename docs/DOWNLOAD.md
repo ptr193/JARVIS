@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-05 | 版本：v0.0.1（Debug，含相机入口与远程医疗失败关闭）
+> 生成日期：2026-11-07 | 版本：v0.0.1（Debug，实机体验修复）
 
 ---
 
@@ -28,13 +28,13 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（相机入口 + 远程医疗失败关闭）
+版本：   v0.0.1-debug（设置/主题/权限/首次模型/虚拟机/男声/聊天记录）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 79,406,462 字节（75.7 MB）
-压缩包 SHA256： e64c880b89483dcaa69dca05f54839fba2f461dfb051e8b23bb98369971fc228
-APK 大小： 219,077,328 字节（208.9 MB）
-APK SHA256： e6918435c2d764fd27f093a43e551933c3fd374704633fc542a62f4be95c06f2
-构建：   2026-11-05
+压缩包大小： 79,462,778 字节（75.8 MB）
+压缩包 SHA256： 8aebeba711a6c464365ec835190994c56400c726a54744bd839a31fcbafb7aab
+APK 大小： 219,002,937 字节（208.9 MB）
+APK SHA256： 7765f5182466e94b58c06fd76324bed1d0671b900a75b1987d57f69fc69e597b
+构建：   2026-11-07
 构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
 Git：    origin/main（本提交）
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-e64c880b89483dcaa69dca05f54839fba2f461dfb051e8b23bb98369971fc228
+8aebeba711a6c464365ec835190994c56400c726a54744bd839a31fcbafb7aab
 ```
 
 解压后校验 APK：
 
 ```text
-e6918435c2d764fd27f093a43e551933c3fd374704633fc542a62f4be95c06f2
+7765f5182466e94b58c06fd76324bed1d0671b900a75b1987d57f69fc69e597b
 ```
 
-本包含相机采集入口与远程医疗无平台 URL 时的失败关闭。BUG-2026-1103 启动闪退修复仍在。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
+本包含设置十标签横滑、按需权限、首次模型向导、发行版清单、钢铁侠中文男声与聊天历史。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
 
 ---
 

@@ -46,6 +46,9 @@ class ChatEngine(
     private val _lastSchedulingInfo = MutableStateFlow<String?>(null)
     val lastSchedulingInfo: StateFlow<String?> = _lastSchedulingInfo.asStateFlow()
 
+    val conversations: StateFlow<List<Conversation>> = conversationRepository.conversations
+    val currentConversationId: StateFlow<String?> = conversationRepository.currentConversationId
+
     private var conversation = Conversation()
 
     init {
@@ -56,7 +59,15 @@ class ChatEngine(
         }
     }
 
+    private fun ensureConversation() {
+        if (conversationRepository.getCurrentConversation() == null) {
+            conversation = conversationRepository.createConversation()
+            _messages.value = conversation.messages.toList()
+        }
+    }
+
     suspend fun sendUserMessage(content: String): Flow<String> {
+        ensureConversation()
         val userMsg = ChatMessage(role = Role.USER, content = content)
         conversation.messages.add(userMsg)
         _messages.value = conversation.messages.toList()
@@ -195,6 +206,18 @@ class ChatEngine(
         if (conv != null) {
             conversation = conv
             _messages.value = conv.messages.toList()
+        }
+    }
+
+    fun deleteConversation(conversationId: String) {
+        conversationRepository.deleteConversation(conversationId)
+        val conv = conversationRepository.getCurrentConversation()
+        if (conv != null) {
+            conversation = conv
+            _messages.value = conv.messages.toList()
+        } else {
+            conversation = Conversation()
+            _messages.value = emptyList()
         }
     }
 

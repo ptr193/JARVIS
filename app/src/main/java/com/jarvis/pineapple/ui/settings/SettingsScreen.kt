@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,8 +41,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -53,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,14 +77,19 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 设置界面（10 个标签页，可滑动）
- * ① 代理 ② 服务 ③ 工具 ④ 虚拟机设置 ⑤ 状态 ⑥ 仓库 ⑦ 连接设备 ⑧ 语言语音 ⑨ 日志 ⑩ 通用
+ * 设置界面（规格书 3.3 十标签可滑动 + 扩展入口）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
-    val tabs = listOf("代理", "服务", "工具", "虚拟机", "状态", "仓库", "连接设备", "语言语音", "日志", "通用", "智能中枢", "安全中心", "系统操控")
-    var selected by remember { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val tabs = SettingsTabs.ALL_TABS
+    val initialIndex = remember {
+        val saved = context.getSharedPreferences(SettingsTabs.PREFS, Context.MODE_PRIVATE)
+            .getInt(SettingsTabs.KEY_INDEX, 0)
+        SettingsTabs.clampIndex(saved, tabs.size)
+    }
+    val pagerState = rememberPagerState(initialPage = initialIndex, pageCount = { tabs.size })
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val showMsg: (String) -> Unit = { msg ->
@@ -89,40 +97,58 @@ fun SettingsScreen(onBack: () -> Unit) {
         Unit
     }
 
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            context.getSharedPreferences(SettingsTabs.PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(SettingsTabs.KEY_INDEX, page).apply()
+        }
+    }
+
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("设置") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            TabRow(selectedTabIndex = selected, modifier = Modifier.fillMaxWidth()) {
-                tabs.forEachIndexed { i, title ->
-                    Tab(selected = selected == i, onClick = { selected = i }, text = { Text(title) })
+            Text(
+                text = "设置",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            ScrollableTabRow(selectedTabIndex = pagerState.currentPage, edgePadding = 8.dp) {
+                tabs.forEachIndexed { i, tab ->
+                    Tab(
+                        selected = pagerState.currentPage == i,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(i) } },
+                        text = { Text(tab.title) }
+                    )
                 }
             }
-            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-                when (selected) {
-                    0 -> AgentTab(showMsg)
-                    1 -> ServiceTab(showMsg)
-                    2 -> ToolsTab(showMsg)
-                    3 -> VmSettingsTab(showMsg)
-                    4 -> StatusTab(showMsg)
-                    5 -> RepoTab(showMsg)
-                    6 -> ConnectedDevicesTab(showMsg)
-                    7 -> LanguageVoiceTab(showMsg)
-                    8 -> LogTab(showMsg = showMsg)
-                    9 -> GeneralTab(showMsg)
-                    10 -> SmartHubTab(showMsg)
-                    11 -> SecurityTab(showMsg)
-                    12 -> SystemControlTab(showMsg)
+            val current = tabs[pagerState.currentPage]
+            Text(
+                text = current.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    when (page) {
+                        0 -> AgentTab(showMsg)
+                        1 -> ServiceTab(showMsg)
+                        2 -> ToolsTab(showMsg)
+                        3 -> VmSettingsTab(showMsg)
+                        4 -> StatusTab(showMsg)
+                        5 -> RepoTab(showMsg)
+                        6 -> ConnectedDevicesTab(showMsg)
+                        7 -> LanguageVoiceTab(showMsg)
+                        8 -> LogTab(showMsg = showMsg)
+                        9 -> GeneralTab(showMsg)
+                        10 -> SmartHubTab(showMsg)
+                        11 -> SecurityTab(showMsg)
+                        12 -> SystemControlTab(showMsg)
+                    }
                 }
             }
         }
@@ -459,6 +485,13 @@ private fun StatusTab(showMsg: (String) -> Unit) {
     val deviceMonitor = remember { com.jarvis.pineapple.system.DeviceMonitor(context) }
     val status by deviceMonitor.status.collectAsState()
 
+    LaunchedEffect(deviceMonitor) {
+        while (true) {
+            deviceMonitor.refresh()
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+
     Text("设备状态", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
 
@@ -469,7 +502,10 @@ private fun StatusTab(showMsg: (String) -> Unit) {
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            StatusItem("CPU 使用率", "${status.cpuUsage.toInt()}%")
+            StatusItem(
+                "CPU 使用率",
+                status.cpuUnavailableReason ?: "${status.cpuUsage.toInt()}%"
+            )
             StatusItem("内存使用", "${status.memoryUsageMb} / ${status.totalMemoryMb} MB")
             StatusItem("CPU 温度", "${status.temperature}°C")
             StatusItem("电池电量", "${status.batteryLevel}%")
@@ -478,7 +514,7 @@ private fun StatusTab(showMsg: (String) -> Unit) {
     }
 
     Spacer(Modifier.height(8.dp))
-    Button(onClick = { deviceMonitor.refresh() }) { Text("刷新") }
+    Button(onClick = { deviceMonitor.refresh() }) { Text("立即刷新") }
 }
 
 @Composable
@@ -576,16 +612,20 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
     val devices = remember { mutableStateListOf<com.jarvis.pineapple.cloud.ConnectedDevice>() }
 
     LaunchedEffect(Unit) {
-        // 恢复已持久化的登录态
         val savedToken = prefs.getString("token", null)
         val savedAccount = prefs.getString("account", null)
         if (cloud != null && savedToken != null && savedAccount != null) {
             cloud.restoreSession(savedAccount, savedToken)
             loggedIn = true
         }
-        if (cloud != null && cloud.isCloudAvailable() && cloud.isLoggedIn()) {
-            devices.clear()
-            devices.addAll(cloud.discoverDevices())
+        while (true) {
+            val c = cloud
+            if (c != null && c.isCloudAvailable() && c.isLoggedIn()) {
+                val latest = c.discoverDevices()
+                devices.clear()
+                devices.addAll(latest)
+            }
+            kotlinx.coroutines.delay(8_000)
         }
     }
 
@@ -804,7 +844,11 @@ private fun LanguageVoiceTab(showMsg: (String) -> Unit) {
                 OutlinedButton(onClick = {
                     scope.launch {
                         val ok = voiceManager.downloadVoice(pack) == true
-                        showMsg(if (ok) "已下载 ${pack.name}" else "下载失败（声线源不可用）")
+                        showMsg(
+                            if (ok) "已下载 ${pack.name}"
+                            else voiceManager.consumeFallbackNotice()
+                                ?: "下载失败（声线源不可用）"
+                        )
                     }
                 }) { Text("下载") }
             }
@@ -1003,7 +1047,7 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     var shakeWake by remember { mutableStateOf(true) }
     var bluetoothWake by remember { mutableStateOf(true) }
     var cloudSync by remember { mutableStateOf(false) }
-    var autoDownloadModels by remember { mutableStateOf(true) }
+    var autoDownloadModels by remember { mutableStateOf(false) }
 
     // 加载已保存的配置
     LaunchedEffect(Unit) {
@@ -1013,10 +1057,23 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
         shakeWake = prefs.getBoolean("shake_wake", true)
         bluetoothWake = prefs.getBoolean("bluetooth_wake", true)
         cloudSync = prefs.getBoolean("cloud_sync", false)
-        autoDownloadModels = prefs.getBoolean("auto_download_models", true)
+        autoDownloadModels = prefs.getBoolean("auto_download_models", false)
     }
 
     Text("通用设置", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    Button(onClick = {
+        val intents = listOf(
+            android.content.Intent("android.settings.VOICE_INPUT_SETTINGS"),
+            android.content.Intent(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS),
+            android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+        )
+        val launched = intents.any { intent ->
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(intent) }.isSuccess
+        }
+        showMsg(if (launched) "请在系统设置中将 JARVIS 设为默认数字助手" else "无法打开系统默认助手设置")
+    }) { Text("一键设为默认 AI 助手") }
     Spacer(Modifier.height(8.dp))
 
     SettingSwitch("语音唤醒", voiceWake, {

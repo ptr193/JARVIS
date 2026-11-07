@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jarvis.pineapple.chat.ChatEngine
+import com.jarvis.pineapple.chat.Conversation
 import com.jarvis.pineapple.model.ModelScheduler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -27,6 +28,10 @@ class ChatViewModel(
     val isGenerating = chatEngine.isGenerating
 
     val lastSchedulingInfo: StateFlow<String?> = chatEngine.lastSchedulingInfo
+
+    val conversations: StateFlow<List<Conversation>> = chatEngine.conversations
+
+    val currentConversationId: StateFlow<String?> = chatEngine.currentConversationId
 
     val activeModelName: StateFlow<String> = modelScheduler.activeModel
         .map { it.info.name }
@@ -97,6 +102,14 @@ class ChatViewModel(
 
     fun newConversation() {
         chatEngine.newConversation()
+    }
+
+    fun switchConversation(conversationId: String) {
+        chatEngine.switchConversation(conversationId)
+    }
+
+    fun deleteConversation(conversationId: String) {
+        chatEngine.deleteConversation(conversationId)
     }
 
     fun clearConversation() {

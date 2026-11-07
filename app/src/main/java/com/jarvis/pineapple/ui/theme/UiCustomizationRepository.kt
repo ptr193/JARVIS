@@ -42,16 +42,20 @@ class UiCustomizationRepository(private val context: Context) {
         private const val KEY_BACKGROUND = "background_uri"
         private const val KEY_THEME_COLOR = "theme_color"
 
-        /** 预设主题色（名称 → ARGB）。 */
+        /** 预设主题色（名称 → ARGB，必须用 Long 字面量避免 Int 溢出）。 */
         val PRESET_COLORS: List<Pair<String, Long>> = listOf(
-            "JARVIS 蓝" to 0xFF1E88E5,
-            "反应堆青" to 0xFF00E5FF,
-            "方舟白" to 0xFFECEFF1,
-            "警戒红" to 0xFFE53935,
-            "贾维斯金" to 0xFFFFC107,
-            "翠绿" to 0xFF39FF14,
-            "暗紫" to 0xFF7C4DFF,
-            "冰蓝" to 0xFF00B0FF
+            "JARVIS 蓝" to 0xFF1E88E5L,
+            "反应堆青" to 0xFF00E5FFL,
+            "方舟白" to 0xFFECEFF1L,
+            "警戒红" to 0xFFE53935L,
+            "贾维斯金" to 0xFFFFC107L,
+            "翠绿" to 0xFF39FF14L,
+            "暗紫" to 0xFF7C4DFFL,
+            "冰蓝" to 0xFF00B0FFL
         )
+
+        fun toArgb(stored: Long): Int = (stored and 0xFFFFFFFFL).toInt()
+
+        fun isCustom(stored: Long): Boolean = stored != 0L
     }
 }

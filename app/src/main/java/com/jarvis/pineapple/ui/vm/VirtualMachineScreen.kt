@@ -134,46 +134,17 @@ fun VirtualMachineScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("虚拟机") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        scope.launch {
-                            if (prootReady) {
-                                prootVersion = prootManager.getProotVersion()
-                                showMsg("PRoot 已就绪: $prootVersion")
-                            } else {
-                                showMsg("正在初始化 PRoot...")
-                                val ok = prootManager.initialize()
-                                showMsg(if (ok) "PRoot 初始化成功" else "PRoot 初始化失败")
-                            }
-                        }
-                    }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "初始化 PRoot")
-                    }
-                }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Text(
+                text = "虚拟机",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
             ProotStatusCard(
                 ready = prootReady,
-                version = prootVersion,
-                onInit = {
-                    scope.launch {
-                        showMsg("正在初始化 PRoot...")
-                        val ok = prootManager.initialize()
-                        if (ok) prootVersion = prootManager.getProotVersion()
-                        showMsg(if (ok) "PRoot 初始化成功" else "PRoot 初始化失败")
-                    }
-                }
+                version = prootVersion
             )
 
             TabRow(selectedTabIndex = selectedTab) {
@@ -285,7 +256,7 @@ private fun copyUriToLocalFile(context: Context, uri: Uri): File? {
 }
 
 @Composable
-private fun ProotStatusCard(ready: Boolean, version: String, onInit: () -> Unit) {
+private fun ProotStatusCard(ready: Boolean, version: String) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -300,13 +271,10 @@ private fun ProotStatusCard(ready: Boolean, version: String, onInit: () -> Unit)
                     style = MaterialTheme.typography.titleSmall
                 )
                 Text(
-                    if (ready) version.ifBlank { "PRoot" } else "需要下载 PRoot 二进制",
+                    if (ready) version.ifBlank { "PRoot" } else "PRoot 二进制未随包或缓存缺失",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-            if (!ready) {
-                Button(onClick = onInit) { Text("初始化") }
             }
         }
     }
@@ -340,6 +308,13 @@ private fun DistroTab(
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        if (distro.unavailableReason != null) {
+                            Text(
+                                distro.unavailableReason,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
                         Spacer(Modifier.height(8.dp))
 
                         if (progress != null && (progress.status == DownloadStatus.DOWNLOADING || progress.status == DownloadStatus.VERIFYING)) {
@@ -356,6 +331,8 @@ private fun DistroTab(
                                 if (distro.isDownloaded) {
                                     TextButton(onClick = { onCreateVm(distro.id) }) { Text("创建虚拟机") }
                                     TextButton(onClick = { onDelete(distro.id) }) { Text("删除") }
+                                } else if (distro.unavailableReason != null) {
+                                    Text(distro.unavailableReason, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                                 } else {
                                     Button(onClick = { onDownload(distro.id) }) {
                                         Icon(Icons.Filled.Download, contentDescription = null)
