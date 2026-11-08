@@ -23,6 +23,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,13 +52,15 @@ fun VoiceChatScreen(
     val ttsState by speechManager.ttsState.collectAsState()
     val wakeState by voiceWakeManager.wakeState.collectAsState()
     val conversationState by speechManager.conversationState.collectAsState()
+    var deniedNotice by remember { mutableStateOf<String?>(null) }
     val requestMic = rememberOnDemandPermission(
         permissions = PermissionManager.MICROPHONE_PERMISSIONS,
         onGranted = {
+            deniedNotice = null
             speechManager.startVoiceConversation()
             voiceWakeManager.startListening()
         },
-        onDenied = { }
+        onDenied = { deniedNotice = it }
     )
 
     Column(
@@ -135,6 +140,10 @@ fun VoiceChatScreen(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
+        deniedNotice?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         // 当前输入/输出显示
         if (conversationState.currentInput.isNotEmpty()) {

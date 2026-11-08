@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.ui.settings
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -28,5 +29,20 @@ class SettingsTabsTest {
         assertEquals(9, SettingsTabs.clampIndex(9))
         assertEquals(SettingsTabs.ALL_TABS.lastIndex, SettingsTabs.clampIndex(99))
         assertEquals(0, SettingsTabs.clampIndex(2, size = 0))
+    }
+
+    @Test
+    fun settingsPagerDoesNotComposeAdjacentPagesAndSamplesOnIo() {
+        val src = readSource("app/src/main/java/com/jarvis/pineapple/ui/settings/SettingsScreen.kt")
+        assertTrue("Pager 不得预组合相邻页", src.contains("beyondViewportPageCount = 0"))
+        assertTrue("状态采样必须走 IO", src.contains("withContext(Dispatchers.IO) { deviceMonitor.refresh() }"))
+        assertTrue("服务页必须复用 ModelDownloadManager 单例", src.contains("get<ModelDownloadManager>()"))
+    }
+
+    private fun readSource(relativePath: String): String {
+        val candidates = listOf(File(relativePath), File("../$relativePath"))
+        val file = candidates.firstOrNull { it.exists() }
+            ?: error("无法定位源文件: $relativePath")
+        return file.readText()
     }
 }

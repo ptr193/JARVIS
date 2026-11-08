@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-07 | 版本：v0.0.1（Debug，实机体验修复）
+> 生成日期：2026-11-08 | 版本：v0.0.1（Debug，卡顿/镜像/Haven/权限/助手 overlay）
 
 ---
 
@@ -28,13 +28,13 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（设置/主题/权限/首次模型/虚拟机/男声/聊天记录）
+版本：   v0.0.1-debug（卡顿收敛/国内镜像 failover/Haven 清单/按需权限/Home overlay）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 79,462,778 字节（75.8 MB）
-压缩包 SHA256： 8aebeba711a6c464365ec835190994c56400c726a54744bd839a31fcbafb7aab
-APK 大小： 219,002,937 字节（208.9 MB）
-APK SHA256： 7765f5182466e94b58c06fd76324bed1d0671b900a75b1987d57f69fc69e597b
-构建：   2026-11-07
+压缩包大小： 79,473,220 字节（75.8 MB）
+压缩包 SHA256： c55b34d304c3f51635fbe2202f8ce90d7d2a45acdb3f5ab80e7c2145484998b2
+APK 大小： 219,732,013 字节（209.6 MB）
+APK SHA256： 7e1300c06fba120603ffacb99a3d06a8100d6a9c2f8660788585dd68605a69e7
+构建：   2026-11-08
 构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
 Git：    origin/main（本提交）
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-8aebeba711a6c464365ec835190994c56400c726a54744bd839a31fcbafb7aab
+c55b34d304c3f51635fbe2202f8ce90d7d2a45acdb3f5ab80e7c2145484998b2
 ```
 
 解压后校验 APK：
 
 ```text
-7765f5182466e94b58c06fd76324bed1d0671b900a75b1987d57f69fc69e597b
+7e1300c06fba120603ffacb99a3d06a8100d6a9c2f8660788585dd68605a69e7
 ```
 
-本包含设置十标签横滑、按需权限、首次模型向导、发行版清单、钢铁侠中文男声与聊天历史。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
+本包含设置页卡顿收敛、下载超时切国内镜像、Haven 式 Kali/Rocky/Windows 清单、相机与麦克风按需权限说明，以及长按 Home 声纹 overlay。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
 
 ---
 

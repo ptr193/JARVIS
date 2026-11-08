@@ -143,6 +143,14 @@ class KeepAliveServiceOrderingTest {
             "默认助手会话必须通知 Home 长按检测器",
             sessionSrc.contains("HomeLongPressDetector.notifyHomeLongPress")
         )
+        assertTrue(
+            "长按 Home 必须展示声纹 overlay",
+            sessionSrc.contains("onCreateContentView") && sessionSrc.contains("voice_assist_overlay")
+        )
+        assertTrue(
+            "长按 Home 不得拉起主界面",
+            !sessionSrc.contains("startVoiceActivity")
+        )
         val detectorSrc = readSource("app/src/main/java/com/jarvis/pineapple/wake/HomeLongPressDetector.kt")
         assertTrue(
             "HomeLongPressDetector 必须暴露供 VoiceInteractionService 调用的入口",

@@ -10,7 +10,7 @@ class VmDistroCatalogTest {
     @Test
     fun catalogListsRequiredDistrosAndSizes() {
         val catalog = VmDistroManager.buildCatalog(emulationReady = false)
-        assertEquals(12, catalog.size)
+        assertEquals(15, catalog.size)
         val names = catalog.filter { it.architecture == "aarch64" }.map { "${it.name} ${it.version}" }
         assertTrue(names.any { it.startsWith("Debian 12") })
         assertTrue(names.any { it.startsWith("Alpine Linux 3.21") })
@@ -18,9 +18,14 @@ class VmDistroCatalogTest {
         assertTrue(names.any { it.contains("Ubuntu") && it.contains("24.04") })
         assertTrue(names.any { it.startsWith("Arch Linux") })
         assertTrue(names.any { it.startsWith("Void Linux") })
+        assertTrue(names.any { it.startsWith("Kali Linux") })
         catalog.forEach { distro ->
             assertTrue("${distro.id} 缺少体积", distro.sizeBytes > 0)
         }
+        val kali = catalog.first { it.id == "kali_nethunter_minimal" }
+        assertEquals(KALI_MINIMAL_ARM64_SHA256, kali.checksumSha256)
+        assertEquals(VmDistroManager.ROCKY_IMPORT, catalog.first { it.id == "rocky_linux" }.unavailableReason)
+        assertEquals(VmDistroManager.WINDOWS_IMPORT, catalog.first { it.id == "windows" }.unavailableReason)
     }
 
     @Test

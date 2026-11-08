@@ -37,10 +37,8 @@ import com.jarvis.pineapple.info.InfoProcessor
 import com.jarvis.pineapple.perception.CameraCaptureSession
 import com.jarvis.pineapple.perception.ObjectDetector
 import com.jarvis.pineapple.security.SecurityManager
-import com.jarvis.pineapple.system.PermissionExplainer
 import com.jarvis.pineapple.system.PermissionManager
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
+import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -65,7 +63,6 @@ fun CameraCaptureSection(
     var jpeg by remember { mutableStateOf<ByteArray?>(null) }
     var referenceJpeg by remember { mutableStateOf<ByteArray?>(null) }
     var status by remember { mutableStateOf("尚未拍照") }
-    var showCameraRationale by remember { mutableStateOf(false) }
 
     val handlers = remember {
         CameraCaptureSession.Handlers(
@@ -146,37 +143,18 @@ fun CameraCaptureSection(
         showMsg(status)
     }
 
-    val requestPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (granted) {
-            takePicture.launch(null)
-        } else {
-            status = CameraCaptureSession.CAMERA_PERMISSION_DENIED
-            showMsg(status)
+    val requestCamera = rememberOnDemandPermission(
+        permissions = PermissionManager.CAMERA_PERMISSIONS,
+        onGranted = { takePicture.launch(null) },
+        onDenied = { reason ->
+            status = reason
+            showMsg(reason)
         }
-    }
+    )
 
     fun capture() {
         if (hasCameraPermission()) takePicture.launch(null)
-        else showCameraRationale = true
-    }
-
-    if (showCameraRationale) {
-        AlertDialog(
-            onDismissRequest = { showCameraRationale = false },
-            title = { Text("需要权限") },
-            text = { Text(PermissionExplainer.CAMERA) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showCameraRationale = false
-                    requestPermission.launch(android.Manifest.permission.CAMERA)
-                }) { Text("继续授权") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCameraRationale = false }) { Text("取消") }
-            }
-        )
+        else requestCamera()
     }
 
     Card(

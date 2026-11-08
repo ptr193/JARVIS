@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.chat.Conversation
 import com.jarvis.pineapple.chat.Role
+import com.jarvis.pineapple.system.PermissionManager
+import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.get
 import org.koin.androidx.compose.koinViewModel
@@ -99,6 +101,11 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val requestMic = rememberOnDemandPermission(
+        permissions = PermissionManager.MICROPHONE_PERMISSIONS,
+        onGranted = onNavigateToVoiceChat,
+        onDenied = { voiceNotice = it }
+    )
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -168,7 +175,7 @@ fun ChatScreen(
                     contentDescription = if (speaking) "停止朗读" else "朗读最近回复"
                 )
             }
-            IconButton(onClick = onNavigateToVoiceChat) {
+            IconButton(onClick = { requestMic() }) {
                 Icon(Icons.Filled.Mic, contentDescription = "语音对话")
             }
             // 右：设置入口

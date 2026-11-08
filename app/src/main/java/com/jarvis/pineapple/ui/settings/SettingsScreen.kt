@@ -94,7 +94,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val showMsg: (String) -> Unit = { msg ->
         scope.launch { snackbarHostState.showSnackbar(msg) }
-        Unit
     }
 
     LaunchedEffect(pagerState) {
@@ -131,6 +130,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
             HorizontalPager(
                 state = pagerState,
+                beyondViewportPageCount = 0,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -231,7 +231,10 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
     Spacer(Modifier.height(8.dp))
 
     // 模型下载列表
-    val models = remember { ModelDownloadManager(context) }
+    val models = remember {
+        runCatching { org.koin.core.context.GlobalContext.get().get<ModelDownloadManager>() }
+            .getOrElse { ModelDownloadManager(context) }
+    }
     val downloadStates by models.downloadStates.collectAsState()
 
     Column {
@@ -487,7 +490,7 @@ private fun StatusTab(showMsg: (String) -> Unit) {
 
     LaunchedEffect(deviceMonitor) {
         while (true) {
-            deviceMonitor.refresh()
+            withContext(Dispatchers.IO) { deviceMonitor.refresh() }
             kotlinx.coroutines.delay(2_000)
         }
     }
@@ -621,7 +624,7 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
         while (true) {
             val c = cloud
             if (c != null && c.isCloudAvailable() && c.isLoggedIn()) {
-                val latest = c.discoverDevices()
+                val latest = withContext(Dispatchers.IO) { c.discoverDevices() }
                 devices.clear()
                 devices.addAll(latest)
             }

@@ -132,6 +132,11 @@
                 android:resource="@xml/voice_interaction" />
         </service>
 
+        <service
+            android:name=".assistant.JarvisVoiceInteractionSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
         <!-- Speech recognition provider (system SpeechRecognizer backend) -->
         <service
             android:name=".assistant.JarvisRecognitionService"

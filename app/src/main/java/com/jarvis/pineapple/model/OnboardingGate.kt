@@ -32,7 +32,7 @@ class OnboardingGate(
     companion object {
         const val DOWNLOAD_TIMEOUT = "模型下载超时"
         const val DOWNLOAD_FAILED = "模型下载失败"
-        const val TIMEOUT_MS = 30_000L
+        const val TIMEOUT_MS = 0L
         const val PREFS = "jarvis_onboarding"
         const val KEY_CONFIRMED = "model_download_confirmed"
         const val KEY_SKIPPED = "model_wizard_skipped"

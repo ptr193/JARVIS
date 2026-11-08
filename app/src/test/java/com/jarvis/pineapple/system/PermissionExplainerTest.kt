@@ -33,4 +33,16 @@ class PermissionExplainerTest {
         assertTrue(PermissionExplainer.rationaleFor(arrayOf(android.Manifest.permission.CAMERA)).contains("相机"))
         assertTrue(PermissionExplainer.rationaleFor(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION)).contains("定位"))
     }
+
+    @Test
+    fun cameraAndChatMicUseOnDemandRationale() {
+        val camera = readSource("app/src/main/java/com/jarvis/pineapple/ui/camera/CameraCaptureSection.kt")
+        val chat = readSource("app/src/main/java/com/jarvis/pineapple/ui/chat/ChatScreen.kt")
+        val voice = readSource("app/src/main/java/com/jarvis/pineapple/ui/voice/VoiceChatScreen.kt")
+        assertTrue("相机必须走 rememberOnDemandPermission", camera.contains("rememberOnDemandPermission"))
+        assertTrue("相机必须请求 CAMERA_PERMISSIONS", camera.contains("CAMERA_PERMISSIONS"))
+        assertTrue("聊天麦克风必须走 rememberOnDemandPermission", chat.contains("rememberOnDemandPermission"))
+        assertTrue("聊天麦克风必须请求 MICROPHONE_PERMISSIONS", chat.contains("MICROPHONE_PERMISSIONS"))
+        assertTrue("语音页拒绝须提示未授予权限", voice.contains("deniedNotice"))
+    }
 }

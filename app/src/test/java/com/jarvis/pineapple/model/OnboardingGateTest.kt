@@ -24,7 +24,7 @@ class OnboardingGateTest {
     fun timeoutAndFailureUseChineseClose() {
         val gate = OnboardingGate(hasLocalModel = { false })
         assertEquals("模型下载超时", gate.timeoutError())
-        assertEquals(30_000L, OnboardingGate.TIMEOUT_MS)
+        assertEquals(0L, OnboardingGate.TIMEOUT_MS)
         assertEquals("模型下载失败", gate.failureError(null))
         assertEquals("模型下载失败：网络中断", gate.failureError("网络中断"))
     }

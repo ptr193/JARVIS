@@ -18,6 +18,7 @@ import io.ktor.http.contentLength
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.readAvailable
 import kotlinx.serialization.json.Json
+import com.jarvis.pineapple.net.DownloadMirrors
 import java.io.File
 import java.security.MessageDigest
 
@@ -63,6 +64,10 @@ class ModelDownloadManager(private val context: Context) {
     private val modelsDir = File(context.filesDir, "models")
 
     private val httpClient = HttpClient(Android) {
+        engine {
+            connectTimeout = 15_000
+            socketTimeout = 30_000
+        }
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
@@ -81,7 +86,8 @@ class ModelDownloadManager(private val context: Context) {
         val fileName: String,
         val downloadUrl: String,
         val sha256: String = "",
-        val sizeBytes: Long = 0
+        val sizeBytes: Long = 0,
+        val mirrorUrls: List<String> = emptyList()
     )
 
     companion object {
@@ -191,115 +197,118 @@ class ModelDownloadManager(private val context: Context) {
         }
 
         val partFile = File(modelsDir, "${config.fileName}.part")
-        val resumeFrom = if (partFile.exists()) partFile.length() else 0L
+        var resumeFrom = if (partFile.exists()) partFile.length() else 0L
 
         _isDownloading.value = true
+        val urls = DownloadMirrors.candidates(config.downloadUrl, config.mirrorUrls)
+        var lastError = ""
+        for ((index, url) in urls.withIndex()) {
+            val switching = index > 0
+            updateState(modelId, ModelDownloadState(
+                modelId = modelId,
+                modelName = config.name,
+                status = DownloadStatus.DOWNLOADING,
+                progress = if (config.sizeBytes > 0) resumeFrom.toFloat() / config.sizeBytes else 0f,
+                downloadedBytes = resumeFrom,
+                totalBytes = config.sizeBytes,
+                errorMessage = if (switching) DownloadMirrors.SWITCHING else ""
+            ))
+            try {
+                downloadFromUrl(config, file, partFile, resumeFrom, url)
+                _isDownloading.value = false
+                return true
+            } catch (e: Exception) {
+                lastError = e.message ?: "下载失败"
+                resumeFrom = if (partFile.exists()) partFile.length() else 0L
+                if (index < urls.lastIndex && DownloadMirrors.isTimeoutOrUnreachable(e)) {
+                    continue
+                }
+                if (index < urls.lastIndex) continue
+            }
+        }
         updateState(modelId, ModelDownloadState(
             modelId = modelId,
             modelName = config.name,
-            status = DownloadStatus.DOWNLOADING,
-            progress = if (config.sizeBytes > 0) resumeFrom.toFloat() / config.sizeBytes else 0f,
-            downloadedBytes = resumeFrom,
+            status = DownloadStatus.FAILED,
+            downloadedBytes = if (partFile.exists()) partFile.length() else 0,
+            totalBytes = config.sizeBytes,
+            errorMessage = if (urls.size > 1) "${DownloadMirrors.ALL_FAILED}：$lastError" else lastError.ifBlank { "下载失败" }
+        ))
+        _isDownloading.value = false
+        return false
+    }
+
+    private suspend fun downloadFromUrl(
+        config: ModelConfig,
+        file: File,
+        partFile: File,
+        resumeFrom: Long,
+        url: String
+    ) {
+        httpClient.prepareGet(url) {
+            if (resumeFrom > 0) header(HttpHeaders.Range, "bytes=$resumeFrom-")
+        }.execute { response ->
+            val append = resumeFrom > 0 && response.status == HttpStatusCode.PartialContent
+            val startBytes = if (append) resumeFrom else 0L
+            if (!append) partFile.delete()
+            val totalLength = response.contentLength()?.let { it + startBytes } ?: config.sizeBytes
+
+            val channel = response.bodyAsChannel()
+            java.io.FileOutputStream(partFile, append).use { out ->
+                val buffer = ByteArray(64 * 1024)
+                var written = if (append) resumeFrom else 0L
+                while (true) {
+                    val n = channel.readAvailable(buffer, 0, buffer.size)
+                    if (n == -1) break
+                    if (n == 0) continue
+                    out.write(buffer, 0, n)
+                    written += n
+                    updateState(config.id, ModelDownloadState(
+                        modelId = config.id,
+                        modelName = config.name,
+                        status = DownloadStatus.DOWNLOADING,
+                        progress = if (totalLength > 0) (written.toFloat() / totalLength).coerceIn(0f, 0.99f) else 0f,
+                        downloadedBytes = written,
+                        totalBytes = config.sizeBytes
+                    ))
+                }
+            }
+        }
+
+        if (file.exists()) file.delete()
+        if (!partFile.renameTo(file)) {
+            partFile.copyTo(file, overwrite = true)
+            partFile.delete()
+        }
+
+        updateState(config.id, ModelDownloadState(
+            modelId = config.id,
+            modelName = config.name,
+            status = DownloadStatus.VERIFYING,
+            progress = 1f,
+            downloadedBytes = file.length(),
             totalBytes = config.sizeBytes
         ))
 
-        return try {
-            httpClient.prepareGet(config.downloadUrl) {
-                if (resumeFrom > 0) header(HttpHeaders.Range, "bytes=$resumeFrom-")
-            }.execute { response ->
-                val append = resumeFrom > 0 && response.status == HttpStatusCode.PartialContent
-                val startBytes = if (append) resumeFrom else 0L
-                if (!append) partFile.delete()
-                val totalLength = response.contentLength()?.let { it + startBytes } ?: config.sizeBytes
-
-                val channel = response.bodyAsChannel()
-                java.io.FileOutputStream(partFile, append).use { out ->
-                    val buffer = ByteArray(64 * 1024)
-                    var written = resumeFrom
-                    while (true) {
-                        val n = channel.readAvailable(buffer, 0, buffer.size)
-                        if (n == -1) break
-                        if (n == 0) continue
-                        out.write(buffer, 0, n)
-                        written += n
-                        updateState(modelId, ModelDownloadState(
-                            modelId = modelId,
-                            modelName = config.name,
-                            status = DownloadStatus.DOWNLOADING,
-                            progress = if (totalLength > 0) (written.toFloat() / totalLength).coerceIn(0f, 0.99f) else 0f,
-                            downloadedBytes = written,
-                            totalBytes = config.sizeBytes
-                        ))
-                    }
-                }
-            }
-
-            // 下载完成后原子移动到目标文件
-            if (file.exists()) file.delete()
-            if (!partFile.renameTo(file)) {
-                partFile.copyTo(file, overwrite = true)
-                partFile.delete()
-            }
-
-            updateState(modelId, ModelDownloadState(
-                modelId = modelId,
-                modelName = config.name,
-                status = DownloadStatus.VERIFYING,
-                progress = 1f,
-                downloadedBytes = file.length(),
-                totalBytes = config.sizeBytes
-            ))
-
-            // SHA-256 校验（若配置了期望值）
-            val actualSha256 = calculateSha256(file)
-            val expectedSha256 = config.sha256.trim().lowercase()
-            if (expectedSha256.isNotEmpty() && actualSha256 != expectedSha256) {
-                updateState(modelId, ModelDownloadState(
-                    modelId = modelId,
-                    modelName = config.name,
-                    status = DownloadStatus.FAILED,
-                    errorMessage = "SHA-256 校验失败：期望 $expectedSha256，实际 $actualSha256"
-                ))
-                file.delete()
-                _isDownloading.value = false
-                return false
-            }
-
-            if (file.length() > 1024) {
-                updateState(modelId, ModelDownloadState(
-                    modelId = modelId,
-                    modelName = config.name,
-                    status = DownloadStatus.COMPLETED,
-                    progress = 1f,
-                    downloadedBytes = file.length(),
-                    totalBytes = config.sizeBytes
-                ))
-                _isDownloading.value = false
-                true
-            } else {
-                updateState(modelId, ModelDownloadState(
-                    modelId = modelId,
-                    modelName = config.name,
-                    status = DownloadStatus.FAILED,
-                    errorMessage = "下载的文件大小异常"
-                ))
-                file.delete()
-                _isDownloading.value = false
-                false
-            }
-        } catch (e: Exception) {
-            // 保留 .part 文件以便下次断点续传
-            updateState(modelId, ModelDownloadState(
-                modelId = modelId,
-                modelName = config.name,
-                status = DownloadStatus.FAILED,
-                downloadedBytes = if (partFile.exists()) partFile.length() else 0,
-                totalBytes = config.sizeBytes,
-                errorMessage = e.message ?: "下载失败"
-            ))
-            _isDownloading.value = false
-            false
+        val actualSha256 = calculateSha256(file)
+        val expectedSha256 = config.sha256.trim().lowercase()
+        if (expectedSha256.isNotEmpty() && actualSha256 != expectedSha256) {
+            file.delete()
+            throw IllegalStateException("SHA-256 校验失败：期望 $expectedSha256，实际 $actualSha256")
         }
+
+        if (file.length() <= 1024) {
+            file.delete()
+            throw IllegalStateException("下载的文件大小异常")
+        }
+        updateState(config.id, ModelDownloadState(
+            modelId = config.id,
+            modelName = config.name,
+            status = DownloadStatus.COMPLETED,
+            progress = 1f,
+            downloadedBytes = file.length(),
+            totalBytes = config.sizeBytes
+        ))
     }
 
     /**

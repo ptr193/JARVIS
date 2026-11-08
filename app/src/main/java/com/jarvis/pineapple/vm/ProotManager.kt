@@ -444,8 +444,8 @@ class ProotManager internal constructor(
     private fun downloadToFile(url: String, target: File, onProgress: (Float) -> Unit = {}) {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.instanceFollowRedirects = true
-        connection.connectTimeout = 30_000
-        connection.readTimeout = 60_000
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
         connection.setRequestProperty("User-Agent", "JARVIS/1.0")
         connection.connect()
 

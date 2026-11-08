@@ -1,6 +1,7 @@
 package com.jarvis.pineapple.vm
 
 import android.content.Context
+import com.jarvis.pineapple.net.DownloadMirrors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -134,7 +135,7 @@ class VmDistroManager(
         val targetDir = rootfsDir(distroId)
 
         try {
-            val urls = (listOf(distro.downloadUrl) + distro.mirrorUrls).filter { it.isNotBlank() }
+            val urls = DownloadMirrors.candidates(distro.downloadUrl, distro.mirrorUrls)
             if (urls.isEmpty()) {
                 fail(distroId, "没有可用的下载地址")
                 return@withContext false
@@ -168,8 +169,8 @@ class VmDistroManager(
                         )
                     }
 
-                    // SHA-256 校验：空校验和视为失败，禁止未校验安装
-                    if (distro.checksumSha256.isBlank()) {
+                    val expectedSha = distro.checksumSha256.ifBlank { fetchSidecarSha256(url) }.orEmpty()
+                    if (expectedSha.isBlank()) {
                         lastError = "发行版缺少 SHA-256 校验和，拒绝安装"
                         archive.delete()
                         continue
@@ -185,8 +186,8 @@ class VmDistroManager(
                         )
                     )
                     val actual = TarExtractor.sha256(archive)
-                    if (!actual.equals(distro.checksumSha256, ignoreCase = true)) {
-                        lastError = "SHA-256 校验失败（期望 ${distro.checksumSha256}, 实际 $actual）"
+                    if (!actual.equals(expectedSha, ignoreCase = true)) {
+                        lastError = "SHA-256 校验失败（期望 $expectedSha, 实际 $actual）"
                         archive.delete()
                         continue
                     }
@@ -208,7 +209,11 @@ class VmDistroManager(
                     success = true
                     break
                 } catch (e: Exception) {
-                    lastError = e.message ?: e.toString()
+                    lastError = if (url != urls.first()) {
+                        "${DownloadMirrors.SWITCHING}；${e.message ?: e.toString()}"
+                    } else {
+                        e.message ?: e.toString()
+                    }
                     if (archive.exists()) archive.delete()
                 }
             }
@@ -263,6 +268,22 @@ class VmDistroManager(
         _downloadProgress.value = _downloadProgress.value + (progress.distroId to progress)
     }
 
+    private suspend fun fetchSidecarSha256(archiveUrl: String): String? {
+        val sidecarUrls = DownloadMirrors.candidates("$archiveUrl.sha256") +
+            DownloadMirrors.candidates("$archiveUrl.sha256.txt")
+        for (sidecar in sidecarUrls) {
+            try {
+                val tmp = File(context.cacheDir, "sha_${System.currentTimeMillis()}.txt")
+                prootManager.downloadArchive(sidecar, tmp)
+                val parsed = DownloadMirrors.parseSha256Sidecar(tmp.readText())
+                tmp.delete()
+                if (!parsed.isNullOrBlank()) return parsed
+            } catch (_: Exception) {
+            }
+        }
+        return null
+    }
+
     private fun fail(distroId: String, message: String) {
         updateProgress(
             DownloadProgress(
@@ -277,6 +298,8 @@ class VmDistroManager(
 
     companion object {
         const val X86_UNAVAILABLE = "当前设备无法模拟 x86_64"
+        const val ROCKY_IMPORT = "Rocky Linux 请通过「导入镜像」安装"
+        const val WINDOWS_IMPORT = "Windows 请通过「导入镜像」安装"
 
         fun x86UnavailableReason(emulationReady: Boolean): String? =
             if (emulationReady) null else X86_UNAVAILABLE
@@ -380,6 +403,46 @@ class VmDistroManager(
                     recommendedCpuCores = 1,
                     recommendedMemoryMb = 1024,
                     recommendedDiskGb = 8
+                ),
+                DistroInfo(
+                    id = "kali_nethunter_minimal",
+                    name = "Kali Linux",
+                    version = "NetHunter minimal",
+                    architecture = "aarch64",
+                    downloadUrl = "https://kali.download/nethunter-images/current/rootfs/kalifs-arm64-minimal.tar.xz",
+                    mirrorUrls = listOf(
+                        "https://mirrors.ustc.edu.cn/kali-images/nethunter-images/current/rootfs/kalifs-arm64-minimal.tar.xz"
+                    ),
+                    sizeBytes = 180_000_000L,
+                    checksumSha256 = KALI_MINIMAL_ARM64_SHA256,
+                    category = DistroCategory.SECURITY,
+                    description = "Kali Linux NetHunter minimal，Haven 式 PRoot rootfs",
+                    packageManager = "apt",
+                    recommendedCpuCores = 2,
+                    recommendedMemoryMb = 2048,
+                    recommendedDiskGb = 16
+                ),
+                DistroInfo(
+                    id = "rocky_linux",
+                    name = "Rocky Linux",
+                    version = "latest",
+                    architecture = "aarch64",
+                    sizeBytes = 1L,
+                    category = DistroCategory.SERVER,
+                    description = "Rocky Linux 通过用户镜像导入",
+                    packageManager = "dnf",
+                    unavailableReason = ROCKY_IMPORT
+                ),
+                DistroInfo(
+                    id = "windows",
+                    name = "Windows",
+                    version = "user image",
+                    architecture = "aarch64",
+                    sizeBytes = 1L,
+                    category = DistroCategory.DESKTOP,
+                    description = "Windows 评估版/正式版由用户提供镜像",
+                    packageManager = "",
+                    unavailableReason = WINDOWS_IMPORT
                 ),
                 DistroInfo(
                     id = "debian_12_x86_64",
