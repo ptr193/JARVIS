@@ -151,6 +151,15 @@ class KeepAliveServiceOrderingTest {
             "长按 Home 不得拉起主界面",
             !sessionSrc.contains("startVoiceActivity")
         )
+        assertTrue(
+            "overlay 必须启动系统 SpeechRecognizer 听写",
+            sessionSrc.contains("SpeechRecognizer.createSpeechRecognizer") &&
+                sessionSrc.contains("startListening")
+        )
+        assertTrue(
+            "无麦克风权限必须中文提示",
+            sessionSrc.contains("assist_mic_denied") || sessionSrc.contains("未授予麦克风权限")
+        )
         val detectorSrc = readSource("app/src/main/java/com/jarvis/pineapple/wake/HomeLongPressDetector.kt")
         assertTrue(
             "HomeLongPressDetector 必须暴露供 VoiceInteractionService 调用的入口",

@@ -4,4 +4,8 @@
     <string name="accessibility_label">JARVIS 辅助功能服务</string>
     <string name="assist_brand">JARVIS</string>
     <string name="assist_listening">正在聆听，请说话</string>
+    <string name="assist_processing">正在识别</string>
+    <string name="assist_mic_denied">未授予麦克风权限</string>
+    <string name="assist_asr_unavailable">语音识别不可用</string>
+    <string name="assist_no_match">未识别到语音</string>
 </resources>
