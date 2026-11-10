@@ -75,9 +75,16 @@ class KeepAliveService : Service() {
             kotlinx.coroutines.delay(AUTONOMOUS_INITIAL_DELAY_MS)
             while (isActive) {
                 runCatching {
-                    org.koin.core.context.GlobalContext.get()
+                    val autonomy = org.koin.core.context.GlobalContext.get()
                         .get<com.jarvis.pineapple.autonomous.AutonomousDecisionManager>()
-                        .checkAndExecuteTasks()
+                    autonomy.checkAndExecuteTasks()
+                    val suggestions = autonomy.generateContextualSuggestions(
+                        com.jarvis.pineapple.autonomous.AutonomousDecisionManager.UserContext()
+                    )
+                    com.jarvis.pineapple.assistant.SuggestionCardPublisher.publish(
+                        this@KeepAliveService,
+                        suggestions
+                    )
                 }
                 runCatching {
                     org.koin.core.context.GlobalContext.get()

@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-09 | 版本：v0.0.1（Debug，Home overlay 听写 A1）
+> 生成日期：2026-11-10 | 版本：v0.0.1（Debug，Home overlay A1–C1）
 
 ---
 
@@ -28,13 +28,13 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（Home overlay 听写 A1）
+版本：   v0.0.1-debug（Home overlay A1–C1）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 79,475,541 字节（75.8 MB）
-压缩包 SHA256： ac7091dab9c056d9f9028622df3389cbd287b41ab6bb58b21439fba6deecb445
-APK 大小： 219,733,673 字节（209.6 MB）
-APK SHA256： c1de62a827362b8f6ff37c89ecc43b3f30f8437357e3c5de20b4369b0aa3d8db
-构建：   2026-11-09
+压缩包大小： 81,056,319 字节（77.3 MB）
+压缩包 SHA256： 5d64c31dc539059fd201830e2ae48263620991a10db2473bda5f43ca18950146
+APK 大小： 219,737,348 字节（209.6 MB）
+APK SHA256： 90356e42474b22267509ef372e80a8ec54e1e0a0ac4421122acb6f0770be3e76
+构建：   2026-11-10
 构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
 Git：    origin/main（本提交）
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-ac7091dab9c056d9f9028622df3389cbd287b41ab6bb58b21439fba6deecb445
+5d64c31dc539059fd201830e2ae48263620991a10db2473bda5f43ca18950146
 ```
 
 解压后校验 APK：
 
 ```text
-c1de62a827362b8f6ff37c89ecc43b3f30f8437357e3c5de20b4369b0aa3d8db
+90356e42474b22267509ef372e80a8ec54e1e0a0ac4421122acb6f0770be3e76
 ```
 
-本包含长按 Home 声纹 overlay 真实听写（A1）：识别文字显示在 overlay，失败中文提示，不拉起主界面。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
+本包含长按 Home overlay 听写、回答、识屏、建议卡片、默认助手引导、识物/扫文档（A1–C1）。失败中文提示，不拉起主界面。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
 
 ---
 

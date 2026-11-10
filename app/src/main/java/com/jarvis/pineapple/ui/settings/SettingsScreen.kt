@@ -1051,6 +1051,7 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     var bluetoothWake by remember { mutableStateOf(true) }
     var cloudSync by remember { mutableStateOf(false) }
     var autoDownloadModels by remember { mutableStateOf(false) }
+    var isDefaultAssistant by remember { mutableStateOf(false) }
 
     // 加载已保存的配置
     LaunchedEffect(Unit) {
@@ -1061,9 +1062,20 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
         bluetoothWake = prefs.getBoolean("bluetooth_wake", true)
         cloudSync = prefs.getBoolean("cloud_sync", false)
         autoDownloadModels = prefs.getBoolean("auto_download_models", false)
+        val detector = runCatching {
+            org.koin.core.context.GlobalContext.get()
+                .get<com.jarvis.pineapple.wake.HomeLongPressDetector>()
+        }.getOrNull()
+        isDefaultAssistant = detector?.isDefaultAssistant() == true
     }
 
     Text("通用设置", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = if (isDefaultAssistant) "JARVIS 已是默认数字助手" else "尚未设为默认数字助手",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
     Spacer(Modifier.height(8.dp))
     Button(onClick = {
         val intents = listOf(
@@ -1076,7 +1088,12 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
             runCatching { context.startActivity(intent) }.isSuccess
         }
         showMsg(if (launched) "请在系统设置中将 JARVIS 设为默认数字助手" else "无法打开系统默认助手设置")
-    }) { Text("一键设为默认 AI 助手") }
+        val detector = runCatching {
+            org.koin.core.context.GlobalContext.get()
+                .get<com.jarvis.pineapple.wake.HomeLongPressDetector>()
+        }.getOrNull()
+        isDefaultAssistant = detector?.isDefaultAssistant() == true
+    }) { Text(if (isDefaultAssistant) "打开默认助手设置" else "一键设为默认 AI 助手") }
     Spacer(Modifier.height(8.dp))
 
     SettingSwitch("语音唤醒", voiceWake, {

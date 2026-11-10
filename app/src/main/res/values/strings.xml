@@ -8,4 +8,12 @@
     <string name="assist_mic_denied">未授予麦克风权限</string>
     <string name="assist_asr_unavailable">语音识别不可用</string>
     <string name="assist_no_match">未识别到语音</string>
+    <string name="assist_thinking">正在思考</string>
+    <string name="assist_screen_empty">未能读取当前屏幕内容</string>
+    <string name="assist_screen_unavailable">识屏不可用</string>
+    <string name="assist_object">识物</string>
+    <string name="assist_document">扫文档</string>
+    <string name="assist_camera_close">关闭</string>
+    <string name="default_assistant_enabled">JARVIS 已是默认数字助手</string>
+    <string name="default_assistant_disabled">尚未设为默认数字助手</string>
 </resources>

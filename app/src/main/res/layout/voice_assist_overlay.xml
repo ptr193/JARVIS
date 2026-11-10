@@ -31,4 +31,25 @@
         android:text="@string/assist_listening"
         android:textColor="#E6FFFFFF"
         android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:gravity="center"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/assist_object"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/assist_object" />
+
+        <Button
+            android:id="@+id/assist_document"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="@string/assist_document" />
+    </LinearLayout>
 </LinearLayout>
