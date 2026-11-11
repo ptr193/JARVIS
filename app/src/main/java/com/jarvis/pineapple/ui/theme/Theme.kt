@@ -10,26 +10,37 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.Color
 
-val JarvisBlue = Color(0xFF1E88E5)
-val JarvisDark = Color(0xFF0D1117)
-val JarvisAccent = Color(0xFF39FF14)
-val JarvisSurface = Color(0xFF161B22)
+val JarvisBlue = Color(0xFF3D6B8A)
+val JarvisDark = Color(0xFF1C1916)
+val JarvisAccent = Color(0xFFC9A227)
+val JarvisSurface = Color(0xFF26221E)
 
 private val DarkColors = darkColorScheme(
-    primary = JarvisBlue,
-    secondary = JarvisAccent,
+    primary = JarvisAccent,
+    secondary = Color(0xFFD4B896),
+    tertiary = Color(0xFF8B9A7D),
     background = JarvisDark,
     surface = JarvisSurface,
-    onPrimary = Color.White,
-    onBackground = Color.White,
-    onSurface = Color(0xFFE6EDF3)
+    surfaceVariant = Color(0xFF2F2A24),
+    onPrimary = Color(0xFF1C1916),
+    onSecondary = Color(0xFF1C1916),
+    onBackground = Color(0xFFEDE6D9),
+    onSurface = Color(0xFFE8DFD0),
+    onSurfaceVariant = Color(0xFFC9BBA8)
 )
 
 private val LightColors = lightColorScheme(
-    primary = JarvisBlue,
-    secondary = JarvisAccent,
-    background = Color(0xFFF5F5F5),
-    surface = Color.White
+    primary = Color(0xFF6B5A3E),
+    secondary = Color(0xFFA89070),
+    tertiary = Color(0xFF6E7A62),
+    background = Color(0xFFF6F0E6),
+    surface = Color(0xFFFFF8EE),
+    surfaceVariant = Color(0xFFEFE6D6),
+    onPrimary = Color.White,
+    onSecondary = Color(0xFF1C1916),
+    onBackground = Color(0xFF3D3428),
+    onSurface = Color(0xFF3D3428),
+    onSurfaceVariant = Color(0xFF5C5246)
 )
 
 @Composable
@@ -37,7 +48,6 @@ fun JarvisTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    // 读取用户自定义主题色（规格书 4.3），未设置时使用默认主题
     val uiRepo = remember {
         runCatching {
             org.koin.core.context.GlobalContext.get().get<UiCustomizationRepository>()

@@ -9,6 +9,7 @@ import com.jarvis.pineapple.autonomous.TaskScheduler
 import com.jarvis.pineapple.chat.ChatEngine
 import com.jarvis.pineapple.chat.ConversationEnhancer
 import com.jarvis.pineapple.chat.ConversationRepository
+import com.jarvis.pineapple.chat.SimpleCommandExecutor
 import com.jarvis.pineapple.chat.TranslationEngine
 import com.jarvis.pineapple.cloud.CloudSyncManager
 import com.jarvis.pineapple.db.DatabaseFactory
@@ -113,7 +114,6 @@ val appModule = module {
     single { MemorySystem(get()) }
     single { ConversationEnhancer(get()) }
     single { TranslationEngine() }
-    single { ChatEngine(get(), get(), get(), get(), get(), get(), get()) }
     viewModel { ChatViewModel(get(), get(), get()) }
 
     // System control
@@ -144,6 +144,8 @@ val appModule = module {
     // Permission manager (singleton)
     single { PermissionManager }
     single { MediaController(get()) }
+    single { SimpleCommandExecutor(get(), get(), get(), get(), get(), get()) }
+    single { ChatEngine(get(), get(), get(), get(), get(), get(), get(), get()) }
 
     // Virtual machine
     single { VmManager(get<android.content.Context>()) }

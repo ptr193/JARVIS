@@ -219,47 +219,8 @@ class ConversationEnhancer(private val context: Context) {
      * 解析极简指令
      */
     fun parseSimpleCommand(message: String): SimpleCommand {
-        val lowerMessage = message.lowercase().trim()
-
-        return when {
-            // 打开应用
-            lowerMessage.containsAny("打开", "open") -> {
-                val appName = extractAppName(message)
-                SimpleCommand("OPEN_APP", mapOf("app" to appName), true)
-            }
-            // 关闭应用
-            lowerMessage.containsAny("关闭", "关掉", "close") -> {
-                val appName = extractAppName(message)
-                SimpleCommand("CLOSE_APP", mapOf("app" to appName), true)
-            }
-            // 调节音量
-            lowerMessage.containsAny("音量", "volume") -> {
-                val level = extractNumber(message)
-                SimpleCommand("SET_VOLUME", mapOf("level" to level), true)
-            }
-            // 调节亮度
-            lowerMessage.containsAny("亮度", "brightness") -> {
-                val level = extractNumber(message)
-                SimpleCommand("SET_BRIGHTNESS", mapOf("level" to level), true)
-            }
-            // 无法解析
-            else -> SimpleCommand("UNKNOWN", emptyMap(), false)
-        }
-    }
-
-    private fun extractAppName(message: String): String {
-        // 提取应用名称
-        val keywords = listOf("打开", "开启", "启动", "关闭", "关掉", "open", "close")
-        var result = message
-        for (keyword in keywords) {
-            result = result.replace(keyword, "", ignoreCase = true)
-        }
-        return result.trim()
-    }
-
-    private fun extractNumber(message: String): String {
-        val regex = Regex("\\d+")
-        return regex.find(message)?.value ?: "50"
+        val parsed = AssistantCommandParser.parse(message)
+        return SimpleCommand(parsed.action, parsed.parameters, parsed.isExecutable)
     }
 
     // ==================== 语境感知应答（#15） ====================

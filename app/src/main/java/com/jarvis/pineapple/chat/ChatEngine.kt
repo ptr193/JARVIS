@@ -35,7 +35,8 @@ class ChatEngine(
     private val memorySystem: MemorySystem,
     private val capabilityScheduler: ModelCapabilityScheduler,
     private val conversationEnhancer: ConversationEnhancer,
-    private val infoProcessor: InfoProcessor
+    private val infoProcessor: InfoProcessor,
+    private val commandExecutor: SimpleCommandExecutor? = null
 ) {
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -59,6 +60,15 @@ class ChatEngine(
         }
     }
 
+    private fun finishDirectReply(content: String, reply: String, memoryNote: String): Flow<String> {
+        conversation.messages.add(ChatMessage(role = Role.ASSISTANT, content = reply, isStreaming = false))
+        _messages.value = conversation.messages.toList()
+        _isGenerating.value = false
+        conversationRepository.updateMessages(conversation.messages.toList())
+        memorySystem.recordConversation(memoryNote)
+        return flowOf(reply)
+    }
+
     private fun ensureConversation() {
         if (conversationRepository.getCurrentConversation() == null) {
             conversation = conversationRepository.createConversation()
@@ -78,12 +88,17 @@ class ChatEngine(
         parseTranslationRequest(content)?.let { (text, target) ->
             val result = conversationEnhancer.translate(text, targetLang = target)
             val reply = result.translatedText.ifBlank { "翻译失败：翻译服务不可用" }
-            conversation.messages.add(ChatMessage(role = Role.ASSISTANT, content = reply, isStreaming = false))
-            _messages.value = conversation.messages.toList()
-            _isGenerating.value = false
-            conversationRepository.updateMessages(conversation.messages.toList())
-            memorySystem.recordConversation("翻译请求：${content.take(50)}")
-            return flowOf(reply)
+            return finishDirectReply(content, reply, "翻译请求：${content.take(50)}")
+        }
+
+        if (AssistantCommandParser.isDirectCommand(content)) {
+            val parsedCommand = AssistantCommandParser.parse(content)
+            val reply = if (commandExecutor != null) {
+                commandExecutor.execute(parsedCommand)
+            } else {
+                "无法执行该指令：系统控制器不可用"
+            }
+            return finishDirectReply(content, reply, "快捷指令：${content.take(50)}")
         }
 
         val loadedModel = modelScheduler.resolveOrLoad()

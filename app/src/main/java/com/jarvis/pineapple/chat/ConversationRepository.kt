@@ -19,6 +19,7 @@ class ConversationRepository(
 ) {
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val lock = Any()
     private val conversationsDir: File = conversationsDirOverride
         ?: File(requireNotNull(context) { "ConversationRepository 需要 Context 或显式目录" }.filesDir, "conversations")
 
@@ -33,49 +34,57 @@ class ConversationRepository(
         loadConversations()
     }
 
-    fun createConversation(title: String = "新对话"): Conversation {
+    fun createConversation(title: String = "新对话"): Conversation = synchronized(lock) {
         val conversation = Conversation(title = title)
         _conversations.value = _conversations.value + conversation
         _currentConversationId.value = conversation.id
         saveConversation(conversation)
-        return conversation
+        conversation
     }
 
     fun switchConversation(conversationId: String) {
-        _currentConversationId.value = conversationId
+        synchronized(lock) {
+            _currentConversationId.value = conversationId
+        }
     }
 
-    fun getCurrentConversation(): Conversation? {
+    fun getCurrentConversation(): Conversation? = synchronized(lock) {
         val id = _currentConversationId.value ?: return null
-        return _conversations.value.firstOrNull { it.id == id }
+        _conversations.value.firstOrNull { it.id == id }
     }
 
     fun updateMessages(messages: List<ChatMessage>) {
-        val id = _currentConversationId.value ?: return
-        _conversations.value = _conversations.value.map { conv ->
-            if (conv.id == id) {
-                val updated = conv.copy(messages = messages.toMutableList())
-                saveConversation(updated)
-                updated
-            } else conv
+        synchronized(lock) {
+            val id = _currentConversationId.value ?: return
+            _conversations.value = _conversations.value.map { conv ->
+                if (conv.id == id) {
+                    val updated = conv.copy(messages = messages.toMutableList())
+                    saveConversation(updated)
+                    updated
+                } else conv
+            }
         }
     }
 
     fun deleteConversation(conversationId: String) {
-        _conversations.value = _conversations.value.filterNot { it.id == conversationId }
-        File(conversationsDir, "$conversationId.json").delete()
-        if (_currentConversationId.value == conversationId) {
-            _currentConversationId.value = _conversations.value.firstOrNull()?.id
+        synchronized(lock) {
+            _conversations.value = _conversations.value.filterNot { it.id == conversationId }
+            File(conversationsDir, "$conversationId.json").delete()
+            if (_currentConversationId.value == conversationId) {
+                _currentConversationId.value = _conversations.value.firstOrNull()?.id
+            }
         }
     }
 
     fun renameConversation(conversationId: String, newTitle: String) {
-        _conversations.value = _conversations.value.map { conv ->
-            if (conv.id == conversationId) {
-                val updated = conv.copy(title = newTitle)
-                saveConversation(updated)
-                updated
-            } else conv
+        synchronized(lock) {
+            _conversations.value = _conversations.value.map { conv ->
+                if (conv.id == conversationId) {
+                    val updated = conv.copy(title = newTitle)
+                    saveConversation(updated)
+                    updated
+                } else conv
+            }
         }
     }
 
@@ -112,16 +121,18 @@ class ConversationRepository(
     }
 
     fun importFromJson(jsonStr: String): Boolean {
-        return try {
-            val dtos = json.decodeFromString<List<ConversationDto>>(jsonStr)
-            dtos.forEach { dto ->
-                val conv = dto.toConversation()
-                saveConversation(conv)
+        return synchronized(lock) {
+            try {
+                val dtos = json.decodeFromString<List<ConversationDto>>(jsonStr)
+                dtos.forEach { dto ->
+                    val conv = dto.toConversation()
+                    saveConversation(conv)
+                }
+                loadConversations()
+                true
+            } catch (e: Exception) {
+                false
             }
-            loadConversations()
-            true
-        } catch (e: Exception) {
-            false
         }
     }
 }

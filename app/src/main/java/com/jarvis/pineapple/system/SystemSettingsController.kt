@@ -52,11 +52,13 @@ class SystemSettingsController(
         context.startActivity(intent)
     }
 
-    fun openApp(packageName: String) {
-        context.packageManager.getLaunchIntentForPackage(packageName)?.let {
-            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(it)
-        }
+    fun openApp(packageName: String): Boolean {
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: return false
+        return runCatching {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
+        }.getOrDefault(false)
     }
 
     /**

@@ -1,5 +1,8 @@
 package com.jarvis.pineapple.chat
 
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -43,5 +46,51 @@ class ConversationRepositoryTest {
         assertEquals("今天天气", loaded.messages[0].content)
         assertEquals("晴", loaded.messages[1].content)
         assertTrue(dir.listFiles()!!.any { it.name == "${conv.id}.json" })
+    }
+
+    @Test
+    fun persistLongContextWithoutTruncatingContent() {
+        val dir = tmp.newFolder("long-context")
+        val repo = ConversationRepository(conversationsDirOverride = dir)
+        repo.createConversation("长上下文")
+        val payload = "汉".repeat(8000)
+        val messages = (1..40).map { idx ->
+            ChatMessage(
+                role = if (idx % 2 == 0) Role.ASSISTANT else Role.USER,
+                content = "$idx:$payload"
+            )
+        }
+        repo.updateMessages(messages)
+        val reloaded = ConversationRepository(conversationsDirOverride = dir)
+        val loaded = reloaded.getCurrentConversation() ?: reloaded.conversations.value.first()
+        assertEquals(40, loaded.messages.size)
+        assertEquals(8002, loaded.messages.first().content.length)
+        assertTrue(loaded.messages.last().content.startsWith("40:"))
+        assertEquals(payload, loaded.messages.last().content.substringAfter(":"))
+    }
+
+    @Test
+    fun concurrentCreatesStayConsistent() {
+        val dir = tmp.newFolder("concurrent")
+        val repo = ConversationRepository(conversationsDirOverride = dir)
+        val workers = 8
+        val perWorker = 10
+        val pool = Executors.newFixedThreadPool(workers)
+        val start = CountDownLatch(1)
+        val done = CountDownLatch(workers)
+        repeat(workers) { worker ->
+            pool.execute {
+                start.await()
+                repeat(perWorker) { idx ->
+                    repo.createConversation("w$worker-$idx")
+                }
+                done.countDown()
+            }
+        }
+        start.countDown()
+        assertTrue(done.await(20, TimeUnit.SECONDS))
+        pool.shutdownNow()
+        assertEquals(workers * perWorker, repo.conversations.value.size)
+        assertEquals(workers * perWorker, dir.listFiles { f -> f.extension == "json" }!!.size)
     }
 }

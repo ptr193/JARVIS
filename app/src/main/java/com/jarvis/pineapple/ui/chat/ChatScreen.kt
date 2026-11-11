@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -61,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.pineapple.chat.AssistantCommandParser
 import com.jarvis.pineapple.chat.Conversation
 import com.jarvis.pineapple.chat.Role
 import com.jarvis.pineapple.system.PermissionManager
@@ -238,6 +240,24 @@ fun ChatScreen(
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
+            }
+        }
+
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(AssistantCommandParser.CHAT_SHORTCUTS, key = { it.first }) { (command, label) ->
+                TextButton(
+                    onClick = {
+                        if (!isGenerating) {
+                            scope.launch { viewModel.sendMessage(command) }
+                        }
+                    },
+                    enabled = !isGenerating
+                ) {
+                    Text(label, fontSize = 12.sp)
+                }
             }
         }
 
