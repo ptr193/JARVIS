@@ -1,5 +1,7 @@
 package com.jarvis.pineapple.chat
 
+import java.util.concurrent.atomic.AtomicInteger
+
 /**
  * 对话消息角色
  */
@@ -16,8 +18,8 @@ data class ChatMessage(
     val isStreaming: Boolean = false
 ) {
     companion object {
-        private var counter = 0
-        fun generateId(): String = "msg_${System.currentTimeMillis()}_${counter++}"
+        private val counter = AtomicInteger(0)
+        fun generateId(): String = "msg_${System.nanoTime()}_${counter.getAndIncrement()}"
     }
 }
 
@@ -31,7 +33,7 @@ data class Conversation(
     val createdAt: Long = System.currentTimeMillis()
 ) {
     companion object {
-        private var counter = 0
-        fun generateId(): String = "conv_${System.currentTimeMillis()}_${counter++}"
+        private val counter = AtomicInteger(0)
+        fun generateId(): String = "conv_${System.nanoTime()}_${counter.getAndIncrement()}"
     }
 }

@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 记忆条目类型
@@ -28,8 +29,8 @@ data class MemoryEntry(
     val metadata: Map<String, String> = emptyMap()
 ) {
     companion object {
-        private var counter = 0
-        fun generateId(): String = "mem_${System.currentTimeMillis()}_${counter++}"
+        private val counter = AtomicInteger(0)
+        fun generateId(): String = "mem_${System.nanoTime()}_${counter.getAndIncrement()}"
     }
 }
 
@@ -47,6 +48,7 @@ class MemorySystem internal constructor(
     )
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
+    private val lock = Any()
 
     private val _memories = MutableStateFlow<List<MemoryEntry>>(emptyList())
     val memories: StateFlow<List<MemoryEntry>> = _memories.asStateFlow()
@@ -80,23 +82,25 @@ class MemorySystem internal constructor(
     }
 
     private fun addEntry(entry: MemoryEntry) {
-        val current = _memories.value.toMutableList()
+        synchronized(lock) {
+            val current = _memories.value.toMutableList()
 
-        val existingIdx = current.indexOfFirst {
-            it.type == entry.type && it.content == entry.content
-        }
-        if (existingIdx >= 0) {
-            current[existingIdx] = entry
-        } else {
-            current.add(entry)
-        }
+            val existingIdx = current.indexOfFirst {
+                it.type == entry.type && it.content == entry.content
+            }
+            if (existingIdx >= 0) {
+                current[existingIdx] = entry
+            } else {
+                current.add(entry)
+            }
 
-        if (current.size > maxMemories) {
-            archiveOldMemories(current)
-        }
+            if (current.size > maxMemories) {
+                archiveOldMemories(current)
+            }
 
-        _memories.value = current.sortedByDescending { it.timestamp }
-        saveMemories()
+            _memories.value = current.sortedByDescending { it.timestamp }
+            saveMemories()
+        }
     }
 
     fun search(query: String, limit: Int = 10): List<MemoryEntry> {
@@ -148,18 +152,24 @@ class MemorySystem internal constructor(
     }
 
     fun forget(memoryId: String) {
-        _memories.value = _memories.value.filterNot { it.id == memoryId }
-        saveMemories()
+        synchronized(lock) {
+            _memories.value = _memories.value.filterNot { it.id == memoryId }
+            saveMemories()
+        }
     }
 
     fun forgetByType(type: MemoryType) {
-        _memories.value = _memories.value.filterNot { it.type == type }
-        saveMemories()
+        synchronized(lock) {
+            _memories.value = _memories.value.filterNot { it.type == type }
+            saveMemories()
+        }
     }
 
     fun clearAll() {
-        _memories.value = emptyList()
-        saveMemories()
+        synchronized(lock) {
+            _memories.value = emptyList()
+            saveMemories()
+        }
     }
 
     fun exportMemories(): String {
@@ -173,7 +183,6 @@ class MemorySystem internal constructor(
             dtos.forEach { dto ->
                 addEntry(dto.toEntry())
             }
-            saveMemories()
             true
         } catch (e: Exception) {
             false

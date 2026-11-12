@@ -45,6 +45,15 @@ Entries discovered by the Agent during task execution should follow this format:
   - APK 体积大于 100MB 时先打成 `.7z` 再上传，上传后提供压缩包下载直链
   - 压缩包已解压入仓，禁止重复解压
 
+[负荷测试必须逐级累加]
+- Date: 2026-11-12
+- Context: 用户纠正负荷测试做法：先前散测不计次数
+- Instructions:
+  - 负荷测试共 30 轮，一轮通过后下一轮必须加重
+  - 第 1 轮轻量测主功能，第 2 轮轻量测全部功能，之后全功能加压
+  - 负荷指给代码加负担，测效率、性能与 bug
+  - 一轮失败即修并重跑该轮，禁止把非累加散测计入 30 轮
+
 [Project Knowledge Summary]
 - Date: 2026-10-30
 - Context: Discovered by Agent while importing JARVIS archive
