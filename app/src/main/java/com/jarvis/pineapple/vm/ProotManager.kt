@@ -285,9 +285,20 @@ class ProotManager internal constructor(
             if (existing != null && isProcessAlive(existing)) return@synchronized true
             sessions.remove(key)
             try {
-                val process = commandProcess(config, "exec sleep 2147483647")
-                    .redirectOutput(File("/dev/null"))
-                    .start()
+                val process = commandProcess(config, "exec sleep 2147483647").start()
+                // API 24/25 没有 redirectOutput(File)，后台排空输出以避免子进程阻塞。
+                Thread {
+                    process.inputStream.use { input ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        do {
+                            val bytesRead = input.read(buffer)
+                        } while (bytesRead != -1)
+                    }
+                }.apply {
+                    name = "proot-session-output"
+                    isDaemon = true
+                    start()
+                }
                 if (isProcessAlive(process)) {
                     sessions[key] = process
                     true
