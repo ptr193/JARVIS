@@ -14,7 +14,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
@@ -178,7 +180,8 @@ class ChatEngine(
         }
         val activeModel = if (candidate.state == ModelState.READY) candidate else primaryModel
 
-        val flow = activeModel.stream(fullPrompt, systemPrompt)
+        // 将 stream() 的创建也纳入下方 catch，覆盖同步抛错的模型实现。
+        val flow = flow { emitAll(activeModel.stream(fullPrompt, systemPrompt)) }
         val collected = StringBuilder()
         var failed = false
 
