@@ -97,7 +97,26 @@ val appModule = module {
 
     // Model layer
     single { UserLocalModel(get()) }
-    single { ModelScheduler(userModel = get<UserLocalModel>(), liteRtModels = BuiltInModels.liteRtModels(get())).also { ModelRegistry.scheduler = it } }
+    single {
+        val scheduler = ModelScheduler(userModel = get<UserLocalModel>(), liteRtModels = BuiltInModels.liteRtModels(get()))
+        val prefs = get<android.content.Context>().getSharedPreferences("jarvis_service", android.content.Context.MODE_PRIVATE)
+        val baseUrl = prefs.getString("server_url", "")?.trim().orEmpty()
+        val apiKey = prefs.getString("api_key", "")?.trim().orEmpty()
+        val modelName = prefs.getString("model_name", "")?.trim().orEmpty()
+        if (baseUrl.isNotEmpty() && apiKey.isNotEmpty() && modelName.isNotEmpty()) {
+            scheduler.setApiModel(
+                com.jarvis.pineapple.model.ApiModel(
+                    id = "configured_api",
+                    name = modelName,
+                    baseUrl = baseUrl.trimEnd('/'),
+                    apiKey = apiKey,
+                    modelName = modelName,
+                    httpClient = get()
+                )
+            )
+        }
+        scheduler.also { ModelRegistry.scheduler = it }
+    }
     single { ModelCapabilityScheduler(get()).also { it.registerDefaultProfiles() } }
     single { ModelDownloadManager(get()) }
     single { ModelImportManager(get()) }

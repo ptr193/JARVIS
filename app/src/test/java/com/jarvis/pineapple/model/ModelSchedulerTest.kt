@@ -81,6 +81,24 @@ class ModelSchedulerTest {
     }
 
     @Test
+    fun `setApiModel replaces configuration and resets removed active model`() = runBlocking {
+        val user = FakeModel("local_user", "用户自有模型", ModelSource.LOCAL_USER, 100, false)
+        val scheduler = ModelScheduler(userModel = user)
+        val first = FakeModel("configured_api", "First", ModelSource.API, 20, true)
+        val second = FakeModel("configured_api", "Second", ModelSource.API, 20, true)
+
+        scheduler.setApiModel(first)
+        assertEquals(first, scheduler.resolveOrLoad())
+        scheduler.setApiModel(second)
+        assertEquals(listOf("local_user", "configured_api"), scheduler.rankedModels().map { it.info.id })
+        assertEquals(second, scheduler.getActive())
+
+        scheduler.setApiModel(null)
+        assertEquals(user, scheduler.getActive())
+        assertEquals(listOf("local_user"), scheduler.rankedModels().map { it.info.id })
+    }
+
+    @Test
     fun `resolve returns null and keeps explicit error when nothing loads`() = runBlocking {
         val user = FakeModel("local_user", "用户自有模型", ModelSource.LOCAL_USER, 100, false)
         val lite = FakeModel("gemma", "Gemma", ModelSource.LOCAL_LITERT, 50, false)

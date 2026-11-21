@@ -203,27 +203,72 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf("") }
     var serverUrl by remember { mutableStateOf("") }
+    var modelName by remember { mutableStateOf("") }
+    val scheduler = remember {
+        org.koin.core.context.GlobalContext.get().get<com.jarvis.pineapple.model.ModelScheduler>()
+    }
+    val httpClient = remember {
+        org.koin.core.context.GlobalContext.get().get<io.ktor.client.HttpClient>()
+    }
 
     // 加载已保存的配置
     LaunchedEffect(Unit) {
         val prefs = context.getSharedPreferences("jarvis_service", Context.MODE_PRIVATE)
         apiKey = prefs.getString("api_key", "") ?: ""
         serverUrl = prefs.getString("server_url", "") ?: ""
+        modelName = prefs.getString("model_name", "") ?: ""
     }
 
-    Text("AI / API / 服务器配置", style = MaterialTheme.typography.titleMedium)
+    Text("OpenAI 兼容 API 配置", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") })
+    OutlinedTextField(
+        value = apiKey,
+        onValueChange = { apiKey = it },
+        label = { Text("API Key") },
+        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+        singleLine = true
+    )
     Spacer(Modifier.height(8.dp))
-    OutlinedTextField(value = serverUrl, onValueChange = { serverUrl = it }, label = { Text("服务器地址") })
+    OutlinedTextField(
+        value = serverUrl,
+        onValueChange = { serverUrl = it },
+        label = { Text("API 基础地址（不含 /chat/completions）") },
+        singleLine = true
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = modelName,
+        onValueChange = { modelName = it },
+        label = { Text("模型名称") },
+        singleLine = true
+    )
     Spacer(Modifier.height(8.dp))
     Button(onClick = {
+        val baseUrl = serverUrl.trim().trimEnd('/')
+        val key = apiKey.trim()
+        val model = modelName.trim()
+        val values = listOf(baseUrl, key, model)
+        if (values.any(String::isEmpty) && values.any(String::isNotEmpty)) {
+            showMsg("请完整填写 API 地址、Key 和模型名称；清空三项可禁用 API 模型")
+            return@Button
+        }
+        scheduler.setApiModel(
+            if (values.all(String::isEmpty)) null else com.jarvis.pineapple.model.ApiModel(
+                id = "configured_api",
+                name = model,
+                baseUrl = baseUrl,
+                apiKey = key,
+                modelName = model,
+                httpClient = httpClient
+            )
+        )
         val prefs = context.getSharedPreferences("jarvis_service", Context.MODE_PRIVATE)
         prefs.edit()
-            .putString("api_key", apiKey)
-            .putString("server_url", serverUrl)
+            .putString("api_key", key)
+            .putString("server_url", baseUrl)
+            .putString("model_name", model)
             .apply()
-        showMsg("服务配置已保存")
+        showMsg(if (values.all(String::isEmpty)) "API 模型配置已清除" else "API 模型配置已保存并生效")
     }) { Text("保存配置") }
 
     Spacer(Modifier.height(16.dp))

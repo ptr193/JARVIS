@@ -42,6 +42,15 @@ class ModelScheduler(
         refresh()
     }
 
+    /** 替换设置页配置的 API 模型；传 null 表示清除该远程配置。 */
+    fun setApiModel(model: AiModel?) {
+        val apiWasActive = apiModels.any { it.info.id == _activeModel.value.info.id }
+        apiModels.clear()
+        model?.let(apiModels::add)
+        if (apiWasActive) _activeModel.value = model ?: userModel
+        refresh()
+    }
+
     fun addImportedLocalModel(model: AiModel) {
         importedLocalModels.add(model)
         refresh()
