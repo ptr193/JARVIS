@@ -89,6 +89,22 @@ class PluginManagerTest {
         assertTrue(uninstall.indexOf("if (!deleted)") < uninstall.indexOf("instances.remove(pluginId)"))
     }
 
+    @Test
+    fun reloadPreservesStateWhenUnloadOrDirectoryEnumerationFails() {
+        val source = readSource("app/src/main/java/com/jarvis/pineapple/plugin/PluginManager.kt")
+        val reload = source.substringAfter("fun reload(): Boolean")
+            .substringBefore("/**\n     * 安装插件")
+
+        assertTrue(reload.contains("pluginsDir.listFiles()"))
+        assertTrue(reload.contains("if (pluginFiles == null)"))
+        assertTrue(reload.contains("if (!deactivate(loaded))"))
+        assertFalse(reload.contains("runCatching"))
+        assertTrue(reload.indexOf("if (pluginFiles == null)") < reload.indexOf("instances.clear()"))
+        assertTrue(reload.indexOf("if (!deactivate(loaded))") < reload.indexOf("instances.clear()"))
+        assertTrue(reload.contains("return false"))
+        assertTrue(reload.contains("return true"))
+    }
+
     private fun readSource(relativePath: String): String {
         val candidates = listOf(File(relativePath), File("../$relativePath"))
         return candidates.firstOrNull { it.exists() }?.readText()

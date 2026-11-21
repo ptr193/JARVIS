@@ -35,10 +35,25 @@ class PluginManager(private val context: Context) {
 
     /**
      * 重新扫描插件目录：卸载所有已加载插件后重新加载，并恢复启用状态。
+     * 目录不可读或卸载失败时保留现有记录并返回 false。
      */
-    fun reload() {
+    fun reload(): Boolean {
+        val pluginFiles = try {
+            pluginsDir.listFiles()
+        } catch (e: SecurityException) {
+            Log.e(TAG, "枚举插件目录失败", e)
+            null
+        }
+        if (pluginFiles == null) {
+            Log.e(TAG, "无法读取插件目录: ${pluginsDir.absolutePath}")
+            return false
+        }
+
         instances.values.forEach { loaded ->
-            if (loaded.enabled) runCatching { loaded.instance.onUnload() }
+            if (!deactivate(loaded)) {
+                refresh()
+                return false
+            }
         }
         instances.clear()
 
@@ -46,7 +61,7 @@ class PluginManager(private val context: Context) {
         val files = fileMap()
         val discovered = LinkedHashSet<String>()
 
-        pluginsDir.listFiles()?.filter { it.isFile }?.sortedBy { it.name }?.forEach { file ->
+        pluginFiles.filter { it.isFile }.sortedBy { it.name }.forEach { file ->
             val loaded = loader.loadFrom(file) ?: return@forEach
             val id = loaded.metadata.id
             discovered.add(id)
@@ -59,12 +74,13 @@ class PluginManager(private val context: Context) {
             files[id] = file.name
         }
 
-        // 清理已消失插件的记录
+        // 仅在目录枚举成功后清理已消失插件的记录。
         files.keys.retainAll(discovered)
         enabled.retainAll(discovered)
         persistFiles(files)
         persistEnabled(enabled)
         refresh()
+        return true
     }
 
     /**

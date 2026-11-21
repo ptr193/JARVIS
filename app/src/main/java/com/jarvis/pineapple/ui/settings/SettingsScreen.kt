@@ -409,7 +409,9 @@ private fun ToolsTab(showMsg: (String) -> Unit) {
     val installed by pluginManager.plugins.collectAsState()
 
     // 首次进入扫描插件目录，恢复已安装技能
-    LaunchedEffect(Unit) { pluginManager.reload() }
+    LaunchedEffect(Unit) {
+        if (!pluginManager.reload()) showMsg("技能重新加载失败，请检查日志")
+    }
 
     val importer = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()

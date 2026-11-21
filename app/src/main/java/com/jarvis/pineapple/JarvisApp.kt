@@ -34,7 +34,8 @@ class JarvisApp : Application() {
         }
         // 加载并启用已安装插件（#139）；失败不影响主流程
         runCatching {
-            org.koin.core.context.GlobalContext.get().get<PluginManager>().reload()
+            val loaded = org.koin.core.context.GlobalContext.get().get<PluginManager>().reload()
+            if (!loaded) android.util.Log.w("JarvisApp", "部分或全部插件未能加载")
         }.onFailure {
             android.util.Log.w("JarvisApp", "插件加载失败: ${it.message}")
             runCatching { DownloadLogger.log("JarvisApp", "插件加载失败", it) }
