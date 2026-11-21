@@ -89,7 +89,9 @@ class SystemSettingsController(
 
     fun setBrightness(brightness: Int): Boolean {
         if (!PermissionGate.brightnessWriteAllowed(Settings.System.canWrite(context))) return false
-        Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, brightness)
-        return true
+        val clamped = brightness.coerceIn(0, 255)
+        return runCatching {
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, clamped)
+        }.getOrDefault(false)
     }
 }

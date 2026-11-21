@@ -35,6 +35,20 @@ class PermissionExplainerTest {
     }
 
     @Test
+    fun brightnessWritesReturnActualSystemResult() {
+        listOf("MediaController.kt", "SystemSettingsController.kt").forEach { name ->
+            val source = readSource("app/src/main/java/com/jarvis/pineapple/system/$name")
+            val method = Regex("fun setBrightness[\\s\\S]*?\\n    }").find(source)?.value
+                ?: error("未找到 $name.setBrightness")
+            assertTrue("$name 必须限制亮度范围", method.contains("coerceIn(0, 255)"))
+            assertTrue("$name 必须返回系统写入结果", method.contains("Settings.System.putInt"))
+            assertTrue("$name 必须隔离写入异常", method.contains("runCatching"))
+            assertTrue("$name 写入失败必须返回 false", method.contains("getOrDefault(false)"))
+            assertFalse("$name 不得无条件报告成功", method.contains("return true"))
+        }
+    }
+
+    @Test
     fun cameraAndChatMicUseOnDemandRationale() {
         val camera = readSource("app/src/main/java/com/jarvis/pineapple/ui/camera/CameraCaptureSection.kt")
         val chat = readSource("app/src/main/java/com/jarvis/pineapple/ui/chat/ChatScreen.kt")

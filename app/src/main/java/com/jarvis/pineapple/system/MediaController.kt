@@ -49,12 +49,13 @@ class MediaController(private val context: Context) {
     fun setBrightness(brightness: Int): Boolean {
         if (!PermissionGate.brightnessWriteAllowed(Settings.System.canWrite(context))) return false
         val clamped = brightness.coerceIn(0, 255)
-        Settings.System.putInt(
-            context.contentResolver,
-            Settings.System.SCREEN_BRIGHTNESS,
-            clamped
-        )
-        return true
+        return runCatching {
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_BRIGHTNESS,
+                clamped
+            )
+        }.getOrDefault(false)
     }
 
     /** 向当前媒体会话发送完整按键事件；返回是否成功交给系统分发。 */

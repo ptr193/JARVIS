@@ -55,7 +55,7 @@ class SimpleCommandExecutor(
         return if (mediaController.setBrightness(value)) {
             "已将亮度调至 $level%"
         } else {
-            "调节亮度失败：未授予修改系统设置权限"
+            "调节亮度失败：请授予修改系统设置权限并检查系统设置状态"
         }
     }
 
