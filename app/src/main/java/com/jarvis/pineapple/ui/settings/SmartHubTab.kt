@@ -144,8 +144,16 @@ fun SmartHubTab(showMsg: (String) -> Unit) {
         Row {
             Button(onClick = {
                 scope.launch {
-                    withContext(Dispatchers.IO) { autonomy.checkAndExecuteTasks() }
-                    decisionMsg = "已检查并执行到期任务"
+                    val taskCount = autonomy.tasks.value.count { it.isEnabled }
+                    val results = withContext(Dispatchers.IO) { autonomy.checkAndExecuteTasks() }
+                    decisionMsg = when {
+                        taskCount == 0 -> "当前没有已注册的启用任务"
+                        results.isEmpty() -> "已检查 $taskCount 个启用任务，当前没有到期任务"
+                        else -> {
+                            val succeeded = results.count { it.success }
+                            "已执行 ${results.size} 个到期任务：成功 $succeeded，失败 ${results.size - succeeded}"
+                        }
+                    }
                     showMsg(decisionMsg)
                 }
             }) { Text("检查自主任务") }

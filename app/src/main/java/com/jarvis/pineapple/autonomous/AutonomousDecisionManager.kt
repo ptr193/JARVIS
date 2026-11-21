@@ -62,9 +62,6 @@ class AutonomousDecisionManager(private val context: Context) {
 
     sealed class TaskTrigger {
         data class TimeTrigger(val hour: Int, val minute: Int) : TaskTrigger()
-        data class EventTrigger(val eventType: String) : TaskTrigger()
-        data class ConditionTrigger(val condition: String) : TaskTrigger()
-        data class LocationTrigger(val latitude: Double, val longitude: Double, val radiusMeters: Float) : TaskTrigger()
     }
 
     data class TaskResult(
@@ -118,42 +115,26 @@ class AutonomousDecisionManager(private val context: Context) {
             result.copy(executionTimeMs = executionTime)
         } catch (e: Exception) {
             val executionTime = System.currentTimeMillis() - startTime
-            TaskResult(taskId, false, "执行异常: ${e.message}", executionTime)
+            val result = TaskResult(taskId, false, "执行异常: ${e.message}", executionTime)
+            updateTaskStats(taskId, false)
+            addTaskHistory(result)
+            result
         }
     }
 
     /**
      * 检查并执行满足触发条件的任务
      */
-    suspend fun checkAndExecuteTasks() {
+    suspend fun checkAndExecuteTasks(): List<TaskResult> {
         val enabledTasks = _tasks.value.filter { it.isEnabled }
-        for (task in enabledTasks) {
-            if (shouldExecute(task)) {
-                executeTask(task.id)
-            }
-        }
+        return enabledTasks.filter { shouldExecute(it) }.map { executeTask(it.id) }
     }
 
     private fun shouldExecute(task: AutonomousTask): Boolean {
-        return when (task.triggerCondition) {
-            is TaskTrigger.TimeTrigger -> {
-                val now = java.util.Calendar.getInstance()
-                now.get(java.util.Calendar.HOUR_OF_DAY) == task.triggerCondition.hour &&
-                now.get(java.util.Calendar.MINUTE) == task.triggerCondition.minute
-            }
-            is TaskTrigger.EventTrigger -> {
-                // 检查事件是否发生
-                false
-            }
-            is TaskTrigger.ConditionTrigger -> {
-                // 检查条件是否满足
-                false
-            }
-            is TaskTrigger.LocationTrigger -> {
-                // 检查位置是否在范围内
-                false
-            }
-        }
+        val trigger = task.triggerCondition as TaskTrigger.TimeTrigger
+        val now = java.util.Calendar.getInstance()
+        return now.get(java.util.Calendar.HOUR_OF_DAY) == trigger.hour &&
+            now.get(java.util.Calendar.MINUTE) == trigger.minute
     }
 
     private fun updateTaskStats(taskId: String, success: Boolean) {
