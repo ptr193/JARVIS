@@ -117,6 +117,46 @@ class ProotManagerTest {
     }
 
     @Test
+    fun `shell quote keeps package input inside one argument`() {
+        assertEquals("'alpha'", ProotManager.shellQuote("alpha"))
+        assertEquals("'a'\\''b'", ProotManager.shellQuote("a'b"))
+    }
+
+    @Test
+    fun `package list preserves guest failure`() = runBlocking {
+        val rootfs = tmp.newFolder("package-rootfs")
+        val filesDir = tmp.newFolder("package-proot")
+        val mgr = ProotManager(filesDir, tmp.newFolder("package-cache"), { arrayOf("arm64-v8a") })
+        val executable = File(filesDir, "proot/bin/proot")
+        executable.writeText(
+            "#!/bin/sh\n" +
+                "while [ \$# -gt 0 ]; do\n" +
+                "  if [ \"\$1\" = \"-c\" ]; then printf 'query failed\\n'; exit 23; fi\n" +
+                "  shift\n" +
+                "done\n" +
+                "exit 2\n"
+        )
+        assertTrue(executable.setExecutable(true))
+
+        val result = mgr.listInstalledPackages(
+            ProotManager.ProotConfig(rootfsPath = rootfs.absolutePath),
+            "apt"
+        )
+
+        assertEquals(23, result.exitCode)
+        assertTrue(result.output.contains("query failed"))
+    }
+
+    @Test
+    fun `imported rootfs package manager requires a real executable path`() {
+        val rootfs = tmp.newFolder("import-rootfs")
+        assertEquals(null, HavenVmManager.detectPackageManager(rootfs))
+        File(rootfs, "usr/bin").mkdirs()
+        File(rootfs, "usr/bin/apt-get").writeText("")
+        assertEquals("apt", HavenVmManager.detectPackageManager(rootfs))
+    }
+
+    @Test
     fun `kali minimal rootfs has required sha256`() {
         assertEquals(64, KALI_MINIMAL_ARM64_SHA256.length)
         assertTrue(KALI_MINIMAL_ARM64_SHA256.matches(Regex("[0-9a-f]{64}")))

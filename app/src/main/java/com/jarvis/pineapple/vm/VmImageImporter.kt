@@ -10,18 +10,16 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.RandomAccessFile
 
-/**
- * 支持的镜像格式
- */
+/** 可识别的镜像格式；只有 rootfs tar 归档能够由 PRoot 直接导入。 */
 enum class ImageFormat(
     val extension: String,
     val description: String,
-    val isArchive: Boolean = false
+    val isRootfsArchive: Boolean = false
 ) {
-    TARGZ("tar.gz", "压缩的 rootfs 归档 (tar.gz)", isArchive = true),
-    TARXZ("tar.xz", "压缩的 rootfs 归档 (tar.xz)", isArchive = true),
-    TAR("tar", "未压缩的 rootfs 归档 (tar)", isArchive = true),
-    OVA("ova", "Open Virtualization Archive", isArchive = true),
+    TARGZ("tar.gz", "压缩的 rootfs 归档 (tar.gz)", isRootfsArchive = true),
+    TARXZ("tar.xz", "压缩的 rootfs 归档 (tar.xz)", isRootfsArchive = true),
+    TAR("tar", "未压缩的 rootfs 归档 (tar)", isRootfsArchive = true),
+    OVA("ova", "Open Virtualization Archive"),
     OVF("ovf", "Open Virtualization Format"),
     QCOW2("qcow2", "QEMU Copy-On-Write v2"),
     VMDK("vmdk", "VMware Virtual Disk"),
@@ -31,9 +29,6 @@ enum class ImageFormat(
     ISO("iso", "ISO 9660 Disk Image")
 }
 
-/**
- * 镜像元信息
- */
 data class ImageMetadata(
     val format: ImageFormat,
     val sizeBytes: Long,
@@ -45,9 +40,6 @@ data class ImageMetadata(
     val errorMessage: String = ""
 )
 
-/**
- * 导入进度
- */
 data class ImportProgress(
     val stage: ImportStage,
     val progress: Float = 0f,
@@ -58,32 +50,27 @@ enum class ImportStage {
     IDLE, VALIDATING, ANALYZING, EXTRACTING, REGISTERING, COMPLETED, FAILED
 }
 
-/**
- * 导入结果
- */
 sealed class ImportResult {
     data class Success(val vmId: String, val message: String) : ImportResult()
     data class Failure(val error: String) : ImportResult()
 }
 
 /**
- * 虚拟机镜像导入器（REQ-03）。
- *
- * 通过魔数识别镜像真实格式；对 tar 系列 rootfs 归档执行真实解压到应用私有目录，
- * 对磁盘镜像（qcow2/vmdk/iso 等）登记元信息并标注需外部引擎（如 QEMU）引导。
+ * 将本地 Linux rootfs tar 归档解压并创建真实 PRoot 虚拟机。
+ * OVA、ISO、qcow2 等磁盘镜像需要虚拟化引擎，不会被伪装成可启动 rootfs。
  */
-class VmImageImporter(private val context: Context) {
-
+class VmImageImporter(
+    context: Context,
+    private val vmManager: HavenVmManager
+) {
+    private val appContext = context.applicationContext
     private val _importProgress = MutableStateFlow(ImportProgress(ImportStage.IDLE))
     val importProgress: StateFlow<ImportProgress> = _importProgress.asStateFlow()
 
     private val _isImporting = MutableStateFlow(false)
     val isImporting: StateFlow<Boolean> = _isImporting.asStateFlow()
 
-    private val _importedImages = MutableStateFlow<List<ImportedImage>>(emptyList())
-    val importedImages: StateFlow<List<ImportedImage>> = _importedImages.asStateFlow()
-
-    private val rootfsRoot = File(context.filesDir, "rootfs")
+    private val rootfsRoot = File(appContext.filesDir, "rootfs")
 
     private fun deviceArchitecture(): String {
         val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
@@ -110,189 +97,132 @@ class VmImageImporter(private val context: Context) {
         }
     }
 
-    private fun readMagic(file: File, offset: Long = 0, length: Int = 8): ByteArray {
-        return try {
-            RandomAccessFile(file, "r").use { raf ->
-                raf.seek(offset)
-                val buf = ByteArray(length)
-                val read = raf.read(buf)
-                if (read <= 0) ByteArray(0) else buf.copyOf(read)
-            }
-        } catch (e: Exception) {
-            ByteArray(0)
+    private fun readMagic(file: File, offset: Long = 0, length: Int = 8): ByteArray = try {
+        RandomAccessFile(file, "r").use { raf ->
+            raf.seek(offset)
+            val buffer = ByteArray(length)
+            val read = raf.read(buffer)
+            if (read <= 0) ByteArray(0) else buffer.copyOf(read)
         }
+    } catch (_: Exception) {
+        ByteArray(0)
     }
 
-    /**
-     * 读取前若干字节并识别真实格式。
-     */
     private fun sniffFormat(file: File): ImageFormat? {
-        val head = readMagic(file, 0, 8)
-        if (head.size >= 2 && head[0] == 0x1f.toByte() && head[1] == 0x8b.toByte()) return ImageFormat.TARGZ
+        val head = readMagic(file)
+        if (head.size >= 2 && head[0] == 0x1f.toByte() && head[1] == 0x8b.toByte()) {
+            return ImageFormat.TARGZ
+        }
         if (head.size >= 6 && head[0] == 0xFD.toByte() && head[1] == 0x37.toByte() &&
-            head[2] == 0x7A.toByte() && head[3] == 0x58.toByte()) return ImageFormat.TARXZ
+            head[2] == 0x7A.toByte() && head[3] == 0x58.toByte()
+        ) {
+            return ImageFormat.TARXZ
+        }
         if (head.size >= 4) {
-            val tag = String(head.copyOf(4), Charsets.US_ASCII)
-            if (tag == "QFI\u00fb") return ImageFormat.QCOW2
-            if (tag == "KDMV") return ImageFormat.VMDK
+            when (String(head.copyOf(4), Charsets.US_ASCII)) {
+                "QFIû" -> return ImageFormat.QCOW2
+                "KDMV" -> return ImageFormat.VMDK
+            }
         }
         if (head.size >= 8) {
-            val tag8 = String(head.copyOf(8), Charsets.US_ASCII)
-            if (tag8 == "conectix") return ImageFormat.VHD
-            if (tag8 == "vhdxfile") return ImageFormat.VHDX
+            when (String(head, Charsets.US_ASCII)) {
+                "conectix" -> return ImageFormat.VHD
+                "vhdxfile" -> return ImageFormat.VHDX
+            }
         }
-        // tar 的 "ustar" 位于偏移 257
         val tarMagic = readMagic(file, 257, 5)
-        if (tarMagic.size >= 5 && String(tarMagic, Charsets.US_ASCII) == "ustar") return ImageFormat.TAR
-        // ISO 的 "CD001" 位于偏移 0x8001
+        if (tarMagic.size >= 5 && String(tarMagic, Charsets.US_ASCII) == "ustar") {
+            return ImageFormat.TAR
+        }
         val isoMagic = readMagic(file, 0x8001, 5)
-        if (isoMagic.size >= 5 && String(isoMagic, Charsets.US_ASCII) == "CD001") return ImageFormat.ISO
+        if (isoMagic.size >= 5 && String(isoMagic, Charsets.US_ASCII) == "CD001") {
+            return ImageFormat.ISO
+        }
         return null
     }
 
     fun analyzeImage(filePath: String): ImageMetadata {
         val file = File(filePath)
-        if (!file.exists()) {
+        if (!file.isFile) {
             return ImageMetadata(
                 format = ImageFormat.RAW,
                 sizeBytes = 0,
                 isValid = false,
-                errorMessage = "文件不存在: $filePath"
+                errorMessage = "文件不存在或不是普通文件: $filePath"
             )
         }
-
         val format = sniffFormat(file) ?: detectFormat(filePath) ?: return ImageMetadata(
             format = ImageFormat.RAW,
             sizeBytes = file.length(),
             isValid = false,
             errorMessage = "不支持的镜像格式: ${filePath.substringAfterLast(".")}"
         )
-
         return ImageMetadata(
             format = format,
             sizeBytes = file.length(),
-            systemType = detectSystemType(format),
+            systemType = if (format.isRootfsArchive) "Linux rootfs" else "Virtual Disk",
             architecture = deviceArchitecture(),
-            bootMode = "N/A",
-            diskSizeGb = file.length() / (1024f * 1024 * 1024),
-            isValid = true
+            diskSizeGb = file.length() / (1024f * 1024 * 1024)
         )
     }
 
     suspend fun importImage(filePath: String, vmName: String = ""): ImportResult {
-        if (_isImporting.value) {
-            return ImportResult.Failure("已有导入任务正在进行中")
-        }
-
+        if (_isImporting.value) return ImportResult.Failure("已有导入任务正在进行中")
         _isImporting.value = true
-
-        try {
+        return try {
             updateProgress(ImportStage.VALIDATING, 0.1f, "正在验证镜像文件...")
-            val file = File(filePath)
-            if (!file.exists()) {
-                _isImporting.value = false
-                return ImportResult.Failure("文件不存在: $filePath")
-            }
-
-            updateProgress(ImportStage.ANALYZING, 0.3f, "正在分析镜像元信息...")
             val metadata = analyzeImage(filePath)
-            if (!metadata.isValid) {
-                _isImporting.value = false
-                return ImportResult.Failure(metadata.errorMessage)
+            if (!metadata.isValid) return fail(metadata.errorMessage)
+            if (!metadata.format.isRootfsArchive) {
+                return fail("仅支持 Linux rootfs 的 tar、tar.gz、tar.xz 归档；磁盘镜像需要 QEMU 等外部引擎")
             }
 
-            var extractedRootfs = ""
-            if (metadata.format.isArchive) {
-                updateProgress(ImportStage.EXTRACTING, 0.5f, "正在解压 rootfs 归档...")
-                val target = File(rootfsRoot, "imported_${System.currentTimeMillis()}")
-                val ok = withContext(Dispatchers.IO) {
-                    try {
-                        if (target.exists()) target.deleteRecursively()
-                        target.mkdirs()
-                        TarExtractor.extract(file, target)
-                        true
-                    } catch (e: Exception) {
-                        false
-                    }
+            updateProgress(ImportStage.ANALYZING, 0.3f, "正在分析 rootfs 归档...")
+            val source = File(filePath)
+            val target = File(rootfsRoot, "imported_${System.currentTimeMillis()}")
+            updateProgress(ImportStage.EXTRACTING, 0.5f, "正在解压 rootfs 归档...")
+            try {
+                withContext(Dispatchers.IO) {
+                    if (target.exists()) target.deleteRecursively()
+                    if (!target.mkdirs()) throw IllegalStateException("无法创建导入目录")
+                    TarExtractor.extract(source, target)
                 }
-                if (!ok) {
-                    _isImporting.value = false
-                    return ImportResult.Failure("解压镜像失败")
-                }
-                extractedRootfs = target.absolutePath
+            } catch (e: Exception) {
+                target.deleteRecursively()
+                return fail("解压 rootfs 失败: ${e.message}")
             }
 
-            updateProgress(ImportStage.REGISTERING, 0.85f, "正在注册到虚拟机库...")
-            val importedImage = ImportedImage(
-                id = "img_${System.currentTimeMillis()}",
-                name = vmName.ifEmpty { file.nameWithoutExtension },
-                originalPath = filePath,
-                format = metadata.format,
-                sizeBytes = metadata.sizeBytes,
-                systemType = metadata.systemType,
-                architecture = metadata.architecture,
-                rootfsPath = extractedRootfs,
-                importedAt = System.currentTimeMillis()
-            )
-            _importedImages.value = _importedImages.value + importedImage
-
-            val message = if (metadata.format.isArchive) {
-                "镜像 '${importedImage.name}' 已导入并解压为可用 rootfs"
-            } else {
-                "镜像 '${importedImage.name}' 已登记（磁盘镜像需外部引擎引导）"
+            updateProgress(ImportStage.REGISTERING, 0.85f, "正在创建虚拟机...")
+            val name = vmName.ifBlank { source.name.substringBefore(".tar").substringBeforeLast('.') }
+            val created = vmManager.createImportedVm(name, target.absolutePath)
+            val vm = created.vm
+            if (vm == null) {
+                target.deleteRecursively()
+                return fail(created.error ?: "创建虚拟机失败")
             }
+            val message = "镜像已导入，虚拟机 '${vm.name}' 已创建"
             updateProgress(ImportStage.COMPLETED, 1f, message)
-            _isImporting.value = false
-            return ImportResult.Success(importedImage.id, message)
-
+            ImportResult.Success(vm.id, message)
         } catch (e: Exception) {
-            updateProgress(ImportStage.FAILED, 0f, "导入失败: ${e.message}")
+            fail("导入失败: ${e.message}")
+        } finally {
             _isImporting.value = false
-            return ImportResult.Failure("导入失败: ${e.message}")
         }
     }
 
-    fun deleteImage(imageId: String): Boolean {
-        val image = _importedImages.value.firstOrNull { it.id == imageId } ?: return false
-        if (image.rootfsPath.isNotBlank()) {
-            try { File(image.rootfsPath).deleteRecursively() } catch (_: Exception) {}
-        }
-        _importedImages.value = _importedImages.value.filterNot { it.id == imageId }
-        return true
+    fun isSupportedFormat(filePath: String): Boolean =
+        analyzeImage(filePath).let { it.isValid && it.format.isRootfsArchive }
+
+    fun getSupportedFormats(): List<String> = ImageFormat.values()
+        .filter { it.isRootfsArchive }
+        .map { "${it.extension} (${it.description})" }
+
+    private fun fail(message: String): ImportResult.Failure {
+        updateProgress(ImportStage.FAILED, 0f, message)
+        return ImportResult.Failure(message)
     }
-
-    fun getImportedImages(): List<ImportedImage> = _importedImages.value
-
-    fun isSupportedFormat(filePath: String): Boolean = detectFormat(filePath) != null
-
-    fun getSupportedFormats(): List<String> =
-        ImageFormat.values().map { "${it.extension} (${it.description})" }
 
     private fun updateProgress(stage: ImportStage, progress: Float, message: String) {
         _importProgress.value = ImportProgress(stage, progress, message)
     }
-
-    private fun detectSystemType(format: ImageFormat): String {
-        return when (format) {
-            ImageFormat.ISO -> "Linux Installer"
-            ImageFormat.OVA, ImageFormat.OVF -> "Virtual Appliance"
-            ImageFormat.TARGZ, ImageFormat.TARXZ, ImageFormat.TAR -> "Linux rootfs"
-            else -> "Linux"
-        }
-    }
 }
-
-/**
- * 已导入的镜像
- */
-data class ImportedImage(
-    val id: String,
-    val name: String,
-    val originalPath: String,
-    val format: ImageFormat,
-    val sizeBytes: Long,
-    val systemType: String,
-    val architecture: String,
-    val rootfsPath: String = "",
-    val importedAt: Long
-)

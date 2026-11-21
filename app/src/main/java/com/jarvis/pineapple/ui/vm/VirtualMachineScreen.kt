@@ -125,7 +125,6 @@ fun VirtualMachineScreen(
                 when (val result = vmImageImporter.importImage(localFile.absolutePath)) {
                     is com.jarvis.pineapple.vm.ImportResult.Success -> {
                         showMsg(result.message)
-                        distroManager.refreshDownloadState()
                     }
                     is com.jarvis.pineapple.vm.ImportResult.Failure -> showMsg("导入失败: ${result.error}")
                 }
@@ -512,8 +511,8 @@ private fun PackageTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager, 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 scope.launch {
-                    manager.refreshPackageList()
-                    showMsg("已刷新已安装列表")
+                    val refreshed = manager.refreshPackageList()
+                    showMsg(if (refreshed) "已刷新已安装列表" else "刷新失败，请检查虚拟机与包管理器")
                 }
             }, enabled = !isOperating) { Text("刷新已安装") }
             OutlinedButton(onClick = {

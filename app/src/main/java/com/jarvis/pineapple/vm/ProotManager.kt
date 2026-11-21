@@ -106,6 +106,9 @@ class ProotManager internal constructor(
             BindMount("/sdcard", "/sdcard")
         )
 
+        internal fun shellQuote(value: String): String =
+            "'" + value.replace("'", "'\\''") + "'"
+
         fun defaultEnv(): Map<String, String> = mapOf(
             "PATH" to "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "HOME" to "/root",
@@ -356,11 +359,12 @@ class ProotManager internal constructor(
      * 软件包安装。
      */
     suspend fun installPackage(config: ProotConfig, packageManager: String, packageName: String): Boolean {
+        val packageArg = shellQuote(packageName)
         val command = when (packageManager.lowercase()) {
-            "apk" -> "apk add $packageName"
-            "apt" -> "apt-get update && apt-get install -y $packageName"
-            "pacman" -> "pacman -S --noconfirm $packageName"
-            "xbps" -> "xbps-install -y $packageName"
+            "apk" -> "apk add $packageArg"
+            "apt" -> "apt-get update && apt-get install -y $packageArg"
+            "pacman" -> "pacman -S --noconfirm $packageArg"
+            "xbps" -> "xbps-install -y $packageArg"
             else -> return false
         }
         return executeCommand(config, command).exitCode == 0
@@ -370,11 +374,12 @@ class ProotManager internal constructor(
      * 软件包卸载。
      */
     suspend fun uninstallPackage(config: ProotConfig, packageManager: String, packageName: String): Boolean {
+        val packageArg = shellQuote(packageName)
         val command = when (packageManager.lowercase()) {
-            "apk" -> "apk del $packageName"
-            "apt" -> "apt-get remove -y $packageName"
-            "pacman" -> "pacman -R --noconfirm $packageName"
-            "xbps" -> "xbps-remove -y $packageName"
+            "apk" -> "apk del $packageArg"
+            "apt" -> "apt-get remove -y $packageArg"
+            "pacman" -> "pacman -R --noconfirm $packageArg"
+            "xbps" -> "xbps-remove -y $packageArg"
             else -> return false
         }
         return executeCommand(config, command).exitCode == 0
@@ -397,19 +402,15 @@ class ProotManager internal constructor(
     /**
      * 列出已安装软件包。
      */
-    suspend fun listInstalledPackages(config: ProotConfig, packageManager: String): List<String> {
+    suspend fun listInstalledPackages(config: ProotConfig, packageManager: String): CommandResult {
         val command = when (packageManager.lowercase()) {
             "apk" -> "apk info"
             "apt" -> "dpkg-query -W -f='\${Package}\\n'"
             "pacman" -> "pacman -Qq"
             "xbps" -> "xbps-query -l"
-            else -> return emptyList()
+            else -> return CommandResult("", "Error: 不支持的包管理器 $packageManager", -1, 0)
         }
-        val result = executeCommand(config, command)
-        if (result.exitCode == 0) {
-            return result.output.lines().map { it.trim() }.filter { it.isNotEmpty() }
-        }
-        return emptyList()
+        return executeCommand(config, command)
     }
 
     /**

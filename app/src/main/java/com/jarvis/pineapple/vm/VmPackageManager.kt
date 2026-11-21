@@ -52,11 +52,18 @@ class VmPackageManager(
     /**
      * 刷新已安装软件包列表（真实查询 guest）。
      */
-    suspend fun refreshPackageList() {
+    suspend fun refreshPackageList(): Boolean {
         _isOperating.value = true
-        try {
-            val names = prootManager.listInstalledPackages(config(), packageManager)
-            _packages.value = names.map { PackageInfo(name = it, installed = true) }
+        return try {
+            val result = prootManager.listInstalledPackages(config(), packageManager)
+            if (result.exitCode != 0) {
+                addLog("刷新软件包列表失败: ${result.output.take(200)}")
+                false
+            } else {
+                val names = result.output.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                _packages.value = names.map { PackageInfo(name = it, installed = true) }
+                true
+            }
         } finally {
             _isOperating.value = false
         }
@@ -66,18 +73,25 @@ class VmPackageManager(
      * 搜索可用软件包（真实查询远端索引）。
      */
     suspend fun searchPackages(query: String): List<PackageInfo> {
+        if (query.isBlank()) return emptyList()
+        val queryArg = ProotManager.shellQuote(query)
         val command = when (packageManager.lowercase()) {
-            "apk" -> "apk search -v '$query'"
-            "apt" -> "apt-cache search '$query'"
-            "pacman" -> "pacman -Ss '$query'"
-            "xbps" -> "xbps-query -Rs '$query'"
+            "apk" -> "apk search -v $queryArg"
+            "apt" -> "apt-cache search $queryArg"
+            "pacman" -> "pacman -Ss $queryArg"
+            "xbps" -> "xbps-query -Rs $queryArg"
             else -> return emptyList()
         }
         _isOperating.value = true
         addLog("搜索软件包: $query")
         return try {
             val result = prootManager.executeCommand(config(), command)
-            parseSearchResult(result.output).also { _packages.value = it }
+            if (result.exitCode != 0) {
+                addLog("搜索失败: ${result.output.take(200)}")
+                emptyList()
+            } else {
+                parseSearchResult(result.output)
+            }
         } finally {
             _isOperating.value = false
         }

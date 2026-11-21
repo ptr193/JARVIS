@@ -142,7 +142,7 @@ val appModule = module {
     single { ProotManager(get()) }
     single { VmDistroManager(get(), get()) }
     single { HavenVmManager(get(), get()) }
-    single { VmImageImporter(get()) }
+    single { VmImageImporter(get(), get()) }
 
     // Smart home
     single { SmartHomeAdapter() }

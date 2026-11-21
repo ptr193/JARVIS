@@ -3,6 +3,7 @@ package com.jarvis.pineapple.vm
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 /**
  * 基于 PRoot 的 Linux 虚拟机管理器。
@@ -36,7 +37,8 @@ class HavenVmManager(
         val state: HavenVmState = HavenVmState.STOPPED,
         val installedPackages: List<String> = emptyList(),
         val createdAt: Long = System.currentTimeMillis(),
-        val lastStartedAt: Long = 0
+        val lastStartedAt: Long = 0,
+        val ownsRootfs: Boolean = false
     )
 
     enum class HavenVmState {
@@ -127,12 +129,54 @@ class HavenVmManager(
         return stopped
     }
 
-    /** 删除虚拟机登记（保留共享的 rootfs），停止失败时保留登记。 */
+    /** 删除虚拟机登记；共享发行版 rootfs 保留，导入虚拟机的独立 rootfs 一并删除。 */
     suspend fun deleteVm(vmId: String): Boolean {
+        val vm = findVm(vmId) ?: return false
         if (!stopVm(vmId)) return false
-        val existed = findVm(vmId) != null
+        if (vm.ownsRootfs && !File(vm.rootfsPath).deleteRecursively()) return false
         _vms.value = _vms.value.filterNot { it.id == vmId }
-        return existed
+        return true
+    }
+
+    /** 将已解压且位于应用 rootfs 目录内的系统登记为可启动虚拟机。 */
+    suspend fun createImportedVm(name: String, rootfsPath: String): CreateVmResult {
+        _isCreating.value = true
+        return try {
+            if (!prootManager.isProotInstalled()) {
+                CreateVmResult(error = "PRoot 未安装")
+            } else {
+                val rootfs = File(rootfsPath).canonicalFile
+                val managedRoot = prootManager.rootfsRoot().canonicalFile
+                val packageManager = detectPackageManager(rootfs)
+                when {
+                    !rootfs.path.startsWith(managedRoot.path + File.separator) ->
+                        CreateVmResult(error = "导入目录不在应用 rootfs 中")
+                    !rootfs.isDirectory || rootfs.listFiles().isNullOrEmpty() ->
+                        CreateVmResult(error = "rootfs 为空")
+                    packageManager == null ->
+                        CreateVmResult(error = "无法识别 rootfs 的包管理器")
+                    else -> {
+                        val id = "vm_imported_${System.currentTimeMillis()}"
+                        val displayName = name.ifBlank { "导入的 Linux" }
+                        val vm = HavenVm(
+                            id = id,
+                            name = displayName,
+                            distroId = id,
+                            distroName = displayName,
+                            packageManager = packageManager,
+                            rootfsPath = rootfs.absolutePath,
+                            ownsRootfs = true
+                        )
+                        _vms.value = _vms.value + vm
+                        CreateVmResult(vm = vm)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            CreateVmResult(error = "导入虚拟机失败: ${e.message}")
+        } finally {
+            _isCreating.value = false
+        }
     }
 
     // ==================== 命令 / 软件包 ====================
@@ -177,12 +221,13 @@ class HavenVmManager(
     /**
      * 从 guest 刷新已安装软件包列表。
      */
-    suspend fun refreshInstalledPackages(vmId: String) {
-        val vm = findVm(vmId) ?: return
-        val packages = prootManager.listInstalledPackages(configFor(vm), vm.packageManager)
-        if (packages.isNotEmpty()) {
-            updateVm(vmId) { it.copy(installedPackages = packages) }
-        }
+    suspend fun refreshInstalledPackages(vmId: String): Boolean {
+        val vm = findVm(vmId) ?: return false
+        val result = prootManager.listInstalledPackages(configFor(vm), vm.packageManager)
+        if (result.exitCode != 0) return false
+        val packages = result.output.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        updateVm(vmId) { it.copy(installedPackages = packages) }
+        return true
     }
 
     // ==================== 查询 ====================
@@ -221,6 +266,14 @@ class HavenVmManager(
     }
 
     companion object {
+        internal fun detectPackageManager(rootfs: File): String? = when {
+            File(rootfs, "sbin/apk").exists() || File(rootfs, "usr/sbin/apk").exists() -> "apk"
+            File(rootfs, "usr/bin/apt-get").exists() || File(rootfs, "bin/apt-get").exists() -> "apt"
+            File(rootfs, "usr/bin/pacman").exists() || File(rootfs, "bin/pacman").exists() -> "pacman"
+            File(rootfs, "usr/bin/xbps-install").exists() || File(rootfs, "bin/xbps-install").exists() -> "xbps"
+            else -> null
+        }
+
         fun createFailureReason(
             prootInstalled: Boolean = true,
             distroExists: Boolean = true,
