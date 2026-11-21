@@ -67,6 +67,39 @@ class ProotManagerTest {
     }
 
     @Test
+    fun `session start requires proot and stop without process is idempotent`() = runBlocking {
+        val rootfs = tmp.newFolder("rootfs")
+        val mgr = ProotManager(tmp.newFolder("proot-home"), tmp.newFolder("cache"), { arrayOf("arm64-v8a") })
+        val config = ProotManager.ProotConfig(rootfsPath = rootfs.absolutePath)
+
+        assertFalse(mgr.startSession(config))
+        assertTrue(mgr.stopSession(config))
+    }
+
+    @Test
+    fun `session starts and stops a real process`() = runBlocking {
+        val rootfs = tmp.newFolder("rootfs")
+        val filesDir = tmp.newFolder("proot-home")
+        val mgr = ProotManager(filesDir, tmp.newFolder("cache"), { arrayOf("arm64-v8a") })
+        val executable = File(filesDir, "proot/bin/proot")
+        executable.writeText(
+            "#!/bin/sh\n" +
+                "while [ \$# -gt 0 ]; do\n" +
+                "  if [ \"\$1\" = \"-c\" ]; then shift; exec /bin/sh -c \"\$1\"; fi\n" +
+                "  shift\n" +
+                "done\n" +
+                "exit 2\n"
+        )
+        assertTrue(executable.setExecutable(true))
+        val config = ProotManager.ProotConfig(rootfsPath = rootfs.absolutePath)
+
+        assertTrue(mgr.startSession(config))
+        assertTrue(mgr.startSession(config))
+        assertTrue(mgr.stopSession(config))
+        assertTrue(mgr.stopSession(config))
+    }
+
+    @Test
     fun `guest copies reject paths outside rootfs`() = runBlocking {
         val rootfs = tmp.newFolder("rootfs")
         val outside = tmp.newFolder("outside")

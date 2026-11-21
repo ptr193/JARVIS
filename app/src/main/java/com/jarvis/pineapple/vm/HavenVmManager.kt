@@ -104,7 +104,7 @@ class HavenVmManager(
 
         val config = configFor(vm)
         val probe = prootManager.executeCommand(config, "echo JARVIS_VM_OK")
-        return if (probe.exitCode == 0 && probe.output.contains("JARVIS_VM_OK")) {
+        return if (probe.exitCode == 0 && probe.output.contains("JARVIS_VM_OK") && prootManager.startSession(config)) {
             updateVm(vmId) {
                 it.copy(state = HavenVmState.RUNNING, lastStartedAt = System.currentTimeMillis())
             }
@@ -116,21 +116,20 @@ class HavenVmManager(
         }
     }
 
-    /**
-     * 停止虚拟机。
-     */
-    fun stopVm(vmId: String): Boolean {
+    /** 停止真实 PRoot 会话，并仅在进程退出后更新状态。 */
+    suspend fun stopVm(vmId: String): Boolean {
         val vm = findVm(vmId) ?: return false
         updateVm(vmId) { it.copy(state = HavenVmState.STOPPING) }
-        updateVm(vmId) { it.copy(state = HavenVmState.STOPPED) }
-        return true
+        val stopped = prootManager.stopSession(configFor(vm))
+        updateVm(vmId) {
+            it.copy(state = if (stopped) HavenVmState.STOPPED else HavenVmState.RUNNING)
+        }
+        return stopped
     }
 
-    /**
-     * 删除虚拟机（保留共享的 rootfs）。
-     */
+    /** 删除虚拟机登记（保留共享的 rootfs），停止失败时保留登记。 */
     suspend fun deleteVm(vmId: String): Boolean {
-        stopVm(vmId)
+        if (!stopVm(vmId)) return false
         val existed = findVm(vmId) != null
         _vms.value = _vms.value.filterNot { it.id == vmId }
         return existed

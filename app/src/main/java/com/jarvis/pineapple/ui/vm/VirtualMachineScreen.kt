@@ -199,14 +199,16 @@ fun VirtualMachineScreen(
                         }
                     },
                     onStop = { id ->
-                        havenVmManager.stopVm(id)
-                        showMsg("虚拟机已停止")
+                        scope.launch {
+                            val ok = havenVmManager.stopVm(id)
+                            showMsg(if (ok) "虚拟机已停止" else "虚拟机停止失败")
+                        }
                     },
                     onDelete = { id ->
                         scope.launch {
-                            havenVmManager.deleteVm(id)
-                            if (activeVmId == id) activeVmId = null
-                            showMsg("虚拟机已删除")
+                            val ok = havenVmManager.deleteVm(id)
+                            if (ok && activeVmId == id) activeVmId = null
+                            showMsg(if (ok) "虚拟机已删除" else "虚拟机删除失败")
                         }
                     }
                 )

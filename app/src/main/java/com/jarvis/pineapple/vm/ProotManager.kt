@@ -43,6 +43,9 @@ class ProotManager internal constructor(
     private val _downloadProgress = MutableStateFlow(0f)
     val downloadProgress: StateFlow<Float> = _downloadProgress.asStateFlow()
 
+    private val sessionLock = Any()
+    private val sessions = mutableMapOf<String, Process>()
+
     init {
         if (!prootDir.exists()) prootDir.mkdirs()
         if (!rootfsDir.exists()) rootfsDir.mkdirs()
@@ -216,34 +219,7 @@ class ProotManager internal constructor(
             return@withContext CommandResult(command, "Error: PRoot 未安装", -1, 0)
         }
         try {
-            val shell = detectShell(config.rootfsPath)
-            val args = mutableListOf<String>()
-            args.add(prootBinary().absolutePath)
-            args.add("-r"); args.add(config.rootfsPath)
-            if (config.asRoot) args.add("-0")
-            args.add("-w"); args.add(config.workingDir)
-            if (config.kernelRelease.isNotBlank()) {
-                args.add("-k"); args.add(config.kernelRelease)
-            }
-            for (bind in config.binds) {
-                val host = File(bind.hostPath)
-                if (!host.exists()) continue
-                args.add("-b"); args.add("${bind.hostPath}:${bind.guestPath}")
-            }
-            // 选用可真实执行的 shell（proot 2.x 直接执行 busybox 符号链接会失败）
-            args.addAll(shell)
-            args.add("-c"); args.add(command)
-
-            val pb = ProcessBuilder(args)
-            val env = pb.environment()
-            env.clear()
-            env.putAll(config.env)
-            env["PROOT_TMP_DIR"] = cacheDir.absolutePath
-            env["PROOT_NO_SECCOMP"] = "1"
-            pb.directory(cacheDir)
-            pb.redirectErrorStream(true)
-
-            val process = pb.start()
+            val process = commandProcess(config, command).start()
             val output = process.inputStream.bufferedReader().readText()
             val exitCode = process.waitFor()
 
@@ -260,6 +236,95 @@ class ProotManager internal constructor(
                 exitCode = -1,
                 executionTimeMs = System.currentTimeMillis() - start
             )
+        }
+    }
+
+    private fun commandProcess(config: ProotConfig, command: String): ProcessBuilder {
+        val args = mutableListOf<String>()
+        args.add(prootBinary().absolutePath)
+        args.add("-r"); args.add(config.rootfsPath)
+        if (config.asRoot) args.add("-0")
+        args.add("-w"); args.add(config.workingDir)
+        if (config.kernelRelease.isNotBlank()) {
+            args.add("-k"); args.add(config.kernelRelease)
+        }
+        for (bind in config.binds) {
+            val host = File(bind.hostPath)
+            if (!host.exists()) continue
+            args.add("-b"); args.add("${bind.hostPath}:${bind.guestPath}")
+        }
+        // 选用可真实执行的 shell（proot 2.x 直接执行 busybox 符号链接会失败）
+        args.addAll(detectShell(config.rootfsPath))
+        args.add("-c"); args.add(command)
+
+        val pb = ProcessBuilder(args)
+        val env = pb.environment()
+        env.clear()
+        env.putAll(config.env)
+        env["PROOT_TMP_DIR"] = cacheDir.absolutePath
+        env["PROOT_NO_SECCOMP"] = "1"
+        pb.directory(cacheDir)
+        pb.redirectErrorStream(true)
+        return pb
+    }
+
+    /** 启动并登记一个真实的长运行 PRoot 会话。 */
+    suspend fun startSession(config: ProotConfig): Boolean = withContext(Dispatchers.IO) {
+        if (!isProotInstalled()) return@withContext false
+        synchronized(sessionLock) {
+            val key = sessionKey(config)
+            val existing = sessions[key]
+            if (existing != null && isProcessAlive(existing)) return@synchronized true
+            sessions.remove(key)
+            try {
+                val process = commandProcess(config, "exec sleep 2147483647")
+                    .redirectOutput(File("/dev/null"))
+                    .start()
+                if (isProcessAlive(process)) {
+                    sessions[key] = process
+                    true
+                } else {
+                    false
+                }
+            } catch (e: Exception) {
+                false
+            }
+        }
+    }
+
+    /** 停止会话并确认进程已经退出；没有存活进程时目标状态已经达成。 */
+    suspend fun stopSession(config: ProotConfig): Boolean = withContext(Dispatchers.IO) {
+        val key = sessionKey(config)
+        val process = synchronized(sessionLock) {
+            val current = sessions[key]
+            if (current != null && !isProcessAlive(current)) {
+                sessions.remove(key)
+                null
+            } else {
+                current
+            }
+        } ?: return@withContext true
+
+        process.destroy()
+        val deadline = System.nanoTime() + 3_000_000_000L
+        while (isProcessAlive(process) && System.nanoTime() < deadline) {
+            Thread.sleep(25)
+        }
+        val stopped = !isProcessAlive(process)
+        if (stopped) {
+            synchronized(sessionLock) { sessions.remove(key) }
+        }
+        stopped
+    }
+
+    private fun sessionKey(config: ProotConfig): String = File(config.rootfsPath).canonicalPath
+
+    private fun isProcessAlive(process: Process): Boolean {
+        return try {
+            process.exitValue()
+            false
+        } catch (_: IllegalThreadStateException) {
+            true
         }
     }
 
