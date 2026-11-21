@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.health
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -73,6 +74,22 @@ class HealthModulesTest {
             VitalSignsMonitor.unavailableMessage(hasSensor = false)
         )
         assertEquals(null, VitalSignsMonitor.unavailableMessage(hasSensor = true))
+    }
+
+    @Test
+    fun `sensor registration failure resumes immediately for PPG fallback`() {
+        listOf(
+            "app/src/main/java/com/jarvis/pineapple/health/HealthMonitor.kt",
+            "app/src/main/java/com/jarvis/pineapple/health/HealthModules.kt"
+        ).forEach { path ->
+            val source = listOf(File(path), File("../$path")).firstOrNull { it.exists() }?.readText()
+                ?: error("无法定位源文件: $path")
+            val read = source.substringAfter("suspendCancellableCoroutine { continuation ->")
+
+            assertTrue(path, read.contains("val registered = try"))
+            assertTrue(path, read.contains("catch (e: Exception)"))
+            assertTrue(path, read.contains("if (!registered && continuation.isActive) continuation.resume(0)"))
+        }
     }
 
     @Test

@@ -94,7 +94,13 @@ class HealthMonitor(
 
                     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
                 }
-                sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                val registered = try {
+                    sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                } catch (e: Exception) {
+                    Log.w(TAG, "心率传感器注册失败，改用 PPG", e)
+                    false
+                }
+                if (!registered && continuation.isActive) continuation.resume(0)
                 continuation.invokeOnCancellation { sensorManager.unregisterListener(listener) }
             }
         } ?: 0

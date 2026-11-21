@@ -86,7 +86,13 @@ class VitalSignsMonitor(private val context: Context) {
 
                     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
                 }
-                manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                val registered = try {
+                    manager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+                } catch (e: Exception) {
+                    android.util.Log.w("VitalSignsMonitor", "心率传感器注册失败，改用 PPG", e)
+                    false
+                }
+                if (!registered && continuation.isActive) continuation.resume(0)
                 continuation.invokeOnCancellation { manager.unregisterListener(listener) }
             }
         } ?: 0
