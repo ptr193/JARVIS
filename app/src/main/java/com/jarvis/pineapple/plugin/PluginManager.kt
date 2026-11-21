@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 
 /**
  * 插件管理器（#139 安全程序分化）。
@@ -72,35 +73,55 @@ class PluginManager(private val context: Context) {
      */
     fun install(source: File): String? {
         if (!source.exists() || !source.isFile) return null
-        val target = File(pluginsDir, source.name)
+        var staging: File? = null
         return try {
-            if (target.canonicalPath != source.canonicalPath) {
-                source.inputStream().use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
-                }
+            val staged = File(pluginsDir, ".install_${System.nanoTime()}.${source.extension}")
+            staging = staged
+            source.inputStream().use { input ->
+                staged.outputStream().use { output -> input.copyTo(output) }
             }
-            val loaded = loader.loadFrom(target)
-            if (loaded == null) {
-                target.delete()
-                return null
-            }
-            val id = loaded.metadata.id
-            if (!activate(loaded)) {
-                target.delete()
-                return null
-            }
-            loaded.enabled = true
-            instances[id] = loaded
 
-            fileMap().apply { this[id] = target.name }.let { persistFiles(it) }
+            // 先在暂存文件上完成全部校验，失败时旧插件文件保持不动。
+            val loaded = loader.loadFrom(staged) ?: return null
+            val id = loaded.metadata.id
+            val files = fileMap()
+            val previous = instances[id]
+            val target = previous?.sourcePath?.let(::File)
+                ?: files[id]?.let { File(pluginsDir, it) }
+                ?: File(pluginsDir, source.name)
+            val conflictsWithOtherPlugin = instances.values.any { other ->
+                other.metadata.id != id && File(other.sourcePath).canonicalPath == target.canonicalPath
+            } || files.any { (otherId, name) ->
+                otherId != id && File(pluginsDir, name).canonicalPath == target.canonicalPath
+            }
+            if (conflictsWithOtherPlugin || !activate(loaded)) return null
+
+            try {
+                replaceStagedFile(staged, target)
+            } catch (e: Exception) {
+                runCatching { loaded.instance.onUnload() }
+                    .onFailure { Log.e(TAG, "安装失败后清理插件 onUnload 失败: $id", it) }
+                throw e
+            }
+            staging = null
+
+            if (previous?.enabled == true) {
+                runCatching { previous.instance.onUnload() }
+                    .onFailure { Log.e(TAG, "替换插件后旧实例 onUnload 失败: $id", it) }
+            }
+            instances[id] = loaded.copy(sourcePath = target.absolutePath, enabled = true)
+
+            files[id] = target.name
+            persistFiles(files)
             persistEnabled(enabledSet().toMutableSet().apply { add(id) })
             refresh()
             Log.i(TAG, "插件已安装: $id")
             id
         } catch (e: Exception) {
             Log.e(TAG, "安装插件失败", e)
-            target.delete()
             null
+        } finally {
+            staging?.delete()
         }
     }
 
@@ -215,6 +236,10 @@ class PluginManager(private val context: Context) {
     }
 
     companion object {
+        internal fun replaceStagedFile(staged: File, target: File) {
+            if (!staged.renameTo(target)) throw IOException("无法替换插件文件: ${target.name}")
+        }
+
         private const val TAG = "PluginManager"
         private const val PREFS = "jarvis_plugins"
         private const val KEY_FILES = "plugin_files"
