@@ -17,6 +17,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,10 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val deviceControl = remember { GlobalContext.get().get<DeviceControlManager>() }
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
     val remote = remember { GlobalContext.get().get<RemoteAssistanceManager>() }
+
+    // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
+    val reminders by communication.reminders.collectAsState()
+    val lightStates by deviceControl.lightStates.collectAsState()
 
     var phoneNumber by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
@@ -160,7 +165,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = { requestLocation() }) { Text("发起导航") }
         }
-        Text("提醒事项：${communication.reminders.value.size} 条 · 行程：${communication.getUpcomingTravels().size} 条", fontSize = 12.sp)
+        Text("提醒事项：${reminders.size} 条 · 行程：${communication.getUpcomingTravels().size} 条", fontSize = 12.sp)
         Row {
             OutlinedButton(onClick = {
                 communication.addReminder(
@@ -238,7 +243,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
                 showMsg("已加入跨应用白名单")
             }) { Text("加入白名单") }
         }
-        Text("智能家居灯具：${deviceControl.lightStates.value.size} 台", fontSize = 12.sp)
+        Text("智能家居灯具：${lightStates.size} 台", fontSize = 12.sp)
         Row {
             OutlinedButton(onClick = {
                 val light = deviceControl.lightStates.value.firstOrNull()

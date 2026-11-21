@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.jarvis.pineapple.R
 import com.jarvis.pineapple.ui.MainActivity
@@ -25,14 +26,16 @@ class ReminderReceiver : BroadcastReceiver() {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         // 创建通知渠道 (Android 8+)
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "提醒通知",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "JARVIS 提醒事项通知"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "提醒通知",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "JARVIS 提醒事项通知"
+            }
+            notificationManager.createNotificationChannel(channel)
         }
-        notificationManager.createNotificationChannel(channel)
 
         // 点击通知打开主界面
         val contentIntent = Intent(context, MainActivity::class.java).apply {

@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,7 +87,7 @@ class NotificationWakeDetector(private val context: Context) {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = android.app.Notification.Builder(context, channelId)
+        val notification = NotificationCompat.Builder(context, channelId)
             .setContentTitle("JARVIS 待命中")
             .setContentText("点击唤醒 / 长按电源键")
             .setSmallIcon(android.R.drawable.ic_menu_compass)

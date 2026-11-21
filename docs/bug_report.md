@@ -257,4 +257,26 @@
 - **修复**：去掉默认医生；无平台 URL / 无医生时返回中文错误且不写入会话；`HealthModulesTest` 锁死失败关闭
 - **验证**：`HealthModulesTest` 与 `testDebugUnitTest` BUILD SUCCESSFUL（2026-11-05）
 
-*文档版本：v2.7 | 生成日期：2026-11-05 | 上一版本：v2.6（2026-11-03）*
+## 11. 2026-11-21 Lint 34 error 清零
+
+- **发现阶段**：仓库完整性复核（`./gradlew lintDebug` 34 error / 49 warning）
+- **根因分类**：
+  1. **MissingPermission（17）**：`HealthMonitor` 三个 BLE 连接函数无运行时权限检查；
+     `HealthModules.readHeartRateDevice`、`AudioCapture`、`PhoneController.answerCall` 已有调用方门禁但无注解。
+  2. **NewApi（15）**：`minSdk 24` 下直接调用 `ShortcutManager`（25）、`NotificationChannel`（26）、
+     `Notification.Builder(context, channelId)`（26）；`DeviceControlManager` / `ReminderReceiver` 渠道创建无版本守卫。
+  3. **StateFlowValueCalledInComposition（2）**：`SystemControlTab` 在组合中直接读取 `.value`。
+- **修复**：
+  1. `HealthMonitor` 新增 `hasBluetoothPermission()`，无权限直接返回 `false` 并记录日志；
+     对已校验的 GATT/录音/接听函数补充 `@SuppressLint("MissingPermission")` 并注明调用方门禁。
+  2. 快捷方式增加 `SDK_INT >= N_MR1` 守卫；通知渠道创建统一包裹 `SDK_INT >= O` 守卫；
+     `NotificationWakeDetector` 改用 `NotificationCompat.Builder`。
+  3. `SystemControlTab` 以 `collectAsState()` 订阅 `reminders` 与 `lightStates`。
+- **验证**：
+  - `lintDebug`：**0 error / 45 warning**。
+  - `testDebugUnitTest`：**190/190 通过**（34 个测试类）。
+  - `assembleDebug`：EXIT=0，219,227,864 B，SHA256 `6ffdc7bc…df8`。
+  - 重新打包 `apk/jarvis-debug.apk.7z`（82,488,056 B，SHA256 `7c8aa096…acd`）。
+- **影响面**：权限/版本兼容与 Compose 刷新逻辑，无业务语义变更。
+
+*文档版本：v2.8 | 生成日期：2026-11-21 | 上一版本：v2.7（2026-11-05）*

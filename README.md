@@ -30,7 +30,7 @@
 | 网络 | Ktor |
 | 端侧 LLM | LiteRT-LM（`com.google.ai.litert:litert-lm`） |
 | 构建 | Gradle 8.14.5 + AGP 8.7.3 |
-| 最低 SDK | 26 |
+| 最低 SDK | 24（Android 7.0） |
 | 目标 SDK | 35 |
 
 ---

@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-11 | 版本：v0.0.1（Debug，护眼主题 + 快捷指令 + L1/L2 加压）
+> 生成日期：2026-11-21 | 版本：v0.0.1（Debug，lint 清零 + 权限/API 守卫）
 
 ---
 
@@ -28,13 +28,13 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（护眼主题 + 快捷指令 + L1/L2 加压）
+版本：   v0.0.1-debug（lint 清零 + 权限/API 守卫）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 79,504,585 字节（75.8 MB）
-压缩包 SHA256： b32d150ed11b29dddb136a6d04aa35fc75bbcd98bceb4510ed67411f2bb7c109
-APK 大小： 219,737,348 字节（209.6 MB）
-APK SHA256： e48769b12fb0b17ddd78e598529310ce67a0e0d979d27326614df0fcf00bcf46
-构建：   2026-11-11
+压缩包大小： 82,488,056 字节（78.7 MB）
+压缩包 SHA256： 7c8aa096f3e90e490954297050a43e5c3b838963b489aeba92c8120500287acd
+APK 大小： 219,227,864 字节（209.1 MB）
+APK SHA256： 6ffdc7bc679ffffd75a88802da181eff546bb2ce832d21b333fe13f2aebf9df8
+构建：   2026-11-21
 构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
 Git：    origin/main（本提交）
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-b32d150ed11b29dddb136a6d04aa35fc75bbcd98bceb4510ed67411f2bb7c109
+7c8aa096f3e90e490954297050a43e5c3b838963b489aeba92c8120500287acd
 ```
 
 解压后校验 APK：
 
 ```text
-e48769b12fb0b17ddd78e598529310ce67a0e0d979d27326614df0fcf00bcf46
+6ffdc7bc679ffffd75a88802da181eff546bb2ce832d21b333fe13f2aebf9df8
 ```
 
-本包含护眼暖色 OLED / 纸质浅色主题、聊天快捷指令（音量/亮度/打开应用/提醒/蓝牙/导航）、overlay 加压与会话仓库并发测试。失败中文提示，不拉起主界面。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
+本包含护眼暖色 OLED / 纸质浅色主题、聊天快捷指令、overlay 加压与会话仓库并发测试，并完成 lint 清零：蓝牙/电话权限显式门禁、Android 版本 API 守卫、Compose StateFlow 正确订阅。失败中文提示，不拉起主界面。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
 
 ---
 
@@ -101,11 +101,11 @@ e48769b12fb0b17ddd78e598529310ce67a0e0d979d27326614df0fcf00bcf46
 
 ## 6. 使用说明
 
-1. 将 `apk/jarvis-debug.apk` 安装到 Android 6.0+ 设备。
+1. 将 `apk/jarvis-debug.apk` 安装到 Android 7.0+ 设备。
 2. 首次启动授予所需权限（电话/短信/定位/麦克风/通知/无障碍）。
 3. 在 **设置 → 服务** 触发模型下载，或使用 **设置 → 工具** 导入本地模型。
 4. 按 `docs/release_checklist.md` 第 2 节执行实机测试清单并反馈。
 
 ---
 
-*文档版本：v3.2 | 生成日期：2026-11-05*
+*文档版本：v3.3 | 生成日期：2026-11-21*

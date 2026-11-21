@@ -1,11 +1,16 @@
 package com.jarvis.pineapple.health
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.jarvis.pineapple.security.CryptoManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,8 +101,15 @@ class HealthMonitor(
 
     /**
      * 蓝牙心率带数据接入
+     *
+     * 未授予蓝牙权限时直接返回 false，不发起到 GATT 连接。
      */
+    @SuppressLint("MissingPermission")
     fun connectBluetoothHeartRateMonitor(deviceAddress: String): Boolean {
+        if (!hasBluetoothPermission()) {
+            Log.w(TAG, "缺少蓝牙权限，无法连接心率带")
+            return false
+        }
         return try {
             val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
             val adapter = bluetoothManager?.adapter
@@ -143,8 +155,15 @@ class HealthMonitor(
 
     /**
      * 蓝牙血压计数据接入
+     *
+     * 未授予蓝牙权限时直接返回 false。
      */
+    @SuppressLint("MissingPermission")
     fun connectBluetoothBloodPressureMonitor(deviceAddress: String): Boolean {
+        if (!hasBluetoothPermission()) {
+            Log.w(TAG, "缺少蓝牙权限，无法连接血压计")
+            return false
+        }
         return try {
             val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
             val adapter = bluetoothManager?.adapter
@@ -190,8 +209,15 @@ class HealthMonitor(
 
     /**
      * 蓝牙体温计数据接入
+     *
+     * 未授予蓝牙权限时直接返回 false。
      */
+    @SuppressLint("MissingPermission")
     fun connectBluetoothThermometer(deviceAddress: String): Boolean {
+        if (!hasBluetoothPermission()) {
+            Log.w(TAG, "缺少蓝牙权限，无法连接体温计")
+            return false
+        }
         return try {
             val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
             val adapter = bluetoothManager?.adapter
@@ -777,6 +803,16 @@ class HealthMonitor(
 
     fun stopMonitoring() {
         sensorManager.unregisterListener(this)
+    }
+
+    /** Android 12+ 使用 BLUETOOTH_CONNECT，低版本使用 BLUETOOTH。 */
+    private fun hasBluetoothPermission(): Boolean {
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Manifest.permission.BLUETOOTH_CONNECT
+        } else {
+            Manifest.permission.BLUETOOTH
+        }
+        return ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
     }
 
     override fun onSensorChanged(event: SensorEvent?) {

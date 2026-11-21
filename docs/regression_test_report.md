@@ -95,4 +95,19 @@
 
 本轮覆盖相机采集入口（#33/#34/#35/#94/#112/#113）与远程医疗无平台 URL 失败关闭。
 
-*文档版本：v3.1 | 生成日期：2026-11-05 | 上一版本：v3.0（2026-11-01）*
+## 8. 2026-11-21 lint 清零回归
+
+| 测试项 | 结果 | 说明 |
+|--------|------|------|
+| `testDebugUnitTest` | ✅ 190/190 通过 | 34 个测试类，0 失败 0 错误 0 跳过 |
+| `lintDebug` | ✅ 0 error / 45 warning | 修复前 34 error；权限门禁、API 守卫、Compose 订阅 |
+| `assembleDebug` | ✅ EXIT=0 | `app-debug.apk` 219,227,864 B，SHA256 `6ffdc7bc…df8` |
+| `apk/jarvis-debug.apk.7z` | ✅ 82,488,056 B | SHA256 `7c8aa096…acd`，内含 `jarvis-debug.apk` |
+| `assembleRelease` | ⏸️ 未执行 | 计划 §5.2，待实机清单 |
+
+本轮修复的 lint error 分布：
+- MissingPermission 17：蓝牙 GATT/心率带、电话接听、AudioRecord；新增显式权限检查或注明调用方门禁。
+- NewApi 15：ShortcutManager（API 25）、NotificationChannel（API 26）、`Notification.Builder(context, channelId)`（API 26）。
+- StateFlowValueCalledInComposition 2：`SystemControlTab` 改用 `collectAsState()`。
+
+*文档版本：v3.2 | 生成日期：2026-11-21 | 上一版本：v3.1（2026-11-05）*

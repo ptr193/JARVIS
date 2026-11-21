@@ -1,6 +1,7 @@
 package com.jarvis.pineapple.assistant
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -274,7 +275,8 @@ class JarvisRecognitionService : RecognitionService() {
         return out.toByteArray()
     }
 
-    /** 独立的 AudioRecord 封装，保证资源释放。 */
+    /** 独立的 AudioRecord 封装，保证资源释放。调用方已在 onStartListening 校验 RECORD_AUDIO。 */
+    @SuppressLint("MissingPermission")
     private class AudioCapture(private val sampleRate: Int, private val frameSize: Int) {
         private var record: android.media.AudioRecord? = null
 

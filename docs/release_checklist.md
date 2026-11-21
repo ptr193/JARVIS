@@ -9,15 +9,19 @@
 
 - [x] **规格书追踪矩阵无 `MISSING`**
   - 依据：`docs/requirements_traceability.md`
-  - 当前状态：DONE 112 / PARTIAL 10 / RESERVED 22 / **MISSING 0** — **已满足**
-  - 说明：PARTIAL 为"能力已实现、待相机采集入口"，RESERVED 为规格书明确预留项。
+  - 当前状态：DONE 129 / PARTIAL 2 / RESERVED 13 / **MISSING 0** — **已满足**
+  - 说明：PARTIAL 仅剩 #72 外接显示、#99 睡眠监测（依赖硬件），RESERVED 为规格书明确预留项。
 
 - [x] **所有单元测试通过**
   - 命令：`gradle testDebugUnitTest`
-  - 当前状态：**64/64 通过（0 失败 0 错误 0 跳过）** — **已满足**
+  - 当前状态：**190/190 通过（34 个测试类，0 失败 0 错误 0 跳过）** — **已满足**
 
 - [x] **所有集成测试通过**
-  - 当前状态：4 个集成测试类全部通过 — **已满足**
+  - 当前状态：34 个测试类（含集成测试）全部通过 — **已满足**
+
+- [x] **静态检查无 error**
+  - 命令：`gradle lintDebug`
+  - 当前状态：**0 error / 45 warning** — **已满足**
 
 - [ ] **Debug 包已完成实机测试**
   - 依据：用户在真机安装 `apk/jarvis-debug.apk` 后反馈

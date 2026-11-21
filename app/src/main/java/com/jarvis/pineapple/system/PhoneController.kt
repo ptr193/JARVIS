@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.system
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -26,6 +27,7 @@ class PhoneController(private val context: Context) {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
+    @SuppressLint("MissingPermission")
     fun answerCall(): Boolean {
         if (!hasAnswerPermission()) return false
         val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager

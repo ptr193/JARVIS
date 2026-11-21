@@ -5,6 +5,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.RingtoneManager
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.app.NotificationChannel
@@ -285,9 +286,11 @@ class DeviceControlManager(private val context: Context) {
         // 1) 弹出高优先级通知
         val label = sensorLabel(sensorType)
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.createNotificationChannel(
-            NotificationChannel(ALERT_CHANNEL_ID, "安防警报", NotificationManager.IMPORTANCE_HIGH)
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(ALERT_CHANNEL_ID, "安防警报", NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
         val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("JARVIS 入侵警报")
@@ -1367,12 +1370,14 @@ class DeviceControlManager(private val context: Context) {
         _optimizationSuggestions.value = _optimizationSuggestions.value + suggestions
 
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(
-            SUGGESTION_CHANNEL_ID,
-            "优化建议",
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply { description = "JARVIS 性能与设备优化建议" }
-        manager.createNotificationChannel(channel)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                SUGGESTION_CHANNEL_ID,
+                "优化建议",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply { description = "JARVIS 性能与设备优化建议" }
+            manager.createNotificationChannel(channel)
+        }
 
         val body = suggestions.joinToString("\n") { "• $it" }
         val notification = NotificationCompat.Builder(context, SUGGESTION_CHANNEL_ID)

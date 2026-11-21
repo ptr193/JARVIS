@@ -1,6 +1,7 @@
 package com.jarvis.pineapple.health
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
@@ -90,6 +91,11 @@ class VitalSignsMonitor(private val context: Context) {
             }
         } ?: 0
 
+    /**
+     * 读取 BLE 心率带。调用方 [syncFromWearable] 已检查 BLUETOOTH_CONNECT/BLUETOOTH 权限，
+     * 且内部所有 GATT 调用均包裹 runCatching，避免权限被撤销时崩溃。
+     */
+    @SuppressLint("MissingPermission")
     private suspend fun readHeartRateDevice(
         adapter: android.bluetooth.BluetoothAdapter,
         address: String

@@ -3,6 +3,7 @@ package com.jarvis.pineapple.wake
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ShortcutManager
+import android.os.Build
 import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -88,6 +89,8 @@ class AppIconWakeDetector(private val context: Context) {
     }
 
     private fun createShortcut() {
+        // 动态快捷方式需要 API 25（Android 7.1）；低版本无桌面长按菜单，直接跳过。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) return
         val shortcut = android.content.pm.ShortcutInfo.Builder(context, SHORTCUT_ID)
             .setShortLabel("JARVIS 唤醒")
             .setLongLabel("长按唤醒 JARVIS")
