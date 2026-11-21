@@ -47,6 +47,20 @@ class ProotManagerTest {
     }
 
     @Test
+    fun `non executable binary is not installed`() {
+        val filesDir = tmp.newFolder("non-executable-home")
+        val mgr = ProotManager(filesDir, tmp.newFolder("cache"), { arrayOf("arm64-v8a") })
+        val binary = File(filesDir, "proot/bin/proot").apply { writeText("binary") }
+
+        assertFalse(binary.canExecute())
+        assertFalse(mgr.isProotInstalled())
+        assertFalse(mgr.isReady.value)
+
+        assertTrue(binary.setExecutable(true, false))
+        assertTrue(mgr.isProotInstalled())
+    }
+
+    @Test
     fun `executeCommand without binary returns chinese error and minus one`() = runBlocking {
         val mgr = ProotManager(tmp.root, tmp.newFolder("cache"), { arrayOf("arm64-v8a") })
         val result = mgr.executeCommand(

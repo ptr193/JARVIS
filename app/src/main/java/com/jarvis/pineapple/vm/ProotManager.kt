@@ -177,7 +177,9 @@ class ProotManager internal constructor(
                     tmp.copyTo(target, overwrite = true)
                     tmp.delete()
                 }
-                target.setExecutable(true, false)
+                if (!target.setExecutable(true, false) || !target.canExecute()) {
+                    throw IllegalStateException("无法设置 PRoot 可执行权限")
+                }
                 return@withContext
             } catch (e: Exception) {
                 lastError = e
@@ -463,7 +465,7 @@ class ProotManager internal constructor(
 
     fun isProotInstalled(): Boolean {
         val binary = prootBinary()
-        return binary.exists() && binary.length() > 0
+        return binary.isFile && binary.length() > 0 && binary.canExecute()
     }
 
     /** PRoot 版本字符串。 */
