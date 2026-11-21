@@ -24,7 +24,8 @@ import kotlinx.serialization.Serializable
  */
 class InfoProcessor(
     private val context: Context,
-    private val databaseQueryEngine: DatabaseQueryEngine = DatabaseQueryEngine(context)
+    private val databaseQueryEngine: DatabaseQueryEngine = DatabaseQueryEngine(context),
+    private val webSearchEngine: WebSearchEngine = WebSearchEngine()
 ) {
 
     // ==================== 网络搜索（#19） ====================
@@ -33,7 +34,7 @@ class InfoProcessor(
      * 执行网络搜索（委托给 WebSearchEngine）
      */
     suspend fun search(query: String, maxResults: Int = 10): List<SearchResult> {
-        return WebSearchEngine().search(query, maxResults = maxResults).map {
+        return webSearchEngine.search(query, maxResults = maxResults).map {
             SearchResult(
                 title = it.title,
                 url = it.url,
@@ -69,18 +70,13 @@ class InfoProcessor(
      * 从本地数据库查询信息（使用 DatabaseQueryEngine）
      */
     fun queryDatabase(query: String): List<DatabaseRecord> {
-        return try {
-            // 使用持久化的 DatabaseQueryEngine 执行真实 SQL 查询
-            databaseQueryEngine.search(query).map {
-                DatabaseRecord(
-                    id = it.id,
-                    type = it.type,
-                    content = if (it.title.isNotBlank()) it.title else it.content,
-                    timestamp = it.timestamp
-                )
-            }
-        } catch (e: Exception) {
-            emptyList()
+        return databaseQueryEngine.search(query).map {
+            DatabaseRecord(
+                id = it.id,
+                type = it.type,
+                content = if (it.title.isNotBlank()) it.title else it.content,
+                timestamp = it.timestamp
+            )
         }
     }
 

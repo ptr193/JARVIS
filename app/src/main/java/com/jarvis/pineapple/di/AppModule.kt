@@ -233,6 +233,6 @@ val appModule = module {
 
     // Info processing
     single { DatabaseQueryEngine(get()) }
-    single { InfoProcessor(get(), get()) }
+    single { InfoProcessor(get(), get(), get()) }
     single { WebSearchEngine() }
 }

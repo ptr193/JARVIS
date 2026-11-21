@@ -6,8 +6,8 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.kotlinx.json.json
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.io.IOException
 import java.net.URLEncoder
 
 /**
@@ -15,13 +15,13 @@ import java.net.URLEncoder
  *
  * 实现真实的网络搜索 API 调用，支持多个搜索引擎。
  */
-class WebSearchEngine {
-
-    private val httpClient = HttpClient(Android) {
+class WebSearchEngine(
+    private val httpClient: HttpClient = HttpClient(Android) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true; isLenient = true })
         }
     }
+) {
 
     companion object {
         /**
@@ -43,15 +43,13 @@ class WebSearchEngine {
         maxResults: Int = 10,
         language: String = "zh-CN"
     ): List<SearchResult> {
-        return try {
-            val encodedQuery = URLEncoder.encode(query, "UTF-8")
-            val url = buildSearchUrl(engine, encodedQuery, language)
-            val response = httpClient.get(url)
-            parseSearchResults(response.bodyAsText(), engine, maxResults)
-        } catch (e: Exception) {
-            // 返回空列表
-            emptyList()
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val url = buildSearchUrl(engine, encodedQuery, language)
+        val response = httpClient.get(url)
+        if (response.status.value !in 200..299) {
+            throw IOException("搜索请求失败：HTTP ${response.status.value}")
         }
+        return parseSearchResults(response.bodyAsText(), engine, maxResults)
     }
 
     /**
@@ -150,13 +148,11 @@ class WebSearchEngine {
      * 获取网页内容
      */
     suspend fun fetchPageContent(url: String): String {
-        return try {
-            val response = httpClient.get(url)
-            val html = response.bodyAsText()
-            extractMainContent(html)
-        } catch (e: Exception) {
-            ""
+        val response = httpClient.get(url)
+        if (response.status.value !in 200..299) {
+            throw IOException("网页读取失败：HTTP ${response.status.value}")
         }
+        return extractMainContent(response.bodyAsText())
     }
 
     /**

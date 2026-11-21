@@ -317,7 +317,7 @@ class ChatEngine(
 
     /**
      * 命中检索类指令时执行真实网络检索，并对结果做筛选/汇总/优先级排序后注入上下文。
-     * 未命中或检索失败时返回空串，不影响正常对话。
+     * 未命中检索指令时返回空串；检索失败会明确注入错误，避免伪装成无结果。
      */
     private suspend fun buildRetrievalContext(content: String): String {
         val t = content.trim()
@@ -353,8 +353,10 @@ class ChatEngine(
                 }
                 appendLine("请优先基于以上实时结果回答；若信息不足请明确说明。")
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
-            ""
+            "【实时检索失败】\n查询：$query\n原因：${e.message ?: e.javaClass.simpleName}\n请明确告知用户检索失败，不得编造实时结果。"
         }
     }
 }
