@@ -14,6 +14,7 @@ import androidx.core.content.ContextCompat
 import com.jarvis.pineapple.speech.WakeWordEngine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -80,13 +81,69 @@ class VoiceWakeDetector(private val context: Context) {
             Log.e(TAG, reason)
             return false
         }
+        if (wakeMode == WakeMode.SYSTEM_ASR && !SpeechRecognizer.isRecognitionAvailable(context)) {
+            return failStart(ASR_UNAVAILABLE)
+        }
+        if (wakeMode != WakeMode.SYSTEM_ASR && !prepareAudioRecording()) return false
+
         _unavailableReason.value = null
         _detected.value = false
         _listening.value = true
-        job = CoroutineScope(Dispatchers.Default + SupervisorJob()).launch {
-            if (wakeMode == WakeMode.SYSTEM_ASR) runSystemAsrLoop() else runAudioLoop()
+        val newJob = CoroutineScope(Dispatchers.Default + SupervisorJob()).launch(start = CoroutineStart.LAZY) {
+            try {
+                if (wakeMode == WakeMode.SYSTEM_ASR) runSystemAsrLoop() else runAudioLoop()
+            } finally {
+                _listening.value = false
+            }
         }
+        job = newJob
+        newJob.start()
         return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun prepareAudioRecording(): Boolean {
+        val minBuf = android.media.AudioRecord.getMinBufferSize(
+            WakeWordEngine.SAMPLE_RATE,
+            android.media.AudioFormat.CHANNEL_IN_MONO,
+            android.media.AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minBuf <= 0) return failStart(AUDIO_UNAVAILABLE)
+
+        val audioRecord = try {
+            android.media.AudioRecord(
+                android.media.MediaRecorder.AudioSource.MIC,
+                WakeWordEngine.SAMPLE_RATE,
+                android.media.AudioFormat.CHANNEL_IN_MONO,
+                android.media.AudioFormat.ENCODING_PCM_16BIT,
+                maxOf(minBuf, WakeWordEngine.FRAME_LEN * 8)
+            )
+        } catch (e: Exception) {
+            return failStart(AUDIO_UNAVAILABLE, e)
+        }
+        if (audioRecord.state != android.media.AudioRecord.STATE_INITIALIZED) {
+            audioRecord.release()
+            return failStart(AUDIO_UNAVAILABLE)
+        }
+        try {
+            audioRecord.startRecording()
+        } catch (e: Exception) {
+            audioRecord.release()
+            return failStart(AUDIO_UNAVAILABLE, e)
+        }
+        if (audioRecord.recordingState != android.media.AudioRecord.RECORDSTATE_RECORDING) {
+            audioRecord.release()
+            return failStart(AUDIO_UNAVAILABLE)
+        }
+        record = audioRecord
+        return true
+    }
+
+    private fun failStart(reason: String, error: Exception? = null): Boolean {
+        _unavailableReason.value = reason
+        _listening.value = false
+        if (error == null) Log.e(TAG, reason) else Log.e(TAG, reason, error)
+        return false
     }
 
     fun stop() {
@@ -129,49 +186,16 @@ class VoiceWakeDetector(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     private suspend fun runAudioLoop() {
-        val minBuf = android.media.AudioRecord.getMinBufferSize(
-            WakeWordEngine.SAMPLE_RATE,
-            android.media.AudioFormat.CHANNEL_IN_MONO,
-            android.media.AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuf <= 0) {
-            Log.e(TAG, "无法获取音频缓冲区大小")
-            return
-        }
-        val bufferSize = maxOf(minBuf, WakeWordEngine.FRAME_LEN * 8)
-        record = try {
-            android.media.AudioRecord(
-                android.media.MediaRecorder.AudioSource.MIC,
-                WakeWordEngine.SAMPLE_RATE,
-                android.media.AudioFormat.CHANNEL_IN_MONO,
-                android.media.AudioFormat.ENCODING_PCM_16BIT,
-                bufferSize
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "AudioRecord 创建失败", e)
-            return
-        }
-        if (record?.state != android.media.AudioRecord.STATE_INITIALIZED) {
-            Log.e(TAG, "AudioRecord 未初始化")
-            return
-        }
-
+        val audioRecord = record ?: return
         val vad = WakeWordEngine.Vad()
         val frame = ShortArray(WakeWordEngine.FRAME_LEN)
         val segment = ArrayList<Short>(WakeWordEngine.SAMPLE_RATE)
         var inSpeech = false
         var silenceFrames = 0
 
-        try {
-            record?.startRecording()
-        } catch (e: Exception) {
-            Log.e(TAG, "startRecording 失败", e)
-            return
-        }
-
         while (job?.isActive == true) {
             val read = try {
-                record?.read(frame, 0, frame.size) ?: 0
+                audioRecord.read(frame, 0, frame.size)
             } catch (e: Exception) {
                 Log.e(TAG, "读取音频失败", e)
                 -1
@@ -206,9 +230,9 @@ class VoiceWakeDetector(private val context: Context) {
                 WakeMode.SYSTEM_ASR -> Unit
             }
         }
-        try { record?.stop() } catch (_: Exception) {}
-        record?.release()
-        record = null
+        try { audioRecord.stop() } catch (_: Exception) {}
+        audioRecord.release()
+        if (record === audioRecord) record = null
     }
 
     private fun isSpeechEnergy(frame: ShortArray, read: Int): Boolean {
@@ -350,5 +374,7 @@ class VoiceWakeDetector(private val context: Context) {
         private const val TAG = "VoiceWakeDetector"
         private const val MAX_SILENCE_FRAMES = 12
         const val NO_MIC_PERMISSION = "未授予麦克风权限，语音唤醒不可用。其他唤醒方式仍可使用。"
+        const val AUDIO_UNAVAILABLE = "麦克风初始化或录音启动失败，语音唤醒不可用。"
+        const val ASR_UNAVAILABLE = "设备不支持系统语音识别，语音唤醒不可用。"
     }
 }

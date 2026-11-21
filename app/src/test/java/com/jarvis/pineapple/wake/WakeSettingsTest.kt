@@ -46,6 +46,23 @@ class WakeSettingsTest {
         assertFalse(method.contains("runCatching"))
     }
 
+    @Test
+    fun voiceStartVerifiesRecordingBeforeReportingSuccess() {
+        val source = readSource(VOICE_DETECTOR)
+        val start = source.substringAfter("fun start(): Boolean")
+            .substringBefore("private fun prepareAudioRecording()")
+        val prepare = source.substringAfter("private fun prepareAudioRecording()")
+            .substringBefore("private fun failStart(")
+
+        assertTrue(start.contains("!prepareAudioRecording()"))
+        assertTrue(start.indexOf("!prepareAudioRecording()") < start.indexOf("_listening.value = true"))
+        assertTrue(start.indexOf("!prepareAudioRecording()") < start.lastIndexOf("return true"))
+        assertTrue(start.contains("SpeechRecognizer.isRecognitionAvailable(context)"))
+        assertTrue(prepare.contains("audioRecord.startRecording()"))
+        assertTrue(prepare.contains("audioRecord.recordingState != android.media.AudioRecord.RECORDSTATE_RECORDING"))
+        assertTrue(prepare.contains("return failStart(AUDIO_UNAVAILABLE"))
+    }
+
     private fun readSource(relativePath: String): String {
         return listOf(File(relativePath), File("../$relativePath"))
             .firstOrNull { it.exists() }?.readText()
@@ -56,5 +73,6 @@ class WakeSettingsTest {
         private const val WAKE_ENGINE = "app/src/main/java/com/jarvis/pineapple/wake/WakeEngine.kt"
         private const val SETTINGS = "app/src/main/java/com/jarvis/pineapple/ui/settings/SettingsScreen.kt"
         private const val MAIN_ACTIVITY = "app/src/main/java/com/jarvis/pineapple/ui/MainActivity.kt"
+        private const val VOICE_DETECTOR = "app/src/main/java/com/jarvis/pineapple/wake/VoiceWakeDetector.kt"
     }
 }
