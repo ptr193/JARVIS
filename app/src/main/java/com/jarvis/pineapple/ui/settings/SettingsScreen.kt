@@ -430,7 +430,7 @@ private fun ToolsTab(showMsg: (String) -> Unit) {
             tmp.delete()
             showMsg(
                 if (id != null) "技能已导入并启用: $id"
-                else "导入失败：需为有效插件包(.apk/.dex/.jar)且签名匹配"
+                else "导入或启用失败：请检查插件包、签名及初始化错误日志"
             )
         }
     }
@@ -468,8 +468,8 @@ private fun ToolsTab(showMsg: (String) -> Unit) {
                         )
                     }
                     IconButton(onClick = {
-                        pluginManager.uninstall(plugin.metadata.id)
-                        showMsg("已卸载: ${plugin.metadata.name}")
+                        val uninstalled = pluginManager.uninstall(plugin.metadata.id)
+                        showMsg(if (uninstalled) "已卸载: ${plugin.metadata.name}" else "卸载失败: ${plugin.metadata.name}")
                     }) {
                         Icon(Icons.Filled.Delete, contentDescription = "卸载")
                     }

@@ -50,8 +50,11 @@ class PluginManager(private val context: Context) {
             val id = loaded.metadata.id
             discovered.add(id)
             loaded.enabled = id in enabled
+            if (loaded.enabled && !activate(loaded)) {
+                loaded.enabled = false
+                enabled.remove(id)
+            }
             instances[id] = loaded
-            if (loaded.enabled) activate(loaded)
             files[id] = file.name
         }
 
@@ -82,9 +85,12 @@ class PluginManager(private val context: Context) {
                 return null
             }
             val id = loaded.metadata.id
+            if (!activate(loaded)) {
+                target.delete()
+                return null
+            }
             loaded.enabled = true
             instances[id] = loaded
-            activate(loaded)
 
             fileMap().apply { this[id] = target.name }.let { persistFiles(it) }
             persistEnabled(enabledSet().toMutableSet().apply { add(id) })
@@ -100,23 +106,27 @@ class PluginManager(private val context: Context) {
 
     /** 卸载插件。 */
     fun uninstall(pluginId: String): Boolean {
-        val loaded = instances.remove(pluginId) ?: return false
-        if (loaded.enabled) runCatching { loaded.instance.onUnload() }
+        val loaded = instances[pluginId] ?: return false
         val file = File(loaded.sourcePath)
+        if (file.exists() && !file.delete()) return false
+        if (loaded.enabled) {
+            runCatching { loaded.instance.onUnload() }
+                .onFailure { Log.e(TAG, "插件 onUnload 失败: $pluginId", it) }
+        }
+        instances.remove(pluginId)
         fileMap().apply { remove(pluginId) }.let { persistFiles(it) }
         persistEnabled(enabledSet().toMutableSet().apply { remove(pluginId) })
-        val deleted = !file.exists() || file.delete()
         refresh()
         Log.i(TAG, "插件已卸载: $pluginId")
-        return deleted
+        return true
     }
 
     /** 启用插件。 */
     fun enable(pluginId: String): Boolean {
         val loaded = instances[pluginId] ?: return false
         if (!loaded.enabled) {
+            if (!activate(loaded)) return false
             loaded.enabled = true
-            activate(loaded)
         }
         persistEnabled(enabledSet().toMutableSet().apply { add(pluginId) })
         refresh()
@@ -161,12 +171,14 @@ class PluginManager(private val context: Context) {
 
     // ==================== 内部 ====================
 
-    private fun activate(loaded: PluginLoader.LoadedPlugin) {
+    private fun activate(loaded: PluginLoader.LoadedPlugin): Boolean {
         val host = loader.createSandbox(loaded.metadata)
-        try {
+        return try {
             loaded.instance.onLoad(host)
+            true
         } catch (e: Throwable) {
             Log.e(TAG, "插件 onLoad 失败: ${loaded.metadata.id}", e)
+            false
         }
     }
 
