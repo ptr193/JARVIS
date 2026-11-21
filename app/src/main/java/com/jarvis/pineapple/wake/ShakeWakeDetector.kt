@@ -5,6 +5,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,9 +40,14 @@ class ShakeWakeDetector(private val context: Context) : SensorEventListener {
             _unavailableReason.value = NO_ACCELEROMETER
             return false
         }
-        _unavailableReason.value = null
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
-        return true
+        val registered = try {
+            sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        } catch (e: Exception) {
+            Log.e(TAG, "加速度传感器注册失败", e)
+            false
+        }
+        _unavailableReason.value = if (registered) null else REGISTRATION_FAILED
+        return registered
     }
 
     fun stop() {
@@ -90,5 +96,7 @@ class ShakeWakeDetector(private val context: Context) : SensorEventListener {
 
     companion object {
         const val NO_ACCELEROMETER = "未检测到加速度传感器，摇一摇唤醒不可用。其他唤醒方式仍可使用。"
+        const val REGISTRATION_FAILED = "加速度传感器注册失败，摇一摇唤醒不可用。其他唤醒方式仍可使用。"
+        private const val TAG = "ShakeWakeDetector"
     }
 }
