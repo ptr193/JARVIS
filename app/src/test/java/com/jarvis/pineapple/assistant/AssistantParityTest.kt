@@ -54,7 +54,7 @@ class AssistantParityTest {
             CameraCaptureSession.Task.DOCUMENT,
             OverlayCameraController.resolveTask(OverlayCameraController.TASK_DOCUMENT)
         )
-        assertEquals("扫文档", OverlayCameraController.titleFor(CameraCaptureSession.Task.DOCUMENT))
+        assertEquals("图像分析", OverlayCameraController.titleFor(CameraCaptureSession.Task.DOCUMENT))
         assertEquals("识物", OverlayCameraController.titleFor(CameraCaptureSession.Task.OBJECT))
         assertEquals(CameraCaptureSession.NO_IMAGE, OverlayCameraController.noImageMessage())
     }

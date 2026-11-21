@@ -68,6 +68,12 @@
         android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
+            android:name=".security.BiometricAuthActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.JARVIS" />
+
+        <activity
             android:name=".assistant.OverlayCameraActivity"
             android:exported="false"
             android:excludeFromRecents="true"
@@ -198,7 +204,7 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- 设备管理员接收器：防盗（远程锁定/擦除） -->
+        <!-- 设备管理员接收器：本机锁定与擦除 -->
         <receiver
             android:name=".security.JarvisDeviceAdminReceiver"
             android:exported="true"

@@ -74,7 +74,7 @@ class SimpleCommandExecutor(
         return if (phoneController.call(number)) {
             "正在拨打 $number"
         } else {
-            "拨打失败：未授予电话权限"
+            "拨打失败：请检查电话号码、电话权限及系统拨号能力"
         }
     }
 
@@ -82,9 +82,9 @@ class SimpleCommandExecutor(
         val number = command.parameters["number"] ?: return "未提供短信号码"
         val body = command.parameters["body"] ?: return "未提供短信内容"
         return if (smsController.send(number, body)) {
-            "已向 $number 发送短信"
+            "已向系统提交发送至 $number 的短信"
         } else {
-            "发送短信失败：未授予短信权限"
+            "短信提交失败：请检查号码、内容及短信权限"
         }
     }
 
@@ -104,8 +104,11 @@ class SimpleCommandExecutor(
 
     private fun navigate(command: AssistantCommandParser.ParsedCommand): String {
         val dest = command.parameters["destination"] ?: return "未提供目的地"
-        navigationController.navigateTo(dest)
-        return "正在导航到$dest"
+        return if (navigationController.navigateTo(dest)) {
+            "已请求地图应用导航到$dest"
+        } else {
+            "导航失败：未找到可用的地图应用或网页入口"
+        }
     }
 
     private fun setWifi(command: AssistantCommandParser.ParsedCommand): String {
@@ -113,7 +116,7 @@ class SimpleCommandExecutor(
         return if (settingsController.setWifiEnabled(enabled)) {
             if (enabled) "已打开 Wi-Fi" else "已关闭 Wi-Fi"
         } else {
-            "切换 Wi-Fi 失败：未授予无线网络权限"
+            "切换 Wi-Fi 失败：权限不足或当前系统版本不允许应用直接切换"
         }
     }
 
@@ -122,7 +125,7 @@ class SimpleCommandExecutor(
         return if (settingsController.setBluetoothEnabled(enabled)) {
             if (enabled) "已打开蓝牙" else "已关闭蓝牙"
         } else {
-            "切换蓝牙失败：未授予蓝牙权限"
+            "切换蓝牙失败：请检查蓝牙权限、硬件及系统限制"
         }
     }
 }

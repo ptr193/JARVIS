@@ -69,14 +69,15 @@ fun CameraCaptureSection(
             onFace = CameraCaptureSession.ImageHandler { bytes ->
                 val result = security.detectFaces(bytes)
                 if (result.isDetected) {
-                    "检测到 ${result.faceCount} 张人脸，置信度 ${(result.confidence * 100).toInt()}%"
+                    "检测到 ${result.faceCount} 张人脸，${result.landmarks.size} 个特征点"
                 } else {
                     "未检测到人脸"
                 }
             },
             onIdentity = CameraCaptureSession.IdentityHandler { probe, reference ->
                 val cmp = security.compareFaces(probe, reference)
-                "${if (cmp.isMatch) "身份匹配" else "身份不匹配"} · ${cmp.details}"
+                if (!cmp.isComparable) cmp.details
+                else "${if (cmp.isSimilar) "相似度较高" else "相似度较低"} · ${cmp.details}"
             },
             onObject = CameraCaptureSession.ImageHandler { bytes ->
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -86,8 +87,8 @@ fun CameraCaptureSection(
                 else objects.joinToString("；") { "${it.label} ${(it.confidence * 100).toInt()}%" }
             },
             onDocument = CameraCaptureSession.ImageHandler { bytes ->
-                val result = infoProcessor.reconstruct2D(listOf(bytes))
-                if (result.success) result.message else (result.message.ifBlank { "文档扫描失败" })
+                val result = infoProcessor.analyzeImageFeatures(listOf(bytes))
+                if (result.success) result.message else result.message.ifBlank { "图像分析失败" }
             },
             onVisualTranslate = CameraCaptureSession.ImageHandler { bytes ->
                 val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
@@ -103,9 +104,9 @@ fun CameraCaptureSection(
                 }
             },
             onScene = CameraCaptureSession.ImageHandler { bytes ->
-                val result = infoProcessor.reconstruct2D(listOf(bytes))
-                if (result.success) "场景还原（单视角）：${result.message}"
-                else result.message.ifBlank { "场景还原失败" }
+                val result = infoProcessor.analyzeImageFeatures(listOf(bytes))
+                if (result.success) "场景特征：${result.message.removePrefix("图像特征分析：")}"
+                else result.message.ifBlank { "场景特征分析失败" }
             }
         )
     }
@@ -178,28 +179,28 @@ fun CameraCaptureSection(
                     Spacer(Modifier.width(8.dp))
                     OutlinedButton(onClick = {
                         referenceJpeg = jpeg
-                        status = if (jpeg == null) CameraCaptureSession.NO_IMAGE else "已将当前照片设为身份比对参考"
+                        status = if (jpeg == null) CameraCaptureSession.NO_IMAGE else "已将当前照片设为人脸比对参考"
                         showMsg(status)
                     }) { Text("设为参考人脸") }
                 }
             }
             if (showFaceActions) {
                 Row {
-                    Button(onClick = { runTask(CameraCaptureSession.Task.FACE) }) { Text("人脸识别") }
+                    Button(onClick = { runTask(CameraCaptureSession.Task.FACE) }) { Text("人脸检测") }
                     Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = { runTask(CameraCaptureSession.Task.IDENTITY) }) { Text("身份比对") }
+                    OutlinedButton(onClick = { runTask(CameraCaptureSession.Task.IDENTITY) }) { Text("人脸相似度") }
                 }
             }
             if (showPerceptionActions) {
                 Row {
                     Button(onClick = { runTask(CameraCaptureSession.Task.OBJECT) }) { Text("物体检测") }
                     Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = { runTask(CameraCaptureSession.Task.DOCUMENT) }) { Text("文档扫描") }
+                    OutlinedButton(onClick = { runTask(CameraCaptureSession.Task.DOCUMENT) }) { Text("图像特征") }
                 }
                 Row {
                     Button(onClick = { runTask(CameraCaptureSession.Task.VISUAL_TRANSLATE) }) { Text("视觉翻译") }
                     Spacer(Modifier.width(8.dp))
-                    OutlinedButton(onClick = { runTask(CameraCaptureSession.Task.SCENE) }) { Text("场景还原") }
+                    OutlinedButton(onClick = { runTask(CameraCaptureSession.Task.SCENE) }) { Text("场景特征") }
                 }
             }
         }

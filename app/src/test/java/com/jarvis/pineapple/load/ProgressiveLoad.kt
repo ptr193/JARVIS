@@ -1,8 +1,10 @@
 package com.jarvis.pineapple.load
 
 /**
- * 30 轮逐级负荷配置。一轮通过后下一轮必须更重。
- * 第 1 轮只压主功能；第 2 轮轻量覆盖全功能；第 3–30 轮全功能加压。
+ * 40 轮逐级负荷配置。一轮通过后下一轮必须更重。
+ * 第 1 轮只压主功能；第 2 轮轻量覆盖全功能；第 3–40 轮全功能加压。
+ * 任务量由会话/消息/记忆数体现；工作与请求频率由并发 worker、
+ * 每 worker 无间隔连续创建及指令连发体现；单次体量由 payloadChars 体现。
  */
 data class LoadProfile(
     val round: Int,
@@ -21,7 +23,7 @@ data class LoadProfile(
     val maxMillis: Long
 ) {
     init {
-        require(round in 1..30)
+        require(round in 1..40)
     }
 
     companion object {
@@ -38,7 +40,7 @@ data class LoadProfile(
         )
 
         fun forRound(round: Int): LoadProfile {
-            require(round in 1..30) { "负荷轮次必须是 1..30，实际=$round" }
+            require(round in 1..40) { "负荷轮次必须是 1..40，实际=$round" }
             return when (round) {
                 1 -> LoadProfile(
                     round = 1,
@@ -102,7 +104,7 @@ data class LoadProfile(
 
         fun assertEscalates() {
             var previousWeight = 0
-            for (round in 1..30) {
+            for (round in 1..40) {
                 val weight = forRound(round).weight()
                 check(weight > previousWeight) {
                     "第 $round 轮负荷 $weight 必须大于上一轮 $previousWeight"

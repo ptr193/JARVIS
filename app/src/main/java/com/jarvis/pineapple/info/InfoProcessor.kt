@@ -332,22 +332,15 @@ class InfoProcessor(
         }.getOrDefault(emptyList())
     }
 
-    // ==================== 数字重建（#32） ====================
+    // ==================== 图像与深度数据分析 ====================
 
     /**
-     * 数字重建：2D 拼接。
-     *
-     * 对每张图像提取 FAST 风格角点，并计算 BRIEF 二进制描述子，
-     * 通过汉明距离在两两图像间做特征匹配。返回均为真实统计值。
+     * 对每张图像提取 FAST 风格角点和 BRIEF 描述子，并在相邻图像间进行特征匹配。
+     * 该结果仅描述实际完成的图像分析，不代表已生成拼接图、点云或网格。
      */
-    fun reconstruct2D(images: List<ByteArray>): ReconstructionResult {
+    fun analyzeImageFeatures(images: List<ByteArray>): ImageFeatureAnalysisResult {
         if (images.isEmpty()) {
-            return ReconstructionResult(
-                success = false,
-                pointCloudSize = 0,
-                meshVertices = 0,
-                message = "无输入图像"
-            )
+            return ImageFeatureAnalysisResult(success = false, message = "无输入图像")
         }
 
         val featureSets = images.mapNotNull { data ->
@@ -360,55 +353,49 @@ class InfoProcessor(
         }
 
         if (featureSets.isEmpty()) {
-            return ReconstructionResult(
-                success = false,
-                pointCloudSize = 0,
-                meshVertices = 0,
-                message = "图像解码或特征提取失败"
-            )
+            return ImageFeatureAnalysisResult(success = false, message = "图像解码或特征提取失败")
         }
 
-        val totalKeypoints = featureSets.sumOf { it.first.size }
+        val keypointCount = featureSets.sumOf { it.first.size }
+        val descriptorCount = featureSets.sumOf { it.second.size }
         var matchCount = 0
         for (i in 0 until featureSets.size - 1) {
             matchCount += matchDescriptors(featureSets[i].second, featureSets[i + 1].second)
         }
 
-        return ReconstructionResult(
+        return ImageFeatureAnalysisResult(
             success = true,
-            pointCloudSize = totalKeypoints,
-            meshVertices = matchCount * 3,
-            message = "2D 拼接：${featureSets.size} 张图像、$totalKeypoints 个特征点、$matchCount 组匹配"
+            imageCount = featureSets.size,
+            keypointCount = keypointCount,
+            descriptorCount = descriptorCount,
+            matchCount = matchCount,
+            message = "图像特征分析：${featureSets.size} 张图像、$keypointCount 个角点、" +
+                "$descriptorCount 个描述子、$matchCount 组相邻图像匹配"
         )
     }
 
-    // ==================== 场景还原（#33） ====================
-
-    /**
-     * 场景还原：由深度数据生成真实点云，有效深度样本一律计入点云。
-     */
-    fun reconstruct3D(images: List<ByteArray>, depthData: List<FloatArray>): ReconstructionResult {
-        if (images.isEmpty() || depthData.isEmpty()) {
-            return ReconstructionResult(
-                success = false,
-                pointCloudSize = 0,
-                meshVertices = 0,
-                message = "无输入图像或深度数据"
-            )
+    /** 统计有效深度样本，不将样本数冒充为点云或网格数量。 */
+    fun analyzeDepthSamples(depthData: List<FloatArray>): DepthSampleAnalysisResult {
+        if (depthData.isEmpty()) {
+            return DepthSampleAnalysisResult(success = false, message = "无深度数据")
         }
 
-        var validPoints = 0
+        var validSamples = 0
         for (frame in depthData) {
             for (depth in frame) {
-                if (!depth.isNaN() && !depth.isInfinite() && depth > 0f) validPoints++
+                if (depth.isFinite() && depth > 0f) validSamples++
             }
         }
 
-        return ReconstructionResult(
-            success = validPoints > 0,
-            pointCloudSize = validPoints,
-            meshVertices = validPoints / 3,
-            message = "3D 还原：${images.size} 张图像、${depthData.size} 帧深度数据、$validPoints 个有效点"
+        return DepthSampleAnalysisResult(
+            success = validSamples > 0,
+            frameCount = depthData.size,
+            validSampleCount = validSamples,
+            message = if (validSamples > 0) {
+                "深度样本统计：${depthData.size} 帧、$validSamples 个有效样本"
+            } else {
+                "深度数据中没有有效样本"
+            }
         )
     }
 
@@ -582,9 +569,18 @@ data class DataLogEntry(
     val timestamp: Long
 )
 
-data class ReconstructionResult(
+data class ImageFeatureAnalysisResult(
     val success: Boolean,
-    val pointCloudSize: Int,
-    val meshVertices: Int,
+    val imageCount: Int = 0,
+    val keypointCount: Int = 0,
+    val descriptorCount: Int = 0,
+    val matchCount: Int = 0,
+    val message: String
+)
+
+data class DepthSampleAnalysisResult(
+    val success: Boolean,
+    val frameCount: Int = 0,
+    val validSampleCount: Int = 0,
     val message: String
 )

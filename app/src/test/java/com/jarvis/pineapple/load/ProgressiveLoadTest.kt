@@ -38,6 +38,13 @@ class ProgressiveLoadTest(private val round: Int) {
         runCore(profile)
         if (!profile.coreOnly) runFull(profile)
         val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+        println(
+            "LOAD_ROUND round=$round weight=${profile.weight()} " +
+                "conversations=${profile.conversations} messages=${profile.messagesPerConversation} " +
+                "payloadChars=${profile.payloadChars} commandRepeats=${profile.commandRepeats} " +
+                "memories=${profile.memories} workers=${profile.workers} " +
+                "createsPerWorker=${profile.createsPerWorker} elapsedMs=$elapsed"
+        )
         assertTrue(
             "第 $round 轮耗时 ${elapsed}ms，超过预算 ${profile.maxMillis}ms",
             elapsed <= profile.maxMillis
@@ -152,6 +159,14 @@ class ProgressiveLoadTest(private val round: Int) {
                     start.await()
                     repeat(profile.createsPerWorker) { idx ->
                         concurrentRepo.createConversation("c$round-$worker-$idx")
+                        // 同一批任务内无间隔连发指令，随轮次同时提升请求频率与解析总量。
+                        repeat(profile.commandRepeats) { request ->
+                            val command = LoadProfile.COMMANDS[
+                                (worker + idx + request) % LoadProfile.COMMANDS.size
+                            ]
+                            val parsed = AssistantCommandParser.parse(command)
+                            assertTrue("并发指令解析失败：$command", parsed.action != "UNKNOWN")
+                        }
                     }
                     done.countDown()
                 }
@@ -169,6 +184,6 @@ class ProgressiveLoadTest(private val round: Int) {
     companion object {
         @JvmStatic
         @Parameterized.Parameters(name = "round={0}")
-        fun rounds(): Collection<Array<Any>> = (1..30).map { arrayOf(it as Any) }
+        fun rounds(): Collection<Array<Any>> = (1..40).map { arrayOf(it as Any) }
     }
 }

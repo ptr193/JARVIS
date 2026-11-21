@@ -3,23 +3,16 @@ package com.jarvis.pineapple.security
 import android.Manifest
 import android.app.admin.DevicePolicyManager
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import androidx.biometric.BiometricPrompt
-import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark as MlKitFaceLandmark
 import android.provider.Settings
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -48,15 +41,12 @@ private val DANGEROUS_PERMISSIONS = setOf(
  * 安全管理器（功能 #34-#48）。
  *
  * 功能：
- * - 人脸识别
- * - 身份比对
- * - 虹膜扫描
- * - 生物验证
+ * - 人脸检测
+ * - 人脸区域图像相似度比对
  * - 访问权限分级
  * - 手机锁定与防盗
- * - 身份验证与防冒用
- * - 远程数据擦除
- * - 权限管控与安全响应
+ * - 本机数据擦除
+ * - 权限使用审计
  * - 安全策略效能评估
  * - 隐私风险评估
  * - 安全风险评估
@@ -69,14 +59,13 @@ class SecurityManager(private val context: Context) {
     private val devicePolicyManager = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
     private val adminComponent = JarvisDeviceAdminReceiver.componentName(context)
 
-    // ==================== 人脸识别（#34） ====================
+    // ==================== 人脸检测（#34） ====================
 
     /**
-     * 人脸识别结果
+     * 人脸检测结果
      */
     data class FaceRecognitionResult(
         val isDetected: Boolean = false,
-        val confidence: Float = 0f,
         val faceCount: Int = 0,
         val boundingBoxes: List<FaceBoundingBox> = emptyList(),
         val landmarks: List<FaceLandmark> = emptyList()
@@ -108,7 +97,7 @@ class SecurityManager(private val context: Context) {
             BitmapFactory.decodeByteArray(imageData, 0, imageData.size)
         } catch (e: Exception) {
             null
-        } ?: return FaceRecognitionResult(isDetected = false, confidence = 0f, faceCount = 0)
+        } ?: return FaceRecognitionResult(isDetected = false, faceCount = 0)
         return detectFaces(bitmap)
     }
 
@@ -130,7 +119,7 @@ class SecurityManager(private val context: Context) {
                 detector.close()
             }
             if (faces.isEmpty()) {
-                FaceRecognitionResult(isDetected = false, confidence = 0f, faceCount = 0)
+                FaceRecognitionResult(isDetected = false, faceCount = 0)
             } else {
                 val boxes = faces.map { face ->
                     val b = face.boundingBox
@@ -141,19 +130,15 @@ class SecurityManager(private val context: Context) {
                         mapLandmark(lm.landmarkType)?.let { FaceLandmark(it, lm.position.x, lm.position.y) }
                     }
                 }
-                // 置信度依据检测到的人脸特征点丰富程度估算
-                val landmarkRichness = (landmarks.size.toFloat() / 7f).coerceIn(0f, 1f)
-                val confidence = (0.7f + 0.3f * landmarkRichness).coerceIn(0f, 1f)
                 FaceRecognitionResult(
                     isDetected = true,
-                    confidence = confidence,
                     faceCount = faces.size,
                     boundingBoxes = boxes,
                     landmarks = landmarks
                 )
             }
         } catch (e: Exception) {
-            FaceRecognitionResult(isDetected = false, confidence = 0f, faceCount = 0)
+            FaceRecognitionResult(isDetected = false, faceCount = 0)
         }
     }
 
@@ -166,45 +151,38 @@ class SecurityManager(private val context: Context) {
         else -> null
     }
 
-    // ==================== 身份比对（#35） ====================
+    // ==================== 人脸区域图像相似度（#35） ====================
 
-    /**
-     * 身份比对结果
-     */
-    data class IdentityComparisonResult(
-        val isMatch: Boolean = false,
+    data class FaceComparisonResult(
+        val isComparable: Boolean = false,
+        val isSimilar: Boolean = false,
         val similarity: Float = 0f,
         val threshold: Float = 0.8f,
         val details: String = ""
     )
 
-    /**
-     * 比对两张人脸
-     */
-    fun compareFaces(face1: ByteArray, face2: ByteArray): IdentityComparisonResult {
-        // 提取灰度特征向量并计算相似度（NCC + HOG 余弦）
+    /** 比对两张图片中唯一人脸的区域，不作为身份认证结论。 */
+    fun compareFaces(face1: ByteArray, face2: ByteArray): FaceComparisonResult {
         val similarity = calculateFaceSimilarity(face1, face2)
-        return IdentityComparisonResult(
-            isMatch = similarity >= 0.8f,
+            ?: return FaceComparisonResult(details = "两张图片均需检测到且仅检测到一张人脸")
+        return FaceComparisonResult(
+            isComparable = true,
+            isSimilar = similarity >= 0.8f,
             similarity = similarity,
-            threshold = 0.8f,
-            details = "相似度: ${"%.2f".format(similarity * 100)}%"
+            details = "人脸区域图像相似度：${"%.2f".format(similarity * 100)}%（非身份认证）"
         )
     }
 
-    /**
-     * 人脸相似度：灰度归一化互相关 + 梯度方向直方图（HOG）余弦相似度。
-     * 相比逐字节比较，对轻微位移与光照差异更稳健。
-     */
-    private fun calculateFaceSimilarity(face1: ByteArray, face2: ByteArray): Float {
-        val v1 = grayscaleVector(face1) ?: return 0f
-        val v2 = grayscaleVector(face2) ?: return 0f
+    /** 人脸区域的灰度归一化互相关与 HOG 余弦相似度。 */
+    private fun calculateFaceSimilarity(face1: ByteArray, face2: ByteArray): Float? {
+        val v1 = grayscaleVector(face1) ?: return null
+        val v2 = grayscaleVector(face2) ?: return null
         val ncc = normalizedCrossCorrelation(v1, v2)
         val hog = hogCosineSimilarity(v1, v2)
         return (((ncc + 1f) / 2f) * 0.5f + hog * 0.5f).coerceIn(0f, 1f)
     }
 
-    /** 解码图像为归一化灰度向量（[FACE_GRID] x [FACE_GRID]，零均值单位方差）。 */
+    /** 解码唯一人脸区域为归一化灰度向量；无人脸或多人脸时失败关闭。 */
     private fun grayscaleVector(data: ByteArray): FloatArray? {
         if (data.isEmpty()) return null
         val bitmap = try {
@@ -212,8 +190,16 @@ class SecurityManager(private val context: Context) {
         } catch (e: Exception) {
             null
         } ?: return null
+        val detection = detectFaces(bitmap)
+        if (!detection.isDetected || detection.faceCount != 1) return null
+        val box = detection.boundingBoxes.single()
+        val left = box.left.coerceIn(0, bitmap.width - 1)
+        val top = box.top.coerceIn(0, bitmap.height - 1)
+        val right = box.right.coerceIn(left + 1, bitmap.width)
+        val bottom = box.bottom.coerceIn(top + 1, bitmap.height)
+        val face = Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
         val size = FACE_GRID
-        val scaled = Bitmap.createScaledBitmap(bitmap, size, size, true)
+        val scaled = Bitmap.createScaledBitmap(face, size, size, true)
         val pixels = IntArray(size * size)
         scaled.getPixels(pixels, 0, size, 0, 0, size, size)
         val gray = FloatArray(pixels.size) { i ->
@@ -265,84 +251,6 @@ class SecurityManager(private val context: Context) {
         return bins
     }
 
-    // ==================== 虹膜扫描（#36） ====================
-
-    /**
-     * 虹膜扫描结果
-     */
-    data class IrisScanResult(
-        val isDetected: Boolean = false,
-        val quality: IrisQuality = IrisQuality.LOW,
-        val irisCode: String = "",
-        val confidence: Float = 0f
-    )
-
-    enum class IrisQuality {
-        LOW, MEDIUM, HIGH
-    }
-
-    /**
-     * 扫描虹膜
-     * 需要特殊硬件支持（如三星 Note 系列）
-     * 无硬件时返回明确的不支持提示
-     */
-    fun scanIris(imageData: ByteArray): IrisScanResult {
-        val hasIrisHardware = context.packageManager.hasSystemFeature(
-            "android.hardware.camera.iris"
-        )
-        if (imageData.size < 64) {
-            return IrisScanResult(false, IrisQuality.LOW, "", 0f)
-        }
-
-        // 将输入转换为灰度强度序列（虹膜识别前端的通用表示）
-        val gray = FloatArray(imageData.size) { (imageData[it].toInt() and 0xFF).toFloat() }
-        val mean = gray.average().toFloat()
-        val variance = gray.sumOf { v -> ((v - mean) * (v - mean)).toDouble() } / gray.size
-        val contrast = kotlin.math.sqrt(variance).toFloat()
-        if (contrast < 3f) {
-            // 对比度过低，无法提取虹膜纹理
-            return IrisScanResult(false, IrisQuality.LOW, "", 0f)
-        }
-
-        // 多尺度差分相位编码（Daugman 虹膜码的实数近似）：
-        // 用细尺度平滑与粗尺度平滑的符号差生成二值码。
-        val fine = smoothProfile(gray, 3)
-        val coarse = smoothProfile(gray, 15)
-        val builder = StringBuilder()
-        val step = (fine.size / 256).coerceAtLeast(1)
-        var i = 0
-        while (i < fine.size) {
-            builder.append(if (fine[i] >= coarse[i]) '1' else '0')
-            i += step
-        }
-        val irisCode = builder.toString()
-        val quality = when {
-            contrast >= 30f && irisCode.length >= 128 && hasIrisHardware -> IrisQuality.HIGH
-            contrast >= 12f -> IrisQuality.MEDIUM
-            else -> IrisQuality.LOW
-        }
-        val confidence = (contrast / 60f).coerceIn(0f, 1f)
-        return IrisScanResult(
-            isDetected = quality != IrisQuality.LOW,
-            quality = quality,
-            irisCode = irisCode,
-            confidence = confidence
-        )
-    }
-
-    /** 滑动窗口均值平滑（前缀和，O(n)）。 */
-    private fun smoothProfile(data: FloatArray, window: Int): FloatArray {
-        if (window <= 1 || data.isEmpty()) return data
-        val prefix = FloatArray(data.size + 1)
-        for (i in data.indices) prefix[i + 1] = prefix[i] + data[i]
-        val half = window / 2
-        return FloatArray(data.size) { i ->
-            val lo = (i - half).coerceAtLeast(0)
-            val hi = (i + half).coerceAtMost(data.size - 1)
-            (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1)
-        }
-    }
-
     // ==================== 手机锁定与防盗（#39） ====================
 
     /**
@@ -384,95 +292,14 @@ class SecurityManager(private val context: Context) {
         }
     }
 
-    /**
-     * 远程锁定设备
-     */
-    fun remoteLockDevice(message: String = "设备已被远程锁定"): Boolean {
-        return lockDevice(message)
-    }
-
-    // ==================== 身份验证与防冒用（#40） ====================
-
-    /**
-     * 身份验证结果
-     */
-    data class IdentityVerificationResult(
-        val isVerified: Boolean = false,
-        val verificationMethod: VerificationMethod = VerificationMethod.NONE,
-        val confidence: Float = 0f,
-        val riskLevel: RiskLevel = RiskLevel.LOW,
-        val message: String = ""
-    )
-
-    enum class VerificationMethod {
-        NONE, FACE, FINGERPRINT, IRIS, PASSWORD, MULTI_FACTOR
-    }
-
     enum class RiskLevel {
         LOW, MEDIUM, HIGH, CRITICAL
     }
 
-    /**
-     * 多因素身份验证
-     */
-    fun verifyIdentity(
-        faceData: ByteArray? = null,
-        fingerprint: Boolean = false,
-        password: String? = null
-    ): IdentityVerificationResult {
-        var score = 0f
-        var methods = 0
+    // ==================== 本机数据擦除（#41） ====================
 
-        // 人脸验证
-        if (faceData != null) {
-            val faceResult = detectFaces(faceData)
-            if (faceResult.isDetected && faceResult.confidence > 0.8f) {
-                score += faceResult.confidence * 0.4f
-                methods++
-            }
-        }
-
-        // 指纹验证
-        if (fingerprint) {
-            score += 0.3f
-            methods++
-        }
-
-        // 密码验证
-        if (password != null && password.isNotEmpty()) {
-            score += 0.3f
-            methods++
-        }
-
-        val isVerified = score >= 0.7f && methods >= 2
-        val riskLevel = when {
-            score >= 0.9f && methods >= 3 -> RiskLevel.LOW
-            score >= 0.7f && methods >= 2 -> RiskLevel.MEDIUM
-            score >= 0.5f -> RiskLevel.HIGH
-            else -> RiskLevel.CRITICAL
-        }
-
-        return IdentityVerificationResult(
-            isVerified = isVerified,
-            verificationMethod = when {
-                methods >= 3 -> VerificationMethod.MULTI_FACTOR
-                faceData != null -> VerificationMethod.FACE
-                fingerprint -> VerificationMethod.FINGERPRINT
-                password != null -> VerificationMethod.PASSWORD
-                else -> VerificationMethod.NONE
-            },
-            confidence = score,
-            riskLevel = riskLevel,
-            message = if (isVerified) "身份验证通过" else "身份验证失败"
-        )
-    }
-
-    // ==================== 远程数据擦除（#41） ====================
-
-    /**
-     * 远程擦除设备数据
-     */
-    fun remoteWipeData(includeExternalStorage: Boolean = false): Boolean {
+    /** 通过设备管理器擦除本机数据。 */
+    fun wipeDeviceData(includeExternalStorage: Boolean = false): Boolean {
         return try {
             if (devicePolicyManager.isAdminActive(adminComponent)) {
                 devicePolicyManager.wipeData(
@@ -539,46 +366,6 @@ class SecurityManager(private val context: Context) {
         }
     }
 
-    /**
-     * 响应安全事件
-     */
-    fun respondToSecurityEvent(event: SecurityEvent): SecurityResponse {
-        return when (event.type) {
-            SecurityEvent.Type.UNAUTHORIZED_ACCESS -> {
-                // 未授权访问：锁定设备并通知用户
-                lockDevice("检测到未授权访问")
-                SecurityResponse(
-                    action = SecurityResponse.Action.LOCK_DEVICE,
-                    message = "检测到未授权访问，设备已锁定",
-                    isHandled = true
-                )
-            }
-            SecurityEvent.Type.SUSPICIOUS_ACTIVITY -> {
-                // 可疑活动：记录日志并提高监控级别
-                SecurityResponse(
-                    action = SecurityResponse.Action.INCREASE_MONITORING,
-                    message = "检测到可疑活动，已提高监控级别",
-                    isHandled = true
-                )
-            }
-            SecurityEvent.Type.MALWARE_DETECTED -> {
-                // 检测到恶意软件：隔离并通知
-                SecurityResponse(
-                    action = SecurityResponse.Action.ISOLATE,
-                    message = "检测到恶意软件，已隔离相关应用",
-                    isHandled = true
-                )
-            }
-            else -> {
-                SecurityResponse(
-                    action = SecurityResponse.Action.LOG_ONLY,
-                    message = "已记录安全事件",
-                    isHandled = true
-                )
-            }
-        }
-    }
-
     data class SecurityEvent(
         val type: Type,
         val description: String,
@@ -592,16 +379,6 @@ class SecurityManager(private val context: Context) {
 
         enum class Severity {
             LOW, MEDIUM, HIGH, CRITICAL
-        }
-    }
-
-    data class SecurityResponse(
-        val action: Action,
-        val message: String,
-        val isHandled: Boolean
-    ) {
-        enum class Action {
-            LOCK_DEVICE, INCREASE_MONITORING, ISOLATE, LOG_ONLY, NOTIFY_USER
         }
     }
 
@@ -627,7 +404,7 @@ class SecurityManager(private val context: Context) {
             "生物识别" to evaluateBiometricPolicy(),
             "密码策略" to evaluatePasswordPolicy(),
             "权限管控" to evaluatePermissionPolicy(),
-            "远程擦除" to evaluateRemoteWipePolicy()
+            "本机擦除" to evaluateDeviceWipePolicy()
         )
 
         val overallScore = policies.values.average().toFloat()
@@ -681,7 +458,7 @@ class SecurityManager(private val context: Context) {
         return (1f - highRiskCount.toFloat() / total).coerceIn(0f, 1f)
     }
 
-    private fun evaluateRemoteWipePolicy(): Float {
+    private fun evaluateDeviceWipePolicy(): Float {
         // 基于设备管理器的真实评估
         return try {
             if (devicePolicyManager.isAdminActive(adminComponent)) 0.95f else 0.3f
@@ -1007,26 +784,10 @@ class SecurityManager(private val context: Context) {
             runCatching {
                 devicePolicyManager.setMaximumTimeToLock(adminComponent, 30_000L)
             }.onSuccess { deployed += "配置 30 秒自动锁屏" }.onFailure { failed += "配置自动锁屏" }
-
-            runCatching {
-                devicePolicyManager.setCameraDisabled(adminComponent, false)
-                deployed += "启用远程锁定功能"
-            }.onFailure { failed += "启用远程锁定功能" }
         } else {
             failed += "设备管理器未激活，系统级策略不可用"
         }
 
-        val biometric = androidx.biometric.BiometricManager.from(context)
-            .canAuthenticate(androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG)
-        if (biometric == androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
-            deployed += "启用生物识别验证"
-        } else {
-            failed += "启用生物识别验证（未注册生物特征）"
-        }
-
-        if (checkPermissionUsage().isNotEmpty()) {
-            deployed += "启用应用权限监控"
-        }
 
         return DefenseDeploymentResult(
             deployedStrategies = deployed,
@@ -1050,8 +811,6 @@ class SecurityManager(private val context: Context) {
         return when (protocol) {
             SecurityProtocol.LOCKDOWN -> executeLockdownProtocol()
             SecurityProtocol.DATA_WIPE -> executeDataWipeProtocol()
-            SecurityProtocol.SECURE_BOOT -> executeSecureBootProtocol()
-            SecurityProtocol.ENCRYPTED_COMMUNICATION -> executeEncryptedCommunicationProtocol()
         }
     }
 
@@ -1072,38 +831,8 @@ class SecurityManager(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    private fun executeSecureBootProtocol(): Boolean {
-        // 校验系统完整性：非 root、官方签名、已验证启动状态
-        val tagsOk = android.os.Build.TAGS?.contains("test-keys") == false
-        val rooted = isRooted()
-        val verified = runCatching {
-            val process = ProcessBuilder("getprop", "ro.boot.verifiedbootstate").start()
-            val value = process.inputStream.bufferedReader().use { it.readText() }.trim()
-            process.waitFor()
-            value
-        }.getOrNull()
-        val bootOk = verified.isNullOrBlank() || verified.equals("green", ignoreCase = true)
-        return tagsOk && !rooted && bootOk
-    }
-
-    private fun executeEncryptedCommunicationProtocol(): Boolean {
-        // 强制仅使用 HTTPS：校验已配置的服务端地址均为 https，并落盘策略
-        val prefs = context.getSharedPreferences("jarvis_security", Context.MODE_PRIVATE)
-        val endpoints = listOfNotNull(
-            prefs.getString("cloud_sync_url", null),
-            prefs.getString("translate_url", null),
-            prefs.getString("update_manifest_url", null)
-        ).filter { it.isNotBlank() }
-        val insecure = endpoints.filterNot { it.startsWith("https://") }
-        if (insecure.isNotEmpty()) {
-            return false
-        }
-        prefs.edit().putBoolean("enforce_tls_only", true).apply()
-        return true
-    }
-
     enum class SecurityProtocol {
-        LOCKDOWN, DATA_WIPE, SECURE_BOOT, ENCRYPTED_COMMUNICATION
+        LOCKDOWN, DATA_WIPE
     }
 
     companion object {

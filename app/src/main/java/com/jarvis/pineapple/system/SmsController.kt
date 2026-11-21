@@ -12,10 +12,14 @@ import androidx.core.content.ContextCompat
 class SmsController(private val context: Context) {
 
     fun send(phoneNumber: String, message: String): Boolean {
-        if (!PermissionGate.smsSendAllowed(hasSendSmsPermission())) return false
-        val smsManager = context.getSystemService(SmsManager::class.java)
-        smsManager.sendTextMessage(phoneNumber, null, message, null, null)
-        return true
+        if (!PermissionGate.smsSendAllowed(hasSendSmsPermission()) ||
+            phoneNumber.isBlank() || message.isBlank()
+        ) return false
+        return runCatching {
+            val smsManager = context.getSystemService(SmsManager::class.java)
+            smsManager.sendTextMessage(phoneNumber, null, message, null, null)
+            true
+        }.getOrDefault(false)
     }
 
     fun forward(phoneNumber: String, message: String): Boolean = send(phoneNumber, message)

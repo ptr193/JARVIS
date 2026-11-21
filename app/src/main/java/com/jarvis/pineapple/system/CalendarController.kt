@@ -21,16 +21,21 @@ class CalendarController(private val context: Context) {
     )
 
     fun createEvent(event: Event): Boolean {
-        if (!PermissionGate.calendarWriteAllowed(hasWriteCalendarPermission())) return false
+        if (!PermissionGate.calendarWriteAllowed(hasWriteCalendarPermission()) ||
+            !hasReadCalendarPermission() || event.title.isBlank() || event.endTime <= event.startTime
+        ) return false
+        val calendarId = getFirstCalendarId() ?: return false
         val values = ContentValues().apply {
             put(CalendarContract.Events.DTSTART, event.startTime)
             put(CalendarContract.Events.DTEND, event.endTime)
             put(CalendarContract.Events.TITLE, event.title)
             put(CalendarContract.Events.DESCRIPTION, event.description)
-            put(CalendarContract.Events.CALENDAR_ID, getFirstCalendarId())
+            put(CalendarContract.Events.CALENDAR_ID, calendarId)
             put(CalendarContract.Events.EVENT_TIMEZONE, Calendar.getInstance().timeZone.id)
         }
-        return context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null
+        return runCatching {
+            context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values) != null
+        }.getOrDefault(false)
     }
 
     fun setReminder(eventId: Long, minutesBefore: Int = 15): Boolean {
@@ -49,8 +54,9 @@ class CalendarController(private val context: Context) {
                 context, android.Manifest.permission.SEND_SMS
             ) != PackageManager.PERMISSION_GRANTED
         ) return false
-        phoneNumbers.forEach { SmsController(context).send(it, message) }
-        return true
+        if (phoneNumbers.isEmpty() || message.isBlank()) return false
+        val sender = SmsController(context)
+        return phoneNumbers.map { sender.send(it, message) }.all { it }
     }
 
     // ==================== 权限检查 ====================
@@ -69,17 +75,14 @@ class CalendarController(private val context: Context) {
 
     // ==================== 内部方法 ====================
 
-    /** 获取第一个有效的日历 ID（避免硬编码 1） */
-    private fun getFirstCalendarId(): Long {
-        if (!hasReadCalendarPermission()) return 1L
-        val cursor = context.contentResolver.query(
+    /** 获取设备上真实存在的日历；无日历或查询失败时不猜测 ID。 */
+    private fun getFirstCalendarId(): Long? = runCatching {
+        context.contentResolver.query(
             CalendarContract.Calendars.CONTENT_URI,
             arrayOf(CalendarContract.Calendars._ID),
             null, null, null
-        )
-        val id = cursor?.use {
-            if (it.moveToFirst()) it.getLong(0) else 1L
-        } ?: 1L
-        return if (id > 0) id else 1L
-    }
+        )?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(0).takeIf { it > 0 } else null
+        }
+    }.getOrNull()
 }

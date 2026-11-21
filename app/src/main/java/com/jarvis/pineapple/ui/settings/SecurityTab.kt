@@ -1,5 +1,7 @@
 package com.jarvis.pineapple.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +30,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.pineapple.security.BiometricAuthActivity
 import com.jarvis.pineapple.security.SecurityManager
 import com.jarvis.pineapple.ui.camera.CameraCaptureSection
 import kotlinx.coroutines.Dispatchers
@@ -36,9 +39,8 @@ import kotlinx.coroutines.withContext
 import org.koin.core.context.GlobalContext
 
 /**
- * 安全中心：把 SecurityManager 的 #34-#48 能力接入真实 UI（REQ-05）。
- * 人脸/虹膜的原始图像采集需要相机预览，此处覆盖风险评估、权限、反入侵、
- * 防御部署、设备锁定与远程擦除等可直接调用的能力。
+ * 安全中心：人脸检测、系统生物识别、风险评估、权限审计、反入侵、
+ * 防御部署及本机锁定与擦除。
  */
 @Composable
 fun SecurityTab(showMsg: (String) -> Unit) {
@@ -53,17 +55,33 @@ fun SecurityTab(showMsg: (String) -> Unit) {
     var permissionInfo by remember { mutableStateOf("点击下方按钮扫描") }
     var intrusionInfo by remember { mutableStateOf("尚未检测") }
     var defenseInfo by remember { mutableStateOf("尚未部署") }
+    var biometricInfo by remember { mutableStateOf("尚未验证") }
     var showWipeConfirm by remember { mutableStateOf(false) }
+
+    val biometricLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val message = if (result.resultCode == android.app.Activity.RESULT_OK) {
+            "系统强生物识别验证通过"
+        } else {
+            result.data?.getStringExtra(BiometricAuthActivity.EXTRA_ERROR)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { "验证未完成：$it" }
+                ?: "验证已取消"
+        }
+        biometricInfo = message
+        showMsg(message)
+    }
 
     if (showWipeConfirm) {
         AlertDialog(
             onDismissRequest = { showWipeConfirm = false },
-            title = { Text("远程擦除设备数据") },
+            title = { Text("擦除设备数据") },
             text = { Text("此操作将清空设备数据且不可恢复，确认继续？") },
             confirmButton = {
                 TextButton(onClick = {
                     showWipeConfirm = false
-                    val ok = security.remoteWipeData()
+                    val ok = security.wipeDeviceData()
                     if (ok) showMsg("已下发擦除指令")
                     else {
                         showMsg("擦除失败：设备管理器未激活")
@@ -91,6 +109,15 @@ fun SecurityTab(showMsg: (String) -> Unit) {
         showFaceActions = true,
         showPerceptionActions = false
     )
+
+    SectionCard("系统身份验证 (#37 / #40)") {
+        Text(biometricInfo, fontSize = 13.sp)
+        Button(onClick = {
+            biometricLauncher.launch(
+                android.content.Intent(context, BiometricAuthActivity::class.java)
+            )
+        }) { Text("启动强生物识别验证") }
+    }
 
     SectionCard("安全风险评估 (#45)") {
         Text(securityRisk, fontSize = 13.sp)
@@ -158,13 +185,13 @@ fun SecurityTab(showMsg: (String) -> Unit) {
                     defenseInfo = if (r.isSuccessful)
                         "已部署 ${r.deployedStrategies.size} 项防御：${r.deployedStrategies.joinToString("、")}"
                     else "防御部署失败：${r.message}"
-                    showMsg("防御策略部署完成")
+                    showMsg(if (r.isSuccessful) "防御策略部署完成" else r.message)
                 }
             }) { Text("部署防御") }
         }
     }
 
-    SectionCard("设备锁定与擦除 (#39 / #41)") {
+    SectionCard("本机锁定与擦除 (#39 / #41)") {
         Row {
             Button(onClick = {
                 val ok = security.lockDevice()
@@ -180,14 +207,9 @@ fun SecurityTab(showMsg: (String) -> Unit) {
                     }
                 }
             }) { Text("立即锁定") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = {
-                val ok = security.remoteLockDevice()
-                showMsg(if (ok) "远程锁定已下发" else "远程锁定失败")
-            }) { Text("远程锁定") }
         }
         Row {
-            OutlinedButton(onClick = { showWipeConfirm = true }) { Text("远程擦除") }
+            OutlinedButton(onClick = { showWipeConfirm = true }) { Text("擦除本机数据") }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
                 val ok = security.executeSecurityProtocol(SecurityManager.SecurityProtocol.LOCKDOWN)

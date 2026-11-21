@@ -18,12 +18,11 @@ import androidx.core.content.ContextCompat
 class PhoneController(private val context: Context) {
 
     fun call(phoneNumber: String): Boolean {
-        if (!PermissionGate.phoneCallAllowed(hasCallPermission())) return false
+        if (!PermissionGate.phoneCallAllowed(hasCallPermission()) || phoneNumber.isBlank()) return false
         val intent = Intent(Intent.ACTION_CALL, Uri.parse("tel:$phoneNumber")).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(intent)
-        return true
+        return runCatching { context.startActivity(intent); true }.getOrDefault(false)
     }
 
     @RequiresApi(Build.VERSION_CODES.O)

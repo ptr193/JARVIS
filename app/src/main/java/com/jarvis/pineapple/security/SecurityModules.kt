@@ -4,11 +4,11 @@ import android.Manifest
 import android.app.KeyguardManager
 import android.app.admin.DevicePolicyManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
-import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
-import androidx.annotation.RequiresApi
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.fragment.app.FragmentActivity
@@ -16,9 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/**
- * 生物识别：人脸 / 指纹 / 虹膜
- */
+/** 系统强生物识别，由设备选择已录入的人脸或指纹等安全因子。 */
 class BiometricAuth(private val context: Context) {
 
     fun canAuthenticate(): Boolean {
@@ -27,16 +25,50 @@ class BiometricAuth(private val context: Context) {
             BiometricManager.BIOMETRIC_SUCCESS
     }
 
-    @RequiresApi(Build.VERSION_CODES.P)
     fun authenticate(activity: FragmentActivity, callback: BiometricPrompt.AuthenticationCallback) {
         val executor = context.mainExecutor
         val prompt = BiometricPrompt(activity, executor, callback)
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("JARVIS 身份验证")
             .setSubtitle("请验证您的身份")
+            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
             .setNegativeButtonText("取消")
             .build()
         prompt.authenticate(info)
+    }
+}
+
+/** 仅供应用内显式启动的系统生物识别验证页，结果来自系统真实回调。 */
+class BiometricAuthActivity : FragmentActivity() {
+    private var completed = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val auth = BiometricAuth(this)
+        if (!auth.canAuthenticate()) {
+            finishWith(RESULT_CANCELED, "设备未配置可用的强生物识别")
+            return
+        }
+        auth.authenticate(this, object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                finishWith(RESULT_OK, "")
+            }
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                finishWith(RESULT_CANCELED, errString.toString())
+            }
+        })
+    }
+
+    private fun finishWith(resultCode: Int, error: String) {
+        if (completed) return
+        completed = true
+        setResult(resultCode, Intent().putExtra(EXTRA_ERROR, error))
+        finish()
+    }
+
+    companion object {
+        const val EXTRA_ERROR = "biometric_error"
     }
 }
 
@@ -64,7 +96,7 @@ class PermissionController {
 }
 
 /**
- * 防盗与远程控制（基于 DevicePolicyManager）
+ * 防盗与本机设备管理（基于 DevicePolicyManager）
  */
 class AntiTheftManager(private val context: Context) {
 
@@ -80,7 +112,7 @@ class AntiTheftManager(private val context: Context) {
             putExtra(android.app.admin.DevicePolicyManager.EXTRA_DEVICE_ADMIN, admin)
             putExtra(
                 android.app.admin.DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "用于远程锁定与擦除设备（防盗功能）"
+                "用于本机锁定与擦除设备（防盗功能）"
             )
         }
         activity.startActivity(intent)

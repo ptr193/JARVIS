@@ -95,7 +95,7 @@ class AssistantCommandParserTest {
         assertTrue(screen.contains("AssistantCommandParser.CHAT_SHORTCUTS"))
         val executor = readSource("app/src/main/java/com/jarvis/pineapple/chat/SimpleCommandExecutor.kt")
         assertTrue(executor.contains("打开失败：未安装"))
-        assertTrue(executor.contains("拨打失败：未授予电话权限"))
+        assertTrue(executor.contains("拨打失败：请检查电话号码、电话权限及系统拨号能力"))
         assertFalse(executor.contains("已成功") && executor.contains("return true"))
     }
 

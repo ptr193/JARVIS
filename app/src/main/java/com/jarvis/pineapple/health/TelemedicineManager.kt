@@ -3,7 +3,10 @@ package com.jarvis.pineapple.health
 import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 
 /**
  * 远程医疗管理器（功能 #68-#70）。
@@ -138,90 +141,163 @@ class TelemedicineManager(private val context: Context) {
     /**
      * 发起会诊。未配置平台地址或无医生时失败关闭，不写入会话。
      */
-    fun initiateConsultation(doctorId: String, patientId: String): ConsultationStart {
+    suspend fun initiateConsultation(doctorId: String, patientId: String): ConsultationStart {
         val doctor = _doctors.value.find { it.doctorId == doctorId }
-        val reason = consultationUnavailableReason(telemedicineEndpoint(), doctor != null)
+        val endpoint = telemedicineEndpoint()
+        val reason = consultationUnavailableReason(endpoint, doctor != null)
         if (reason != null) {
-            _sessionState.value = SessionState(
-                status = SessionStatus.ERROR,
-                error = reason
-            )
+            _sessionState.value = SessionState(status = SessionStatus.ERROR, error = reason)
             return ConsultationStart(success = false, message = reason)
         }
+        if (patientId.isBlank()) {
+            val message = "患者标识不能为空"
+            _sessionState.value = SessionState(status = SessionStatus.ERROR, error = message)
+            return ConsultationStart(success = false, message = message)
+        }
 
-        val session = ConsultationSession(
-            sessionId = "consult_${System.currentTimeMillis()}",
+        val requestedAt = System.currentTimeMillis()
+        val requestedSession = ConsultationSession(
+            sessionId = "consult_$requestedAt",
             doctorId = doctorId,
             doctorName = doctor!!.name,
             doctorSpecialty = doctor.specialty,
             patientId = patientId,
             patientName = "患者",
             status = SessionStatus.CONNECTING,
-            startTime = System.currentTimeMillis()
+            startTime = requestedAt
         )
 
-        val current = _sessions.value.toMutableList()
-        current.add(session)
-        _sessions.value = current
+        return withContext(Dispatchers.IO) {
+            var connection: java.net.HttpURLConnection? = null
+            try {
+                connection = (java.net.URL("${endpoint.trimEnd('/')}/consultations").openConnection()
+                    as java.net.HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 10_000
+                    readTimeout = 20_000
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    setRequestProperty("Accept", "application/json")
+                }
+                val body = org.json.JSONObject().apply {
+                    put("doctorId", doctorId)
+                    put("patientId", patientId)
+                    put("requestedAt", requestedAt)
+                }.toString()
+                java.io.OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(body) }
 
-        _sessionState.value = SessionState(
-            isActive = true,
-            sessionId = session.sessionId,
-            doctorId = doctorId,
-            doctorName = session.doctorName,
-            patientId = patientId,
-            status = SessionStatus.CONNECTING,
-            startTime = System.currentTimeMillis()
-        )
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val responseText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) {
+                    val message = "会诊发起失败：平台返回 HTTP $code"
+                    _sessionState.value = SessionState(status = SessionStatus.ERROR, error = message)
+                    return@withContext ConsultationStart(success = false, message = message)
+                }
 
-        return ConsultationStart(
-            success = true,
-            message = "已向 ${session.doctorName} 发起会诊",
-            session = session
-        )
+                val json = runCatching { org.json.JSONObject(responseText) }.getOrNull()
+                val session = requestedSession.copy(
+                    sessionId = json?.optString("sessionId")?.ifBlank { requestedSession.sessionId }
+                        ?: requestedSession.sessionId
+                )
+                _sessions.value = _sessions.value + session
+                _sessionState.value = SessionState(
+                    isActive = true,
+                    sessionId = session.sessionId,
+                    doctorId = doctorId,
+                    doctorName = session.doctorName,
+                    patientId = patientId,
+                    status = SessionStatus.CONNECTING,
+                    startTime = requestedAt
+                )
+                ConsultationStart(
+                    success = true,
+                    message = json?.optString("message")?.ifBlank { "会诊请求已发送至 ${session.doctorName}" }
+                        ?: "会诊请求已发送至 ${session.doctorName}",
+                    session = session
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val message = "会诊发起失败：${e.message ?: "网络异常"}"
+                _sessionState.value = SessionState(status = SessionStatus.ERROR, error = message)
+                ConsultationStart(success = false, message = message)
+            } finally {
+                runCatching { connection?.disconnect() }
+            }
+        }
     }
 
     private fun telemedicineEndpoint(): String =
         context.getSharedPreferences("jarvis_health", Context.MODE_PRIVATE)
             .getString("telemedicine_endpoint", "")?.trim().orEmpty()
 
-    /**
-     * 接受会诊
-     */
-    fun acceptConsultation(sessionId: String): Boolean {
-        val current = _sessions.value.toMutableList()
-        val index = current.indexOfFirst { it.sessionId == sessionId }
+    /** 平台确认接受后，才将会话标记为会诊中。 */
+    suspend fun acceptConsultation(sessionId: String): Boolean =
+        updateRemoteSession(sessionId, "accept")
 
-        if (index >= 0) {
-            current[index] = current[index].copy(status = SessionStatus.IN_CONSULTATION)
-            _sessions.value = current
+    /** 平台确认结束后，才完成本地会话记录。 */
+    suspend fun endConsultation(sessionId: String, notes: String = ""): Boolean =
+        updateRemoteSession(sessionId, "end", notes)
 
-            _sessionState.value = _sessionState.value.copy(
-                status = SessionStatus.IN_CONSULTATION
-            )
-            return true
+    private suspend fun updateRemoteSession(
+        sessionId: String,
+        action: String,
+        notes: String = ""
+    ): Boolean {
+        val index = _sessions.value.indexOfFirst { it.sessionId == sessionId }
+        val endpoint = telemedicineEndpoint()
+        if (index < 0 || endpoint.isEmpty()) return false
+
+        return withContext(Dispatchers.IO) {
+            var connection: java.net.HttpURLConnection? = null
+            try {
+                val encodedId = java.net.URLEncoder.encode(sessionId, Charsets.UTF_8.name())
+                connection = (java.net.URL(
+                    "${endpoint.trimEnd('/')}/consultations/$encodedId/$action"
+                ).openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    doOutput = true
+                    connectTimeout = 10_000
+                    readTimeout = 20_000
+                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                }
+                val body = org.json.JSONObject().apply {
+                    if (action == "end") put("notes", notes)
+                }.toString()
+                java.io.OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(body) }
+                if (connection.responseCode !in 200..299) return@withContext false
+
+                val current = _sessions.value.toMutableList()
+                val currentIndex = current.indexOfFirst { it.sessionId == sessionId }
+                if (currentIndex < 0) return@withContext false
+                current[currentIndex] = if (action == "accept") {
+                    current[currentIndex].copy(status = SessionStatus.IN_CONSULTATION)
+                } else {
+                    current[currentIndex].copy(
+                        status = SessionStatus.COMPLETED,
+                        endTime = System.currentTimeMillis(),
+                        notes = notes
+                    )
+                }
+                _sessions.value = current
+                if (_sessionState.value.sessionId == sessionId) {
+                    _sessionState.value = if (action == "accept") {
+                        _sessionState.value.copy(status = SessionStatus.IN_CONSULTATION)
+                    } else {
+                        SessionState()
+                    }
+                }
+                true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("TelemedicineManager", "会诊状态更新失败: ${e.message}")
+                false
+            } finally {
+                runCatching { connection?.disconnect() }
+            }
         }
-
-        return false
-    }
-
-    /**
-     * 结束会诊
-     */
-    fun endConsultation(sessionId: String, notes: String = "") {
-        val current = _sessions.value.toMutableList()
-        val index = current.indexOfFirst { it.sessionId == sessionId }
-
-        if (index >= 0) {
-            current[index] = current[index].copy(
-                status = SessionStatus.COMPLETED,
-                endTime = System.currentTimeMillis(),
-                notes = notes
-            )
-            _sessions.value = current
-        }
-
-        _sessionState.value = SessionState()
     }
 
     /**
@@ -260,34 +336,6 @@ class TelemedicineManager(private val context: Context) {
     }
 
     /**
-     * 预约医生
-     */
-    fun bookAppointment(doctorId: String, patientId: String, timeSlot: String): Appointment {
-        return Appointment(
-            appointmentId = "appt_${System.currentTimeMillis()}",
-            doctorId = doctorId,
-            patientId = patientId,
-            timeSlot = timeSlot,
-            status = AppointmentStatus.BOOKED
-        )
-    }
-
-    /**
-     * 预约信息
-     */
-    data class Appointment(
-        val appointmentId: String,
-        val doctorId: String,
-        val patientId: String,
-        val timeSlot: String,
-        val status: AppointmentStatus
-    )
-
-    enum class AppointmentStatus {
-        BOOKED, CONFIRMED, CANCELLED, COMPLETED
-    }
-
-    /**
      * 获取会诊历史
      */
     fun getConsultationHistory(): List<ConsultationSession> {
@@ -302,29 +350,16 @@ class TelemedicineManager(private val context: Context) {
     }
 
     /**
-     * 加密共享病情数据：先安全落盘（应用私有目录），再尝试上传到配置的会诊平台。
-     *
-     * 平台地址通过 `jarvis_health` SharedPreferences 的 `telemedicine_endpoint` 配置，
-     * 上传路径为 `${endpoint}/share`。本地落盘成功且（无平台配置或上传成功）时返回 true。
+     * 向会诊平台上传加密病情数据，上传路径为 `${endpoint}/share`。
+     * 只有平台返回 2xx 才表示共享成功；本地保存不等于远程送达。
      */
-    fun shareMedicalData(sessionId: String, recipientId: String, encryptedData: String): Boolean {
-        if (recipientId.isBlank() || encryptedData.isBlank()) return false
-        return try {
-            val dir = java.io.File(context.filesDir, "telemedicine_shares").apply { mkdirs() }
-            val target = java.io.File(dir, "${sessionId}_${recipientId}_${System.currentTimeMillis()}.enc")
-            target.writeText("$sessionId\n$recipientId\n${System.currentTimeMillis()}\n$encryptedData")
-            android.util.Log.i("TelemedicineManager", "加密会诊数据已保存: ${target.name}")
-
-            val endpoint = context.getSharedPreferences("jarvis_health", Context.MODE_PRIVATE)
-                .getString("telemedicine_endpoint", "")?.trim().orEmpty()
-            if (endpoint.isEmpty()) {
-                // 无平台配置：本地安全留存视为成功（不伪造远程送达）
-                return true
-            }
+    suspend fun shareMedicalData(sessionId: String, recipientId: String, encryptedData: String): Boolean {
+        val endpoint = telemedicineEndpoint()
+        if (sessionId.isBlank() || recipientId.isBlank() || encryptedData.isBlank() || endpoint.isEmpty()) {
+            return false
+        }
+        return withContext(Dispatchers.IO) {
             uploadShare(endpoint, sessionId, recipientId, encryptedData)
-        } catch (e: Exception) {
-            android.util.Log.w("TelemedicineManager", "共享病情数据失败: ${e.message}")
-            false
         }
     }
 

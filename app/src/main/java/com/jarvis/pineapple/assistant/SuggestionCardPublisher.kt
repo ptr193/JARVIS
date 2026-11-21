@@ -80,7 +80,7 @@ object SuggestionCardPublisher {
             )
             .addAction(
                 android.R.drawable.ic_menu_gallery,
-                "扫文档",
+                "图像分析",
                 cameraPendingIntent(context, OverlayCameraController.TASK_DOCUMENT, 60 + index)
             )
             .build()

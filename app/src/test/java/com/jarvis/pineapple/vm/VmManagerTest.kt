@@ -68,4 +68,19 @@ class VmManagerTest {
         val b = mgr.create("b", "Arch")
         mgr.createChannel(a.id, b.id)
     }
+
+    @Test
+    fun `terminal cd resolves only existing directories inside rootfs`() {
+        val root = tmp.newFolder("rootfs")
+        java.io.File(root, "home/user").mkdirs()
+        tmp.newFolder("outside")
+
+        assertEquals(
+            "/home/user",
+            VmTerminal.resolveWorkingDirectory(root.absolutePath, "/root", "../home/user")
+        )
+        assertEquals("/", VmTerminal.resolveWorkingDirectory(root.absolutePath, "/root", "/"))
+        assertNull(VmTerminal.resolveWorkingDirectory(root.absolutePath, "/root", "missing"))
+        assertNull(VmTerminal.resolveWorkingDirectory(root.absolutePath, "/root", "../../outside"))
+    }
 }

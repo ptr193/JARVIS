@@ -23,9 +23,9 @@ class SystemSettingsController(
         if (!PermissionGate.wifiChangeAllowed(granted)) return false
         @Suppress("DEPRECATION")
         val wifi = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) return false
         @Suppress("DEPRECATION")
-        wifi.isWifiEnabled = enabled
-        return true
+        return runCatching { wifi.setWifiEnabled(enabled) }.getOrDefault(false)
     }
 
     @SuppressLint("MissingPermission")
@@ -40,9 +40,10 @@ class SystemSettingsController(
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (!PermissionGate.bluetoothChangeAllowed(granted)) return false
         @Suppress("DEPRECATION")
-        val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
-        if (enabled) adapter?.enable() else adapter?.disable()
-        return true
+        val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter() ?: return false
+        @Suppress("DEPRECATION")
+        return runCatching { if (enabled) adapter.enable() else adapter.disable() }
+            .getOrDefault(false)
     }
 
     fun toggleAirplaneMode() {

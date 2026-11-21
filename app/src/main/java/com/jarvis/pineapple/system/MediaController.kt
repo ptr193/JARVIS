@@ -57,18 +57,20 @@ class MediaController(private val context: Context) {
         return true
     }
 
-    /** 播放/暂停（通过媒体会话） */
-    fun playPause() {
-        audioManager.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE))
-    }
+    /** 向当前媒体会话发送完整按键事件；返回是否成功交给系统分发。 */
+    private fun dispatchMediaKey(keyCode: Int): Boolean = runCatching {
+        audioManager.dispatchMediaKeyEvent(
+            android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, keyCode)
+        )
+        audioManager.dispatchMediaKeyEvent(
+            android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, keyCode)
+        )
+        true
+    }.getOrDefault(false)
 
-    /** 下一曲 */
-    fun next() {
-        audioManager.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_NEXT))
-    }
+    fun playPause(): Boolean = dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
 
-    /** 上一曲 */
-    fun previous() {
-        audioManager.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS))
-    }
+    fun next(): Boolean = dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_NEXT)
+
+    fun previous(): Boolean = dispatchMediaKey(android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS)
 }

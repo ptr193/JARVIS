@@ -34,7 +34,6 @@ import com.jarvis.pineapple.perception.ObjectDetector
 import com.jarvis.pineapple.perception.PerceptionManager
 import com.jarvis.pineapple.personality.PersonalityRepository
 import com.jarvis.pineapple.security.CryptoManager
-import com.jarvis.pineapple.security.FaceRecognitionManager
 import com.jarvis.pineapple.security.IntrusionDetector
 import com.jarvis.pineapple.security.SecureStorage
 import com.jarvis.pineapple.security.SecurityManager
@@ -57,7 +56,6 @@ import com.jarvis.pineapple.system.NavigationController
 import com.jarvis.pineapple.system.PhoneController
 import com.jarvis.pineapple.vm.VmImageImporter
 import com.jarvis.pineapple.vm.VmDistroManager
-import com.jarvis.pineapple.system.RemoteAssistanceManager
 import com.jarvis.pineapple.system.ScreenshotManager
 import com.jarvis.pineapple.system.SmsController
 import com.jarvis.pineapple.system.SystemSettingsController
@@ -128,7 +126,6 @@ val appModule = module {
     single { DeviceControlManager(get()) }
     single { ScreenshotManager(get()) }
     single { HardwareDiagnostics(get()) }
-    single { RemoteAssistanceManager(get()) }
 
     // Wake
     single { WakeEngine(get()) }
@@ -190,7 +187,6 @@ val appModule = module {
 
     // Security
     single { SecurityManager(get()) }
-    single { FaceRecognitionManager(get()) }
     single { IntrusionDetector(get()) }
 
     // Health

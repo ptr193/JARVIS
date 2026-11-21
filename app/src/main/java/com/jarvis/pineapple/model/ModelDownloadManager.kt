@@ -38,7 +38,6 @@ data class ModelDownloadState(
 enum class DownloadStatus {
     NOT_DOWNLOADED,
     DOWNLOADING,
-    PAUSED,
     COMPLETED,
     FAILED,
     VERIFYING
@@ -64,6 +63,8 @@ class ModelDownloadManager(private val context: Context) {
     private val modelsDir = File(context.filesDir, "models")
 
     private val httpClient = HttpClient(Android) {
+        // 错误页/拒绝响应不能进入模型文件写入流程。
+        expectSuccess = true
         engine {
             connectTimeout = 15_000
             socketTimeout = 30_000
@@ -91,45 +92,45 @@ class ModelDownloadManager(private val context: Context) {
     )
 
     companion object {
-        /**
-         * 四个默认模型配置（下载地址硬编码）
-         * 注意：sha256 字段需填入真实下载文件的 SHA-256 值，用于下载后校验。
-         * 可通过 `sha256sum <file>` 或在线工具获取真实值。
-         */
+        /** 四个默认模型配置；大小与 SHA-256 来自发布仓库的 LFS 元数据。 */
         val DEFAULT_MODELS = listOf(
             ModelConfig(
                 id = "gemma4_e2b_2_5b",
                 name = "Gemma 4 E2B 2.5B",
                 fileName = "gemma4_e2b_2_5b.litertlm",
                 downloadUrl = "https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm",
-                sha256 = "", // 留空则跳过校验；填入官方 SHA-256 后下载完毕会自动校验
-                sizeBytes = 2_684_354_560  // ~2.5GB
+                sha256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+                sizeBytes = 2_588_147_712L
             ),
             ModelConfig(
                 id = "gemma4_12b",
                 name = "Gemma 4 12B",
                 fileName = "gemma4_12b.litertlm",
                 downloadUrl = "https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm/resolve/main/gemma-4-12B-it.litertlm",
-                sha256 = "", // 留空则跳过校验；填入官方 SHA-256 后下载完毕会自动校验
-                sizeBytes = 12_884_901_888  // ~12GB
+                sha256 = "58fd31b778ca2c21c80d634fb34fc5a89d11d563a38dfd3cbf1b40dbf252a8b6",
+                sizeBytes = 6_883_278_368L
             ),
             ModelConfig(
                 id = "lfm2_5_1_7b",
                 name = "LFM 2.5 1.2B Instruct",
                 fileName = "lfm2_5_1_7b.litertlm",
                 downloadUrl = "https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm",
-                sha256 = "", // 留空则跳过校验；填入官方 SHA-256 后下载完毕会自动校验
-                sizeBytes = 1_288_490_189  // ~1.2GB
+                sha256 = "ed8201f88a1a116218bf03cf7cc5c33accdc2f6f502aa8d682f616beea1ec870",
+                sizeBytes = 1_247_091_440L
             ),
             ModelConfig(
                 id = "qwen3_0_6b",
                 name = "Qwen 3 0.6B",
                 fileName = "qwen3_0_6b.litertlm",
                 downloadUrl = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-                sha256 = "", // 留空则跳过校验；填入官方 SHA-256 后下载完毕会自动校验
-                sizeBytes = 644_245_094  // ~600MB
+                sha256 = "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108",
+                sizeBytes = 613_722_264L
             )
         )
+
+        /** 非空占位、错误页、截断文件及偏大的拼接文件都不能视为完成。 */
+        internal fun isExpectedSize(config: ModelConfig, size: Long): Boolean =
+            size > 1024 && (config.sizeBytes <= 0 || size == config.sizeBytes)
     }
 
     init {
@@ -143,7 +144,7 @@ class ModelDownloadManager(private val context: Context) {
     private fun initializeDownloadStates() {
         val states = DEFAULT_MODELS.associate { config ->
             val file = File(modelsDir, config.fileName)
-            val status = if (file.exists() && file.length() > 0) {
+            val status = if (isExpectedSize(config, if (file.exists()) file.length() else 0L)) {
                 DownloadStatus.COMPLETED
             } else {
                 DownloadStatus.NOT_DOWNLOADED
@@ -173,7 +174,7 @@ class ModelDownloadManager(private val context: Context) {
     fun getModelFilePath(modelId: String): String? {
         val config = DEFAULT_MODELS.find { it.id == modelId } ?: return null
         val file = File(modelsDir, config.fileName)
-        return if (file.exists() && file.length() > 0) file.absolutePath else null
+        return if (isExpectedSize(config, if (file.exists()) file.length() else 0L)) file.absolutePath else null
     }
 
     /**
@@ -183,8 +184,10 @@ class ModelDownloadManager(private val context: Context) {
         val config = DEFAULT_MODELS.find { it.id == modelId } ?: return false
         val file = File(modelsDir, config.fileName)
 
-        // 已下载完成
-        if (file.exists() && file.length() > 0) {
+        // 已有文件必须通过大小与 SHA-256 复核；占位/截断文件继续重新下载。
+        if (file.exists() && isExpectedSize(config, file.length()) &&
+            (config.sha256.isBlank() || calculateSha256(file).equals(config.sha256, ignoreCase = true))
+        ) {
             updateState(modelId, ModelDownloadState(
                 modelId = modelId,
                 modelName = config.name,
@@ -248,6 +251,9 @@ class ModelDownloadManager(private val context: Context) {
         httpClient.prepareGet(url) {
             if (resumeFrom > 0) header(HttpHeaders.Range, "bytes=$resumeFrom-")
         }.execute { response ->
+            if (response.status != HttpStatusCode.OK && response.status != HttpStatusCode.PartialContent) {
+                throw IllegalStateException("模型下载 HTTP ${response.status.value}")
+            }
             val append = resumeFrom > 0 && response.status == HttpStatusCode.PartialContent
             val startBytes = if (append) resumeFrom else 0L
             if (!append) partFile.delete()
@@ -290,6 +296,12 @@ class ModelDownloadManager(private val context: Context) {
             totalBytes = config.sizeBytes
         ))
 
+        val actualSize = file.length()
+        if (!isExpectedSize(config, actualSize)) {
+            file.delete()
+            throw IllegalStateException("模型大小校验失败：期望 ${config.sizeBytes}，实际 $actualSize")
+        }
+
         val actualSha256 = calculateSha256(file)
         val expectedSha256 = config.sha256.trim().lowercase()
         if (expectedSha256.isNotEmpty() && actualSha256 != expectedSha256) {
@@ -297,10 +309,6 @@ class ModelDownloadManager(private val context: Context) {
             throw IllegalStateException("SHA-256 校验失败：期望 $expectedSha256，实际 $actualSha256")
         }
 
-        if (file.length() <= 1024) {
-            file.delete()
-            throw IllegalStateException("下载的文件大小异常")
-        }
         updateState(config.id, ModelDownloadState(
             modelId = config.id,
             modelName = config.name,

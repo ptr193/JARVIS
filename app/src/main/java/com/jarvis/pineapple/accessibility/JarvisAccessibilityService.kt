@@ -18,7 +18,7 @@ import com.jarvis.pineapple.wake.PowerButtonWakeDetector
  * JARVIS 辅助功能服务。
  * - 监听电源键连按 3 次触发唤醒
  * - 提供跨应用 UI 操作能力（点击 / 滑动 / 文本输入 / 全局返回与主页）
- * - 记录前台应用与当前窗口，供远程协助与本机自动化使用
+ * - 记录前台应用与当前窗口，供本机自动化使用
  */
 class JarvisAccessibilityService : AccessibilityService() {
 

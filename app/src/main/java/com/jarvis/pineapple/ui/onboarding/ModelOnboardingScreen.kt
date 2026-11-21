@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.model.ModelDownloadManager
 import com.jarvis.pineapple.model.OnboardingGate
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun ModelOnboardingScreen(
@@ -96,13 +97,17 @@ fun ModelOnboardingScreen(
                 downloading = true
                 error = null
                 scope.launch {
-                    val ok = downloadManager.downloadModel(selectedId)
+                    val ok = withTimeoutOrNull(OnboardingGate.TIMEOUT_MS) {
+                        downloadManager.downloadModel(selectedId)
+                    }
                     downloading = false
-                    if (ok) {
-                        onFinished()
-                    } else {
-                        val cause = downloadManager.getDownloadProgress(selectedId)?.errorMessage
-                        error = if (cause.isNullOrBlank()) OnboardingGate.DOWNLOAD_FAILED else "模型下载失败：$cause"
+                    when (ok) {
+                        true -> onFinished()
+                        null -> error = OnboardingGate.timeoutError()
+                        else -> {
+                            val cause = downloadManager.getDownloadProgress(selectedId)?.errorMessage
+                            error = OnboardingGate.failureError(cause)
+                        }
                     }
                 }
             },

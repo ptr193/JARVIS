@@ -9,7 +9,7 @@ object PermissionExplainer {
     const val PHONE = "电话权限用于拨打、接听与读取通话记录"
     const val SMS = "短信权限用于发送与读取短信"
     const val CALENDAR = "日历权限用于创建与查看日程"
-    const val CAMERA = "相机权限用于拍照、人脸识别与物体检测"
+    const val CAMERA = "相机权限用于拍照、人脸检测与物体检测"
     const val LOCATION = "定位权限用于导航与位置相关功能"
 
     fun rationaleFor(permissions: Array<String>): String {

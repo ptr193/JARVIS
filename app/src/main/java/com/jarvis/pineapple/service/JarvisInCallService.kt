@@ -27,28 +27,4 @@ class JarvisInCallService : InCallService() {
         Log.d(TAG, "Call removed: ${call.details.handle}")
     }
 
-    /**
-     * 转发呼叫（按规格实现）
-     */
-    fun forward(targetNumber: String): Boolean {
-        return try {
-            // 实际转发逻辑：通过系统 Telecom API 或自定义实现
-            // 根据规格，调用 send() 真正转发
-            val telecomManager = getSystemService(TELECOM_SERVICE) as android.telecom.TelecomManager
-            // Android 原生不直接暴露转移 API，这里通过日志记录并返回成功
-            // 真实场景需结合具体呼叫状态处理
-            Log.d(TAG, "Forwarding call to: $targetNumber")
-            true
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to forward call", e)
-            false
-        }
-    }
-
-    /**
-     * 发送操作（转发的底层实现）
-     */
-    fun send(targetNumber: String): Boolean {
-        return forward(targetNumber)
-    }
 }

@@ -285,7 +285,6 @@ private fun ModelDownloadItem(
                             DownloadStatus.DOWNLOADING -> "下载中... ${(state.progress * 100).toInt()}%"
                             DownloadStatus.COMPLETED -> "已下载"
                             DownloadStatus.FAILED -> "下载失败: ${state.errorMessage}"
-                            DownloadStatus.PAUSED -> "已暂停"
                             DownloadStatus.VERIFYING -> "校验中..."
                         },
                         fontSize = 12.sp,
@@ -1050,7 +1049,6 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     var shakeWake by remember { mutableStateOf(true) }
     var bluetoothWake by remember { mutableStateOf(true) }
     var cloudSync by remember { mutableStateOf(false) }
-    var autoDownloadModels by remember { mutableStateOf(false) }
     var isDefaultAssistant by remember { mutableStateOf(false) }
 
     // 加载已保存的配置
@@ -1061,7 +1059,6 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
         shakeWake = prefs.getBoolean("shake_wake", true)
         bluetoothWake = prefs.getBoolean("bluetooth_wake", true)
         cloudSync = prefs.getBoolean("cloud_sync", false)
-        autoDownloadModels = prefs.getBoolean("auto_download_models", false)
         val detector = runCatching {
             org.koin.core.context.GlobalContext.get()
                 .get<com.jarvis.pineapple.wake.HomeLongPressDetector>()
@@ -1099,22 +1096,22 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     SettingSwitch("语音唤醒", voiceWake, {
         voiceWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.VOICE, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync, autoDownloadModels)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
     })
     SettingSwitch("电源键唤醒", powerWake, {
         powerWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.POWER_BUTTON, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync, autoDownloadModels)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
     })
     SettingSwitch("摇一摇唤醒", shakeWake, {
         shakeWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.SHAKE, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync, autoDownloadModels)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
     })
     SettingSwitch("蓝牙按键唤醒", bluetoothWake, {
         bluetoothWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.BLUETOOTH, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync, autoDownloadModels)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
     })
 
     Spacer(Modifier.height(16.dp))
@@ -1128,14 +1125,7 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
         } else {
             showMsg(if (it) "云端同步已开启" else "云端同步已关闭")
         }
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync, autoDownloadModels)
-    })
-
-    Spacer(Modifier.height(16.dp))
-    Text("模型", style = MaterialTheme.typography.bodyMedium)
-    SettingSwitch("自动下载缺失模型", autoDownloadModels, {
-        autoDownloadModels = it
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync, autoDownloadModels)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
     })
 
     Spacer(Modifier.height(16.dp))
@@ -1193,8 +1183,7 @@ private fun saveGeneralPrefs(
     powerWake: Boolean,
     shakeWake: Boolean,
     bluetoothWake: Boolean,
-    cloudSync: Boolean,
-    autoDownloadModels: Boolean
+    cloudSync: Boolean
 ) {
     val prefs = context.getSharedPreferences("jarvis_general", Context.MODE_PRIVATE)
     prefs.edit()
@@ -1203,7 +1192,6 @@ private fun saveGeneralPrefs(
         .putBoolean("shake_wake", shakeWake)
         .putBoolean("bluetooth_wake", bluetoothWake)
         .putBoolean("cloud_sync", cloudSync)
-        .putBoolean("auto_download_models", autoDownloadModels)
         .apply()
 }
 

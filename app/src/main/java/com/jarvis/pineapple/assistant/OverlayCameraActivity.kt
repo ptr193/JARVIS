@@ -105,9 +105,9 @@ class OverlayCameraActivity : ComponentActivity() {
                 else objects.joinToString("；") { "${it.label} ${(it.confidence * 100).toInt()}%" }
             },
             onDocument = CameraCaptureSession.ImageHandler { bytes ->
-                val reconstructed = infoProcessor.reconstruct2D(listOf(bytes))
-                if (reconstructed.success) reconstructed.message
-                else reconstructed.message.ifBlank { "文档扫描失败" }
+                val analysis = infoProcessor.analyzeImageFeatures(listOf(bytes))
+                if (analysis.success) analysis.message
+                else analysis.message.ifBlank { "图像分析失败" }
             },
             onVisualTranslate = CameraCaptureSession.ImageHandler { "不支持此翻译任务" },
             onScene = CameraCaptureSession.ImageHandler { "不支持此场景任务" }

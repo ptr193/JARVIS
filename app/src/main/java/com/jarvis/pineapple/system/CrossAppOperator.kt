@@ -15,8 +15,10 @@ class CrossAppOperator(private val context: Context) {
     private val whitelist = mutableSetOf<String>()
 
     /** 添加应用到白名单 */
-    fun addToWhitelist(packageName: String) {
-        whitelist.add(packageName)
+    fun addToWhitelist(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        return runCatching { context.packageManager.getPackageInfo(packageName, 0) }
+            .isSuccess && whitelist.add(packageName)
     }
 
     /** 从白名单移除 */
@@ -43,13 +45,10 @@ class CrossAppOperator(private val context: Context) {
 
         val service = JarvisAccessibilityService.instance ?: return false
         val rootNode = service.rootInActiveWindow ?: return false
+        if (rootNode.packageName?.toString() != packageName) return false
 
         val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-        nodes?.firstOrNull()?.let { node ->
-            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            return true
-        }
-        return false
+        return nodes?.firstOrNull()?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
     }
 
     /**
@@ -60,16 +59,13 @@ class CrossAppOperator(private val context: Context) {
 
         val service = JarvisAccessibilityService.instance ?: return false
         val rootNode = service.rootInActiveWindow ?: return false
+        if (rootNode.packageName?.toString() != packageName) return false
 
-        val editTexts = findByClass(rootNode, "android.widget.EditText")
-        editTexts.firstOrNull()?.let { node ->
-            val arguments = android.os.Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-            }
-            node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-            return true
+        val editText = findByClass(rootNode, "android.widget.EditText").firstOrNull() ?: return false
+        val arguments = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
         }
-        return false
+        return editText.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
     }
 
     /** 递归查找指定类名的节点（AccessibilityNodeInfo 无按类名查找的公开 API）。 */
@@ -91,6 +87,7 @@ class CrossAppOperator(private val context: Context) {
 
         val service = JarvisAccessibilityService.instance ?: return false
         val rootNode = service.rootInActiveWindow ?: return false
+        if (rootNode.packageName?.toString() != packageName) return false
 
         val action = when (direction) {
             SwipeDirection.UP -> AccessibilityNodeInfo.ACTION_SCROLL_FORWARD

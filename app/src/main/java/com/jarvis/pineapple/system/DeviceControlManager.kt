@@ -47,7 +47,6 @@ import java.net.URL
  * - 设备分组管理
  * - 多设备统一控制
  * - 远程配置下发
- * - 远程协助与接管
  * - 场景自动化触发
  * - 功能模块按需启停
  * - 多设备协同组合
@@ -585,55 +584,25 @@ class DeviceControlManager(private val context: Context) {
     /**
      * 下发配置
      */
-    fun deployConfig(config: RemoteConfig): Boolean {
-        if (config.targetDevices.isEmpty()) return false
-        scope.launch {
-            config.targetDevices.forEach { deviceId ->
-                transport.sendCommand(
-                    deviceId,
-                    "apply_config",
-                    mapOf(
-                        "configId" to config.configId,
-                        "configType" to config.configType,
-                        "priority" to config.priority,
-                        "parameters" to config.parameters
-                    )
+    suspend fun deployConfig(config: RemoteConfig): Boolean {
+        val targets = config.targetDevices.filter { it.isNotBlank() }.distinct()
+        if (!transport.isConfigured || config.configId.isBlank() || targets.isEmpty()) return false
+        var delivered = 0
+        targets.forEach { deviceId ->
+            val ok = transport.sendCommand(
+                deviceId,
+                "apply_config",
+                mapOf(
+                    "configId" to config.configId,
+                    "configType" to config.configType,
+                    "priority" to config.priority,
+                    "parameters" to config.parameters
                 )
-            }
-            Log.i(TAG, "远程配置 ${config.configId} 已下发至 ${config.targetDevices.size} 台设备")
+            )
+            if (ok) delivered++
         }
-        // 配置已交由传输层异步下发；返回网关是否可用（未配置时明确返回 false）
-        return transport.isConfigured
-    }
-
-    // ==================== 远程协助与接管（#84） ====================
-
-    /**
-     * 远程会话
-     */
-    data class RemoteSession(
-        val sessionId: String,
-        val operatorId: String,
-        val targetDeviceId: String,
-        val status: SessionStatus = SessionStatus.PENDING,
-        val startTime: Long = 0
-    )
-
-    enum class SessionStatus {
-        PENDING, ACTIVE, COMPLETED, FAILED
-    }
-
-    /**
-     * 发起远程协助
-     */
-    fun initiateRemoteAssistance(deviceId: String, operatorId: String): RemoteSession {
-        return RemoteSession(
-            sessionId = "remote_${System.currentTimeMillis()}",
-            operatorId = operatorId,
-            targetDeviceId = deviceId,
-            status = SessionStatus.ACTIVE,
-            startTime = System.currentTimeMillis()
-        )
+        Log.i(TAG, "远程配置 ${config.configId} 已送达 $delivered/${targets.size} 台设备")
+        return delivered == targets.size
     }
 
     // ==================== 场景自动化触发（#85） ====================
@@ -1497,21 +1466,24 @@ class DeviceControlManager(private val context: Context) {
     /**
      * 应用配置模板
      */
-    fun applyConfigTemplate(templateId: String, targetDevices: List<String>): Boolean {
+    suspend fun applyConfigTemplate(templateId: String, targetDevices: List<String>): Boolean {
+        if (!transport.isConfigured) return false
         val template = _configTemplates.value.firstOrNull { it.id == templateId } ?: return false
-        val targets = if (targetDevices.isEmpty()) template.applicableDevices else targetDevices
+        val targets = (if (targetDevices.isEmpty()) template.applicableDevices else targetDevices)
+            .filter { it.isNotBlank() }
+            .distinct()
         if (targets.isEmpty()) return false
-        scope.launch {
-            targets.forEach { deviceId ->
-                transport.sendCommand(
-                    deviceId,
-                    "apply_template",
-                    mapOf("templateId" to template.id, "settings" to template.settings)
-                )
-            }
-            Log.i(TAG, "配置模板 ${template.name} 已下发至 ${targets.size} 台设备")
+        var delivered = 0
+        targets.forEach { deviceId ->
+            val ok = transport.sendCommand(
+                deviceId,
+                "apply_template",
+                mapOf("templateId" to template.id, "settings" to template.settings)
+            )
+            if (ok) delivered++
         }
-        return transport.isConfigured
+        Log.i(TAG, "配置模板 ${template.name} 已送达 $delivered/${targets.size} 台设备")
+        return delivered == targets.size
     }
 
     // ==================== 版本迭代管理（#99） ====================

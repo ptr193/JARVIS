@@ -53,7 +53,7 @@ data class DownloadProgress(
 )
 
 enum class DownloadStatus {
-    PENDING, DOWNLOADING, PAUSED, COMPLETED, FAILED, VERIFYING
+    PENDING, DOWNLOADING, COMPLETED, FAILED, VERIFYING
 }
 
 /**
@@ -240,18 +240,6 @@ class VmDistroManager(
         } finally {
             _isDownloading.value = false
         }
-    }
-
-    fun pauseDownload(distroId: String) {
-        updateProgress(
-            DownloadProgress(distroId = distroId, status = DownloadStatus.PAUSED)
-        )
-    }
-
-    suspend fun resumeDownload(distroId: String): Boolean {
-        val progress = _downloadProgress.value[distroId]
-        if (progress?.status != DownloadStatus.PAUSED) return false
-        return downloadDistro(distroId)
     }
 
     /** 删除已下载的发行版 rootfs。 */

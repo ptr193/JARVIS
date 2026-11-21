@@ -33,11 +33,8 @@ import kotlinx.coroutines.flow.asSharedFlow
  * - 应急协议自动启动
  * - 自主判断行动
  * - 生命威胁主动接管
- * - 超越原始编程（接口预留）
  * - 临时越界保护
  * - 长期自主学习
- * - 自主进化（接口预留）
- * - 思维延伸（接口预留）
  */
 class AutonomousDecisionManager(private val context: Context) {
 

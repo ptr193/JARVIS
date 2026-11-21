@@ -71,7 +71,7 @@ class CameraCaptureSession {
     companion object {
         const val CAMERA_PERMISSION_DENIED = ObjectDetector.CAMERA_PERMISSION_DENIED
         const val NO_IMAGE = "未采集到图像，请先拍照或授权相机"
-        const val IDENTITY_REFERENCE_MISSING = "身份比对需要两张人脸照片，请先采集参考人脸再拍摄待比对照片"
+        const val IDENTITY_REFERENCE_MISSING = "人脸相似度比对需要两张照片，请先采集参考人脸再拍摄待比对照片"
 
         fun gate(permissionGranted: Boolean, image: ByteArray?): String? {
             ObjectDetector.ensureCameraPermission(permissionGranted)?.let { return it }

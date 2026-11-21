@@ -86,6 +86,8 @@ class VoiceManager(private val context: Context) {
     val fallbackNotice: StateFlow<String?> = _fallbackNotice.asStateFlow()
 
     private val httpClient = HttpClient(Android) {
+        // 4xx/5xx 必须进入失败分支，不能把错误页保存成 ONNX 模型。
+        expectSuccess = true
         install(ContentNegotiation)
     }
 
@@ -152,20 +154,26 @@ class VoiceManager(private val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val targetFile = File(voicesDir, "${voicePack.id}.onnx")
+                val configFile = File(voicesDir, voicePack.configJson)
 
-                // 已存在且非空，直接返回
-                if (targetFile.exists() && targetFile.length() > 0) {
+                // 模型和推理配置同时存在才算可用，缺任一项都重新下载。
+                if (targetFile.exists() && targetFile.length() > 1024 && configFile.exists()) {
                     _downloadProgress.value = 1f
                     _isDownloading.value = false
                     updateVoiceDownloaded(voicePack.id, targetFile.absolutePath)
                     return@withContext true
                 }
 
-                // 本地 assets 模式
+                // 本地 assets 模式：模型与配置必须一并复制并通过校验。
                 if (voicePack.remoteUrl.startsWith("file://")) {
                     val assetPath = voicePack.remoteUrl.removePrefix("file:///android_asset/")
                     val bytes = context.assets.open(assetPath).use { it.readBytes() }
+                    val configAsset = VoicePolicy.configUrl(voicePack.remoteUrl, voicePack.configJson)
+                        .removePrefix("file:///android_asset/")
+                    val configText = context.assets.open(configAsset).use { it.readBytes().decodeToString() }
+                    VoicePolicy.validateDownloadedPackage(bytes, configText)
                     targetFile.writeBytes(bytes)
+                    configFile.writeText(configText)
                     _downloadProgress.value = 1f
                     _isDownloading.value = false
                     updateVoiceDownloaded(voicePack.id, targetFile.absolutePath)
@@ -187,7 +195,13 @@ class VoiceManager(private val context: Context) {
                 }
 
                 val bytes = response.readBytes()
+                val configResponse = httpClient.get(
+                    VoicePolicy.configUrl(voicePack.remoteUrl, voicePack.configJson)
+                )
+                val configText = configResponse.bodyAsText()
+                VoicePolicy.validateDownloadedPackage(bytes, configText)
                 targetFile.writeBytes(bytes)
+                configFile.writeText(configText)
 
                 // SHA-256 校验
                 if (voicePack.checksumSha256.isNotBlank()) {
@@ -195,6 +209,8 @@ class VoiceManager(private val context: Context) {
                     if (actualSha256 != voicePack.checksumSha256.lowercase()) {
                         Log.e("VoiceManager", "SHA-256 mismatch for ${voicePack.id}")
                         targetFile.delete()
+                        configFile.delete()
+                        _downloadProgress.value = 0f
                         _isDownloading.value = false
                         return@withContext false
                     }
@@ -207,6 +223,7 @@ class VoiceManager(private val context: Context) {
 
             } catch (e: Exception) {
                 Log.e("VoiceManager", "downloadVoice failed for ${voicePack.id}", e)
+                _downloadProgress.value = 0f
                 _isDownloading.value = false
                 _fallbackNotice.value = VoicePolicy.SOURCE_UNAVAILABLE
                 false

@@ -100,68 +100,13 @@ class HealthMonitor(
         } ?: 0
 
     /**
-     * 蓝牙心率带数据接入
-     *
-     * 未授予蓝牙权限时直接返回 false，不发起到 GATT 连接。
+     * 发起到蓝牙心率带的 GATT 连接请求。
+     * 返回值仅表示系统已接受请求，实际测量值由连接后的通知回调写入。
      */
     @SuppressLint("MissingPermission")
-    fun connectBluetoothHeartRateMonitor(deviceAddress: String): Boolean {
-        if (!hasBluetoothPermission()) {
-            Log.w(TAG, "缺少蓝牙权限，无法连接心率带")
-            return false
-        }
-        return try {
-            val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
-            val adapter = bluetoothManager?.adapter
-            if (adapter == null || !adapter.isEnabled) {
-                Log.w("HealthMonitor", "Bluetooth not available or disabled")
-                return false
-            }
-
-            val device = adapter.getRemoteDevice(deviceAddress)
-            device.connectGatt(context, false, object : android.bluetooth.BluetoothGattCallback() {
-                override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
-                    if (newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED) {
-                        Log.i("HealthMonitor", "Connected to heart rate monitor: $deviceAddress")
-                        gatt.discoverServices()
-                    } else if (newState == android.bluetooth.BluetoothGatt.STATE_DISCONNECTED) {
-                        Log.w("HealthMonitor", "Heart rate monitor disconnected: $deviceAddress")
-                    }
-                }
-
-                override fun onServicesDiscovered(gatt: android.bluetooth.BluetoothGatt, status: Int) {
-                    val service = gatt.getService(java.util.UUID.fromString("0000180d-0000-1000-8000-00805f9b34fb"))
-                    val char = service?.getCharacteristic(java.util.UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb"))
-                    if (char != null) {
-                        gatt.setCharacteristicNotification(char, true)
-                    }
-                }
-
-                override fun onCharacteristicChanged(gatt: android.bluetooth.BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic) {
-                    val hr = characteristic.value?.get(0)?.toInt()?.and(0xFF) ?: 0
-                    _vitalSigns.value = _vitalSigns.value.copy(heartRate = hr, source = "bluetooth_hrm")
-                }
-            })
-            Log.i("HealthMonitor", "Connecting to heart rate monitor: $deviceAddress")
-            // connectGatt 仅表示请求已发出，在 STATE_CONNECTED 之前不得报告成功
-            false
-        } catch (e: Exception) {
-            Log.e("HealthMonitor", "Failed to connect heart rate monitor", e)
-            false
-        }
-    }
-
-    // ==================== 血压监测（#61） ====================
-
-    /**
-     * 蓝牙血压计数据接入
-     *
-     * 未授予蓝牙权限时直接返回 false。
-     */
-    @SuppressLint("MissingPermission")
-    fun connectBluetoothBloodPressureMonitor(deviceAddress: String): Boolean {
-        if (!hasBluetoothPermission()) {
-            Log.w(TAG, "缺少蓝牙权限，无法连接血压计")
+    fun requestBluetoothHeartRateMonitorConnection(deviceAddress: String): Boolean {
+        if (deviceAddress.isBlank() || !hasBluetoothPermission()) {
+            Log.w(TAG, "设备地址为空或缺少蓝牙权限，无法连接心率带")
             return false
         }
         return try {
@@ -169,22 +114,90 @@ class HealthMonitor(
             val adapter = bluetoothManager?.adapter
             if (adapter == null || !adapter.isEnabled) return false
 
-            val device = adapter.getRemoteDevice(deviceAddress)
-            device.connectGatt(context, false, object : android.bluetooth.BluetoothGattCallback() {
-                override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
-                    if (newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED) {
-                        Log.i("HealthMonitor", "Connected to blood pressure monitor: $deviceAddress")
-                        gatt.discoverServices()
+            val gatt = adapter.getRemoteDevice(deviceAddress).connectGatt(
+                context,
+                false,
+                object : android.bluetooth.BluetoothGattCallback() {
+                    override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
+                        if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS &&
+                            newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED
+                        ) {
+                            gatt.discoverServices()
+                        }
+                    }
+
+                    override fun onServicesDiscovered(gatt: android.bluetooth.BluetoothGatt, status: Int) {
+                        if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS) {
+                            enableMeasurement(gatt, HEART_RATE_SERVICE, HEART_RATE_MEASUREMENT, indicate = false)
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onCharacteristicChanged(
+                        gatt: android.bluetooth.BluetoothGatt,
+                        characteristic: android.bluetooth.BluetoothGattCharacteristic
+                    ) {
+                        val bpm = parseHeartRateMeasurement(characteristic.value ?: return) ?: return
+                        _vitalSigns.value = _vitalSigns.value.copy(
+                            heartRate = bpm,
+                            timestamp = System.currentTimeMillis(),
+                            source = "bluetooth_hrm"
+                        )
                     }
                 }
-
-                override fun onCharacteristicChanged(gatt: android.bluetooth.BluetoothGatt, characteristic: android.bluetooth.BluetoothGattCharacteristic) {
-                    Log.i("HealthMonitor", "Blood pressure data received")
-                }
-            })
-            true
+            )
+            gatt != null
         } catch (e: Exception) {
-            Log.e("HealthMonitor", "Failed to connect blood pressure monitor", e)
+            Log.e(TAG, "发起心率带连接失败", e)
+            false
+        }
+    }
+
+    // ==================== 血压监测（#61） ====================
+
+    /** 发起血压计连接，并解析标准 BLE Blood Pressure Measurement 数据。 */
+    @SuppressLint("MissingPermission")
+    fun requestBluetoothBloodPressureMonitorConnection(deviceAddress: String): Boolean {
+        if (deviceAddress.isBlank() || !hasBluetoothPermission()) return false
+        return try {
+            val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
+            val adapter = bluetoothManager?.adapter
+            if (adapter == null || !adapter.isEnabled) return false
+
+            val gatt = adapter.getRemoteDevice(deviceAddress).connectGatt(
+                context,
+                false,
+                object : android.bluetooth.BluetoothGattCallback() {
+                    override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
+                        if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS &&
+                            newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED
+                        ) {
+                            gatt.discoverServices()
+                        }
+                    }
+
+                    override fun onServicesDiscovered(gatt: android.bluetooth.BluetoothGatt, status: Int) {
+                        if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS) {
+                            enableMeasurement(gatt, BLOOD_PRESSURE_SERVICE, BLOOD_PRESSURE_MEASUREMENT, indicate = true)
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onCharacteristicChanged(
+                        gatt: android.bluetooth.BluetoothGatt,
+                        characteristic: android.bluetooth.BluetoothGattCharacteristic
+                    ) {
+                        val (systolic, diastolic) = parseBloodPressureMeasurement(
+                            characteristic.value ?: return
+                        ) ?: return
+                        recordBloodPressure(systolic, diastolic)
+                        _vitalSigns.value = _vitalSigns.value.copy(source = "bluetooth_bpm")
+                    }
+                }
+            )
+            gatt != null
+        } catch (e: Exception) {
+            Log.e(TAG, "发起血压计连接失败", e)
             false
         }
     }
@@ -195,7 +208,8 @@ class HealthMonitor(
     fun recordBloodPressure(systolic: Int, diastolic: Int) {
         _vitalSigns.value = _vitalSigns.value.copy(
             bloodPressureSystolic = systolic,
-            bloodPressureDiastolic = diastolic
+            bloodPressureDiastolic = diastolic,
+            timestamp = System.currentTimeMillis()
         )
         addHealthRecord(HealthRecord(
             type = "blood_pressure",
@@ -207,34 +221,49 @@ class HealthMonitor(
 
     // ==================== 体温监测（#62） ====================
 
-    /**
-     * 蓝牙体温计数据接入
-     *
-     * 未授予蓝牙权限时直接返回 false。
-     */
+    /** 发起体温计连接，并解析标准 BLE Temperature Measurement 数据。 */
     @SuppressLint("MissingPermission")
-    fun connectBluetoothThermometer(deviceAddress: String): Boolean {
-        if (!hasBluetoothPermission()) {
-            Log.w(TAG, "缺少蓝牙权限，无法连接体温计")
-            return false
-        }
+    fun requestBluetoothThermometerConnection(deviceAddress: String): Boolean {
+        if (deviceAddress.isBlank() || !hasBluetoothPermission()) return false
         return try {
             val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? android.bluetooth.BluetoothManager
             val adapter = bluetoothManager?.adapter
             if (adapter == null || !adapter.isEnabled) return false
 
-            val device = adapter.getRemoteDevice(deviceAddress)
-            device.connectGatt(context, false, object : android.bluetooth.BluetoothGattCallback() {
-                override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
-                    if (newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED) {
-                        Log.i("HealthMonitor", "Connected to thermometer: $deviceAddress")
-                        gatt.discoverServices()
+            val gatt = adapter.getRemoteDevice(deviceAddress).connectGatt(
+                context,
+                false,
+                object : android.bluetooth.BluetoothGattCallback() {
+                    override fun onConnectionStateChange(gatt: android.bluetooth.BluetoothGatt, status: Int, newState: Int) {
+                        if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS &&
+                            newState == android.bluetooth.BluetoothGatt.STATE_CONNECTED
+                        ) {
+                            gatt.discoverServices()
+                        }
+                    }
+
+                    override fun onServicesDiscovered(gatt: android.bluetooth.BluetoothGatt, status: Int) {
+                        if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS) {
+                            enableMeasurement(gatt, HEALTH_THERMOMETER_SERVICE, TEMPERATURE_MEASUREMENT, indicate = true)
+                        }
+                    }
+
+                    @Deprecated("Deprecated in Java")
+                    override fun onCharacteristicChanged(
+                        gatt: android.bluetooth.BluetoothGatt,
+                        characteristic: android.bluetooth.BluetoothGattCharacteristic
+                    ) {
+                        val temperature = parseTemperatureMeasurement(
+                            characteristic.value ?: return
+                        ) ?: return
+                        recordTemperature(temperature)
+                        _vitalSigns.value = _vitalSigns.value.copy(source = "bluetooth_thermometer")
                     }
                 }
-            })
-            true
+            )
+            gatt != null
         } catch (e: Exception) {
-            Log.e("HealthMonitor", "Failed to connect thermometer", e)
+            Log.e(TAG, "发起体温计连接失败", e)
             false
         }
     }
@@ -243,7 +272,10 @@ class HealthMonitor(
      * 记录体温数据
      */
     fun recordTemperature(temperature: Float) {
-        _vitalSigns.value = _vitalSigns.value.copy(temperature = temperature)
+        _vitalSigns.value = _vitalSigns.value.copy(
+            temperature = temperature,
+            timestamp = System.currentTimeMillis()
+        )
         addHealthRecord(HealthRecord(
             type = "temperature",
             value = "%.1f".format(temperature),
@@ -551,53 +583,6 @@ class HealthMonitor(
         }
     }
 
-    // ==================== 远程医疗会诊（#68） ====================
-
-    /**
-     * 远程医疗会诊会话
-     */
-    data class TelemedicineSession(
-        val sessionId: String,
-        val doctorId: String,
-        val doctorName: String,
-        val status: SessionStatus = SessionStatus.PENDING,
-        val startTime: Long = 0,
-        val endTime: Long = 0
-    )
-
-    enum class SessionStatus {
-        PENDING, ACTIVE, COMPLETED, CANCELLED
-    }
-
-    private val _telemedicineSessions = MutableStateFlow<List<TelemedicineSession>>(emptyList())
-    val telemedicineSessions: StateFlow<List<TelemedicineSession>> = _telemedicineSessions.asStateFlow()
-
-    /**
-     * 发起远程医疗会诊
-     */
-    fun initiateTelemedicineConsultation(doctorId: String, doctorName: String): TelemedicineSession {
-        val session = TelemedicineSession(
-            sessionId = "tele_${System.currentTimeMillis()}",
-            doctorId = doctorId,
-            doctorName = doctorName,
-            status = SessionStatus.ACTIVE,
-            startTime = System.currentTimeMillis()
-        )
-        _telemedicineSessions.value = _telemedicineSessions.value + session
-        return session
-    }
-
-    /**
-     * 结束会诊
-     */
-    fun endTelemedicineConsultation(sessionId: String) {
-        _telemedicineSessions.value = _telemedicineSessions.value.map { session ->
-            if (session.sessionId == sessionId) {
-                session.copy(status = SessionStatus.COMPLETED, endTime = System.currentTimeMillis())
-            } else session
-        }
-    }
-
     // ==================== 专家连线（#69） ====================
 
     /**
@@ -642,13 +627,18 @@ class HealthMonitor(
                 val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (code in 200..299) {
                     val json = runCatching { org.json.JSONObject(text) }.getOrNull()
-                    ExpertConnection(
-                        connectionId = json?.optString("connectionId")
-                            ?: "exp_${System.currentTimeMillis()}",
-                        specialty = specialty,
-                        status = ConnectionStatus.CONNECTED,
-                        message = json?.optString("message") ?: "已连接${specialty}专家"
-                    )
+                    val connectionId = json?.optString("connectionId")?.trim().orEmpty()
+                    if (connectionId.isEmpty()) {
+                        ExpertConnection("", specialty, ConnectionStatus.FAILED, "平台响应缺少 connectionId")
+                    } else {
+                        ExpertConnection(
+                            connectionId = connectionId,
+                            specialty = specialty,
+                            status = ConnectionStatus.CONNECTED,
+                            message = json?.optString("message")?.ifBlank { "已连接${specialty}专家" }
+                                ?: "已连接${specialty}专家"
+                        )
+                    }
                 } else {
                     Log.w(TAG, "专家连线失败 HTTP $code")
                     ExpertConnection("", specialty, ConnectionStatus.FAILED, "平台返回 HTTP $code")
@@ -673,33 +663,35 @@ class HealthMonitor(
         CONNECTING, CONNECTED, DISCONNECTED, FAILED
     }
 
-    // ==================== 病情数据共享（#70） ====================
+    // ==================== 病情数据导出（#70） ====================
 
-    /**
-     * 加密共享病情数据
-     */
-    suspend fun shareMedicalData(recipientId: String, data: String): Boolean {
+    /** 将病情数据加密导出到应用私有目录；远程上传由 TelemedicineManager 负责。 */
+    suspend fun exportMedicalData(recipientId: String, data: String): File? {
+        if (recipientId.isBlank() || data.isBlank()) return null
         return try {
             val encryptedData = encryptMedicalData(data)
             val payload = "$recipientId\n${System.currentTimeMillis()}\n$encryptedData"
-            val dir = File(context.filesDir, "medical_shares").apply { mkdirs() }
-            val target = File(dir, "${recipientId}_${System.currentTimeMillis()}.enc")
+            val dir = File(context.filesDir, "medical_exports").apply { mkdirs() }
+            val recipientKey = cryptoManager.sha256(recipientId).take(32)
+            val target = File(dir, "${recipientKey}_${System.currentTimeMillis()}.enc")
             target.writeText(payload)
             Log.i(TAG, "加密病情数据已导出: ${target.name}")
-            true
+            target
         } catch (e: Exception) {
-            Log.e(TAG, "shareMedicalData failed", e)
-            false
+            Log.e(TAG, "导出加密病情数据失败", e)
+            null
         }
     }
 
-    /** 读取某位接收者已导出的加密数据。 */
-    fun readSharedMedicalData(recipientId: String): String? {
-        val dir = File(context.filesDir, "medical_shares")
-        val latest = dir.listFiles { file -> file.name.startsWith("${recipientId}_") }
+    /** 读取某位接收者最近导出的加密数据。 */
+    fun readExportedMedicalData(recipientId: String): String? {
+        if (recipientId.isBlank()) return null
+        val dir = File(context.filesDir, "medical_exports")
+        val recipientKey = cryptoManager.sha256(recipientId).take(32)
+        val latest = dir.listFiles { file -> file.name.startsWith("${recipientKey}_") }
             ?.maxByOrNull { it.lastModified() }
             ?: return null
-        return latest.readText()
+        return runCatching { latest.readText() }.getOrNull()
     }
 
     private val medicalKeyPrefs by lazy {
@@ -803,6 +795,92 @@ class HealthMonitor(
 
     fun stopMonitoring() {
         sensorManager.unregisterListener(this)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun enableMeasurement(
+        gatt: android.bluetooth.BluetoothGatt,
+        serviceUuid: String,
+        characteristicUuid: String,
+        indicate: Boolean
+    ) {
+        val characteristic = gatt.getService(java.util.UUID.fromString(serviceUuid))
+            ?.getCharacteristic(java.util.UUID.fromString(characteristicUuid))
+            ?: return
+        if (!gatt.setCharacteristicNotification(characteristic, true)) return
+        val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG) ?: return
+        descriptor.value = if (indicate) {
+            android.bluetooth.BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+        } else {
+            android.bluetooth.BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        }
+        if (!gatt.writeDescriptor(descriptor)) {
+            Log.w(TAG, "无法订阅 BLE 测量特征: $characteristicUuid")
+        }
+    }
+
+    companion object {
+        private const val HEART_RATE_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb"
+        private const val HEART_RATE_MEASUREMENT = "00002a37-0000-1000-8000-00805f9b34fb"
+        private const val BLOOD_PRESSURE_SERVICE = "00001810-0000-1000-8000-00805f9b34fb"
+        private const val BLOOD_PRESSURE_MEASUREMENT = "00002a35-0000-1000-8000-00805f9b34fb"
+        private const val HEALTH_THERMOMETER_SERVICE = "00001809-0000-1000-8000-00805f9b34fb"
+        private const val TEMPERATURE_MEASUREMENT = "00002a1c-0000-1000-8000-00805f9b34fb"
+        private val CLIENT_CHARACTERISTIC_CONFIG =
+            java.util.UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+        internal fun parseHeartRateMeasurement(data: ByteArray): Int? {
+            if (data.size < 2) return null
+            val flags = data[0].toInt() and 0xFF
+            val bpm = if (flags and 0x01 == 0) {
+                data[1].toInt() and 0xFF
+            } else {
+                if (data.size < 3) return null
+                (data[1].toInt() and 0xFF) or ((data[2].toInt() and 0xFF) shl 8)
+            }
+            return bpm.takeIf { it in 20..250 }
+        }
+
+        internal fun parseBloodPressureMeasurement(data: ByteArray): Pair<Int, Int>? {
+            if (data.size < 7) return null
+            val systolic = readSFloat(data, 1) ?: return null
+            val diastolic = readSFloat(data, 3) ?: return null
+            val unitScale = if (data[0].toInt() and 0x01 == 0) 1f else 7.5006168f
+            val systolicMmHg = systolic * unitScale
+            val diastolicMmHg = diastolic * unitScale
+            if (systolicMmHg !in 40f..300f || diastolicMmHg !in 20f..200f) return null
+            return systolicMmHg.toInt() to diastolicMmHg.toInt()
+        }
+
+        internal fun parseTemperatureMeasurement(data: ByteArray): Float? {
+            if (data.size < 5) return null
+            val value = readFloat(data, 1) ?: return null
+            val celsius = if (data[0].toInt() and 0x01 == 0) value else (value - 32f) / 1.8f
+            return celsius.takeIf { it.isFinite() && it in 20f..50f }
+        }
+
+        private fun readSFloat(data: ByteArray, offset: Int): Float? {
+            if (offset < 0 || offset + 1 >= data.size) return null
+            val raw = (data[offset].toInt() and 0xFF) or
+                ((data[offset + 1].toInt() and 0xFF) shl 8)
+            var mantissa = raw and 0x0FFF
+            if (mantissa and 0x0800 != 0) mantissa = mantissa or 0xFFFFF000.toInt()
+            var exponent = (raw shr 12) and 0x0F
+            if (exponent >= 8) exponent -= 16
+            return (mantissa * Math.pow(10.0, exponent.toDouble())).toFloat().takeIf { it.isFinite() }
+        }
+
+        private fun readFloat(data: ByteArray, offset: Int): Float? {
+            if (offset < 0 || offset + 3 >= data.size) return null
+            var raw = 0
+            repeat(4) { index ->
+                raw = raw or ((data[offset + index].toInt() and 0xFF) shl (index * 8))
+            }
+            var mantissa = raw and 0x00FFFFFF
+            if (mantissa and 0x00800000 != 0) mantissa = mantissa or 0xFF000000.toInt()
+            val exponent = (raw ushr 24).toByte().toInt()
+            return (mantissa * Math.pow(10.0, exponent.toDouble())).toFloat().takeIf { it.isFinite() }
+        }
     }
 
     /** Android 12+ 使用 BLUETOOTH_CONNECT，低版本使用 BLUETOOTH。 */

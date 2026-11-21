@@ -76,6 +76,28 @@ class HealthModulesTest {
     }
 
     @Test
+    fun `BLE heart rate parser handles uint8 uint16 and malformed data`() {
+        assertEquals(72, HealthMonitor.parseHeartRateMeasurement(byteArrayOf(0, 72)))
+        assertEquals(180, HealthMonitor.parseHeartRateMeasurement(byteArrayOf(1, 0xB4.toByte(), 0)))
+        assertEquals(null, HealthMonitor.parseHeartRateMeasurement(byteArrayOf(1, 72)))
+        assertEquals(null, HealthMonitor.parseHeartRateMeasurement(byteArrayOf(0, 5)))
+    }
+
+    @Test
+    fun `BLE blood pressure parser decodes sfloat measurements`() {
+        val data = byteArrayOf(0, 120, 0, 80, 0, 60, 0)
+        assertEquals(120 to 80, HealthMonitor.parseBloodPressureMeasurement(data))
+        assertEquals(null, HealthMonitor.parseBloodPressureMeasurement(byteArrayOf(0, 120, 0)))
+    }
+
+    @Test
+    fun `BLE temperature parser decodes IEEE 11073 float`() {
+        val celsius = byteArrayOf(0, 0x6D, 0x01, 0x00, 0xFF.toByte())
+        assertEquals(36.5f, HealthMonitor.parseTemperatureMeasurement(celsius)!!, 0.0001f)
+        assertEquals(null, HealthMonitor.parseTemperatureMeasurement(byteArrayOf(0, 1, 2)))
+    }
+
+    @Test
     fun `consultation fails closed without platform endpoint`() {
         assertEquals(
             TelemedicineManager.NO_ENDPOINT,

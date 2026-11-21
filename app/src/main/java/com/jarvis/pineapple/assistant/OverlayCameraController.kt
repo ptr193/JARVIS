@@ -18,7 +18,7 @@ object OverlayCameraController {
         }
 
     fun titleFor(task: CameraCaptureSession.Task): String =
-        if (task == CameraCaptureSession.Task.DOCUMENT) "扫文档" else "识物"
+        if (task == CameraCaptureSession.Task.DOCUMENT) "图像分析" else "识物"
 
     fun noImageMessage(): String = CameraCaptureSession.NO_IMAGE
 }

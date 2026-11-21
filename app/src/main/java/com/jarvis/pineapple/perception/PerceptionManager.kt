@@ -454,7 +454,7 @@ class PerceptionManager(private val context: Context) : SensorEventListener {
     private val recognizedFaceIds: MutableSet<Int> =
         java.util.concurrent.ConcurrentHashMap.newKeySet()
 
-    /** 标记某张人脸为已识别（由 FaceRecognitionManager 在匹配成功后调用）。 */
+    /** 由上层在真实身份匹配成功后登记人脸追踪 ID。 */
     fun markFaceRecognized(faceId: Int) {
         recognizedFaceIds.add(faceId)
     }

@@ -14,18 +14,17 @@ class OnboardingGateTest {
     }
 
     @Test
-    fun unconfirmedDownloadIsBlocked() {
-        val gate = OnboardingGate(hasLocalModel = { false }, autoDownloadEnabled = { true })
-        assertFalse(gate.allowNetworkDownload(userConfirmed = false))
-        assertTrue(gate.allowNetworkDownload(userConfirmed = true))
+    fun wizardHiddenWhenLocalModelExists() {
+        val gate = OnboardingGate(hasLocalModel = { true })
+        assertFalse(gate.shouldShowWizard())
     }
 
     @Test
-    fun timeoutAndFailureUseChineseClose() {
-        val gate = OnboardingGate(hasLocalModel = { false })
-        assertEquals("模型下载超时", gate.timeoutError())
-        assertEquals(0L, OnboardingGate.TIMEOUT_MS)
-        assertEquals("模型下载失败", gate.failureError(null))
-        assertEquals("模型下载失败：网络中断", gate.failureError("网络中断"))
+    fun downloadTimeoutIsFiniteAndFailuresUseChineseClose() {
+        assertTrue(OnboardingGate.TIMEOUT_MS > 0L)
+        assertEquals(7_200_000L, OnboardingGate.TIMEOUT_MS)
+        assertEquals("模型下载超时", OnboardingGate.timeoutError())
+        assertEquals("模型下载失败", OnboardingGate.failureError(null))
+        assertEquals("模型下载失败：网络中断", OnboardingGate.failureError("网络中断"))
     }
 }

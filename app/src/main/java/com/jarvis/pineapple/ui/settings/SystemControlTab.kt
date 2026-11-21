@@ -37,15 +37,14 @@ import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
 import com.jarvis.pineapple.system.PhoneController
-import com.jarvis.pineapple.system.RemoteAssistanceManager
 import com.jarvis.pineapple.system.SmsController
 import com.jarvis.pineapple.system.SystemSettingsController
 import kotlinx.coroutines.launch
 import org.koin.core.context.GlobalContext
 
 /**
- * 系统操控：把电话 / 短信 / 日程 / 导航 / 系统设置 / 媒体 / 跨应用 /
- * 硬件诊断 / 远程协助等已实现但此前没有入口的系统控制器接入 UI（REQ-05）。
+ * 系统操控：电话 / 短信 / 日程 / 导航 / 系统设置 / 媒体 / 跨应用 /
+ * 硬件诊断及本机设备控制。
  */
 @Composable
 fun SystemControlTab(showMsg: (String) -> Unit) {
@@ -61,7 +60,6 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val communication = remember { GlobalContext.get().get<CommunicationManager>() }
     val deviceControl = remember { GlobalContext.get().get<DeviceControlManager>() }
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
-    val remote = remember { GlobalContext.get().get<RemoteAssistanceManager>() }
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
     val reminders by communication.reminders.collectAsState()
@@ -75,7 +73,6 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     var phoneInfo by remember { mutableStateOf("未操作") }
     var systemInfo by remember { mutableStateOf("未操作") }
     var diagInfo by remember { mutableStateOf("尚未诊断") }
-    var remoteInfo by remember { mutableStateOf("无远程会话") }
     var scheduleInfo by remember { mutableStateOf("暂无日程") }
 
     val requestPhone = rememberOnDemandPermission(
@@ -91,7 +88,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         permissions = PermissionManager.SMS_PERMISSIONS,
         onGranted = {
             val ok = sms.send(phoneNumber.trim(), message)
-            phoneInfo = if (ok) "短信已发送" else "发送失败（缺少 SEND_SMS 权限）"
+            phoneInfo = if (ok) "短信已提交系统发送" else "短信提交失败（请检查权限、号码和内容）"
             showMsg(phoneInfo)
         },
         onDenied = { phoneInfo = it; showMsg(it) }
@@ -108,7 +105,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
                     description = "由 JARVIS 创建"
                 )
             )
-            scheduleInfo = if (ok) "日程已写入系统日历" else "创建失败（缺少日历权限）"
+            scheduleInfo = if (ok) "日程已写入系统日历" else "创建失败（请检查日历权限及可用日历账户）"
             showMsg(scheduleInfo)
         },
         onDenied = { scheduleInfo = it; showMsg(it) }
@@ -116,8 +113,12 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val requestLocation = rememberOnDemandPermission(
         permissions = PermissionManager.LOCATION_PERMISSIONS,
         onGranted = {
-            navigation.navigateTo(destination.ifBlank { "家" })
-            scheduleInfo = "已发起导航：$destination"
+            val target = destination.trim()
+            scheduleInfo = if (navigation.navigateTo(target)) {
+                "已请求地图应用导航：$target"
+            } else {
+                "导航失败：请输入目的地并确认存在可用地图入口"
+            }
             showMsg(scheduleInfo)
         },
         onDenied = { scheduleInfo = it; showMsg(it) }
@@ -191,26 +192,35 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         Text(systemInfo, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row {
             Button(onClick = {
-                systemInfo = if (settings.setWifiEnabled(true)) "已请求开启 WiFi" else "缺少 CHANGE_WIFI_STATE 权限"
+                systemInfo = if (settings.setWifiEnabled(true)) "系统已接受开启 WiFi 请求" else "无法切换 WiFi（权限或系统版本限制）"
                 showMsg(systemInfo)
             }) { Text("开 WiFi") }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
-                systemInfo = if (settings.setWifiEnabled(false)) "已请求关闭 WiFi" else "缺少 CHANGE_WIFI_STATE 权限"
+                systemInfo = if (settings.setWifiEnabled(false)) "系统已接受关闭 WiFi 请求" else "无法切换 WiFi（权限或系统版本限制）"
                 showMsg(systemInfo)
             }) { Text("关 WiFi") }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
-                systemInfo = if (settings.setBluetoothEnabled(true)) "已请求开启蓝牙" else "缺少 BLUETOOTH 权限"
+                systemInfo = if (settings.setBluetoothEnabled(true)) "系统已接受开启蓝牙请求" else "无法开启蓝牙（权限、硬件或系统限制）"
                 showMsg(systemInfo)
             }) { Text("开蓝牙") }
         }
         Row {
-            Button(onClick = { media.playPause(); systemInfo = "播放/暂停已切换"; showMsg(systemInfo) }) { Text("播放/暂停") }
+            Button(onClick = {
+                systemInfo = if (media.playPause()) "已分发播放/暂停按键" else "媒体按键分发失败"
+                showMsg(systemInfo)
+            }) { Text("播放/暂停") }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { media.next(); systemInfo = "已切到下一首"; showMsg(systemInfo) }) { Text("下一首") }
+            OutlinedButton(onClick = {
+                systemInfo = if (media.next()) "已分发下一首按键" else "媒体按键分发失败"
+                showMsg(systemInfo)
+            }) { Text("下一首") }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { media.previous(); systemInfo = "已切到上一首"; showMsg(systemInfo) }) { Text("上一首") }
+            OutlinedButton(onClick = {
+                systemInfo = if (media.previous()) "已分发上一首按键" else "媒体按键分发失败"
+                showMsg(systemInfo)
+            }) { Text("上一首") }
         }
         Row {
             Button(onClick = { media.volumeUp(); systemInfo = "音量：${media.getVolume()}"; showMsg(systemInfo) }) { Text("音量+") }
@@ -232,15 +242,15 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         )
         Row {
             Button(onClick = {
-                settings.openApp(appPackage.trim())
-                systemInfo = "已请求打开 ${appPackage.trim()}"
+                val opened = settings.openApp(appPackage.trim())
+                systemInfo = if (opened) "已请求打开 ${appPackage.trim()}" else "无法打开：包名无效或应用不可启动"
                 showMsg(systemInfo)
             }) { Text("打开应用") }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
-                crossApp.addToWhitelist(appPackage.trim())
+                val added = crossApp.addToWhitelist(appPackage.trim())
                 systemInfo = "白名单：${crossApp.getWhitelist().joinToString("、")}"
-                showMsg("已加入跨应用白名单")
+                showMsg(if (added) "已加入跨应用白名单" else "未加入：包名无效、应用不可见或已在白名单中")
             }) { Text("加入白名单") }
         }
         Text("智能家居灯具：${lightStates.size} 台", fontSize = 12.sp)
@@ -284,22 +294,6 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         }
     }
 
-    SectionCard("远程协助 (#67-#68)") {
-        Text(remoteInfo, fontSize = 12.sp)
-        Row {
-            Button(onClick = {
-                val session = remote.requestRemoteAssistance("op_001", "JARVIS 支持")
-                remoteInfo = "已发起会话 ${session.sessionId}（${session.status}）"
-                showMsg(remoteInfo)
-            }) { Text("请求协助") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = {
-                val active = remote.getActiveSessions()
-                remoteInfo = if (active.isEmpty()) "无活动会话" else "活动会话：${active.size}"
-                showMsg(remoteInfo)
-            }) { Text("查看会话") }
-        }
-    }
 }
 
 @Composable

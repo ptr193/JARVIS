@@ -15,8 +15,9 @@ class NavigationController(private val context: Context) {
     private val mapProvider = BuildConfig.MAP_PROVIDER.lowercase()
 
     /** 规划并导航到目的地 */
-    fun navigateTo(destination: String) {
-        when (mapProvider) {
+    fun navigateTo(destination: String): Boolean {
+        if (destination.isBlank()) return false
+        return when (mapProvider) {
             "amap" -> navigateWithAmap(destination)
             "baidu" -> navigateWithBaidu(destination)
             else -> navigateWithGoogle(destination)
@@ -24,52 +25,40 @@ class NavigationController(private val context: Context) {
     }
 
     /** 高德地图导航 */
-    private fun navigateWithAmap(destination: String) {
-        // 高德 URI 格式：androidamap://navi?sourceApplication=appname&poiname=目的地&lat=36.2&lng=116.1&dev=0
-        val uri = Uri.parse("androidamap://navi?sourceApplication=JARVIS&poiname=$destination&dev=0")
-        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            setPackage("com.autonavi.minimap")
-        }
-        runCatching { context.startActivity(intent) }.onFailure {
-            // 降级到 Web 版
-            val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://m.amap.com/navi/?dest=$destination")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(fallback)
-        }
+    private fun navigateWithAmap(destination: String): Boolean {
+        val query = Uri.encode(destination)
+        val primary = viewIntent(
+            "androidamap://navi?sourceApplication=JARVIS&poiname=$query&dev=0",
+            "com.autonavi.minimap"
+        )
+        val fallback = viewIntent("https://m.amap.com/navi/?dest=$query")
+        return launch(primary) || launch(fallback)
     }
 
     /** 百度地图导航 */
-    private fun navigateWithBaidu(destination: String) {
-        // 百度 URI 格式：baidumap://map/navi?query=目的地
-        val uri = Uri.parse("baidumap://map/navi?query=$destination")
-        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            setPackage("com.baidu.BaiduMap")
-        }
-        runCatching { context.startActivity(intent) }.onFailure {
-            val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("https://map.baidu.com/mobile/webapp/navi?query=$destination")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(fallback)
-        }
+    private fun navigateWithBaidu(destination: String): Boolean {
+        val query = Uri.encode(destination)
+        val primary = viewIntent("baidumap://map/navi?query=$query", "com.baidu.BaiduMap")
+        val fallback = viewIntent("https://map.baidu.com/mobile/webapp/navi?query=$query")
+        return launch(primary) || launch(fallback)
     }
 
     /** 谷歌地图导航（海外备选） */
-    private fun navigateWithGoogle(destination: String) {
-        val uri = Uri.parse("google.navigation:q=$destination")
-        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            setPackage("com.google.android.apps.maps")
-        }
-        runCatching { context.startActivity(intent) }.onFailure {
-            val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$destination")).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(fallback)
-        }
+    private fun navigateWithGoogle(destination: String): Boolean {
+        val query = Uri.encode(destination)
+        val primary = viewIntent("google.navigation:q=$query", "com.google.android.apps.maps")
+        val fallback = viewIntent("geo:0,0?q=$query")
+        return launch(primary) || launch(fallback)
     }
+
+    private fun viewIntent(uri: String, packageName: String? = null): Intent =
+        Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            packageName?.let(::setPackage)
+        }
+
+    private fun launch(intent: Intent): Boolean =
+        runCatching { context.startActivity(intent); true }.getOrDefault(false)
 
     /**
      * 应急路线：以 POI 关键词导航到最近的目的地（默认医院）。
