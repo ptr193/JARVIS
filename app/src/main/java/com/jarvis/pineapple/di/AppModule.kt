@@ -34,7 +34,6 @@ import com.jarvis.pineapple.perception.ObjectDetector
 import com.jarvis.pineapple.perception.PerceptionManager
 import com.jarvis.pineapple.personality.PersonalityRepository
 import com.jarvis.pineapple.security.CryptoManager
-import com.jarvis.pineapple.security.IntrusionDetector
 import com.jarvis.pineapple.security.SecureStorage
 import com.jarvis.pineapple.security.SecurityManager
 import com.jarvis.pineapple.smarthome.SmartHomeAdapter
@@ -202,7 +201,6 @@ val appModule = module {
 
     // Security
     single { SecurityManager(get()) }
-    single { IntrusionDetector(get()) }
 
     // Health
     single<com.jarvis.pineapple.health.MedicationReminderScheduler> {

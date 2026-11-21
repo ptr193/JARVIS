@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
 import org.koin.core.context.GlobalContext
 
 /**
- * 安全中心：人脸检测、系统生物识别、风险评估、权限审计、反入侵、
+ * 安全中心：人脸检测、系统生物识别、风险评估、权限审计、
  * 防御部署及本机锁定与擦除。
  */
 @Composable
@@ -53,7 +53,6 @@ fun SecurityTab(showMsg: (String) -> Unit) {
     var privacyRisk by remember { mutableStateOf("点击下方按钮评估") }
     var policyEval by remember { mutableStateOf("点击下方按钮评估") }
     var permissionInfo by remember { mutableStateOf("点击下方按钮扫描") }
-    var intrusionInfo by remember { mutableStateOf("尚未检测") }
     var defenseInfo by remember { mutableStateOf("尚未部署") }
     var biometricInfo by remember { mutableStateOf("尚未验证") }
     var showWipeConfirm by remember { mutableStateOf(false) }
@@ -165,31 +164,17 @@ fun SecurityTab(showMsg: (String) -> Unit) {
         }) { Text("扫描敏感权限授权") }
     }
 
-    SectionCard("反入侵与防御 (#46 / #47)") {
-        Text(intrusionInfo, fontSize = 13.sp)
+    SectionCard("防御部署 (#47)") {
         Text(defenseInfo, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row {
-            Button(onClick = {
-                scope.launch {
-                    val r = withContext(Dispatchers.IO) { security.detectIntrusion() }
-                    intrusionInfo = if (r.isIntrusionDetected)
-                        "检测到 ${r.alerts.size} 条入侵告警\n" +
-                            r.alerts.take(3).joinToString("\n") { "· ${it.type}: ${it.description}" }
-                    else "未检测到入侵行为"
-                    showMsg("反入侵检测完成")
-                }
-            }) { Text("检测入侵") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = {
-                scope.launch {
-                    val r = withContext(Dispatchers.IO) { security.deployDefenseStrategy() }
-                    defenseInfo = if (r.isSuccessful)
-                        "已部署 ${r.deployedStrategies.size} 项防御：${r.deployedStrategies.joinToString("、")}"
-                    else "防御部署失败：${r.message}"
-                    showMsg(if (r.isSuccessful) "防御策略部署完成" else r.message)
-                }
-            }) { Text("部署防御") }
-        }
+        OutlinedButton(onClick = {
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { security.deployDefenseStrategy() }
+                defenseInfo = if (r.isSuccessful)
+                    "已部署 ${r.deployedStrategies.size} 项防御：${r.deployedStrategies.joinToString("、")}"
+                else "防御部署失败：${r.message}"
+                showMsg(if (r.isSuccessful) "防御策略部署完成" else r.message)
+            }
+        }) { Text("部署防御") }
     }
 
     SectionCard("本机锁定与擦除 (#39 / #41)") {

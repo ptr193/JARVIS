@@ -50,7 +50,6 @@ private val DANGEROUS_PERMISSIONS = setOf(
  * - 安全策略效能评估
  * - 隐私风险评估
  * - 安全风险评估
- * - 反入侵
  * - 防御部署
  * - 安全协议执行
  */
@@ -694,49 +693,6 @@ class SecurityManager(private val context: Context) {
             ProcessBuilder("which", "su").start().waitFor() == 0
         }.getOrDefault(false)
     }
-
-    // ==================== 反入侵（#46） ====================
-
-    /**
-     * 入侵检测
-     */
-    fun detectIntrusion(): IntrusionDetectionResult {
-        val alerts = runCatching {
-            IntrusionDetector(context).performFullDetection().map { alert ->
-                IntrusionAlert(
-                    type = alert.type.name,
-                    description = alert.description,
-                    severity = mapSeverity(alert.severity),
-                    timestamp = alert.timestamp
-                )
-            }
-        }.getOrElse { emptyList() }
-        return IntrusionDetectionResult(
-            isIntrusionDetected = alerts.isNotEmpty(),
-            alerts = alerts,
-            timestamp = System.currentTimeMillis()
-        )
-    }
-
-    private fun mapSeverity(level: IntrusionDetector.ThreatLevel): SecurityEvent.Severity = when (level) {
-        IntrusionDetector.ThreatLevel.NONE, IntrusionDetector.ThreatLevel.LOW -> SecurityEvent.Severity.LOW
-        IntrusionDetector.ThreatLevel.MEDIUM -> SecurityEvent.Severity.MEDIUM
-        IntrusionDetector.ThreatLevel.HIGH -> SecurityEvent.Severity.HIGH
-        IntrusionDetector.ThreatLevel.CRITICAL -> SecurityEvent.Severity.CRITICAL
-    }
-
-    data class IntrusionDetectionResult(
-        val isIntrusionDetected: Boolean,
-        val alerts: List<IntrusionAlert>,
-        val timestamp: Long
-    )
-
-    data class IntrusionAlert(
-        val type: String,
-        val description: String,
-        val severity: SecurityEvent.Severity,
-        val timestamp: Long
-    )
 
     // ==================== 防御部署（#47） ====================
 
