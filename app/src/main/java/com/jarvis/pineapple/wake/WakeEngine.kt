@@ -75,7 +75,9 @@ class WakeEngine(private val context: Context) {
             if (WakeSource.SHAKE in enabledSources && !shakeWakeDetector.start()) {
                 shakeWakeDetector.unavailableReason.value?.let { reasons.add(it) }
             }
-            if (WakeSource.BLUETOOTH in enabledSources) bluetoothWakeDetector.start()
+            if (WakeSource.BLUETOOTH in enabledSources && !bluetoothWakeDetector.start()) {
+                bluetoothWakeDetector.unavailableReason.value?.let { reasons.add(it) }
+            }
             if (WakeSource.TILE in enabledSources) { /* Tile 由 TileService 自动触发 */ }
             if (WakeSource.APP_ICON in enabledSources) appIconWakeDetector.start()
             if (WakeSource.HOME_LONG_PRESS in enabledSources) homeLongPressDetector.start()
@@ -194,7 +196,9 @@ class WakeEngine(private val context: Context) {
             WakeSource.SHAKE -> shakeWakeDetector.start().also { started ->
                 if (!started) shakeWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
             }
-            WakeSource.BLUETOOTH -> bluetoothWakeDetector.start().let { true }
+            WakeSource.BLUETOOTH -> bluetoothWakeDetector.start().also { started ->
+                if (!started) bluetoothWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
+            }
             WakeSource.TILE -> true
             WakeSource.APP_ICON -> appIconWakeDetector.start().let { true }
             WakeSource.HOME_LONG_PRESS -> homeLongPressDetector.start().let { true }

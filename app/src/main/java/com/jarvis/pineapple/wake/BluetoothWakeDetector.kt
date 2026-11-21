@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.asStateFlow
 class BluetoothWakeDetector(private val context: Context) {
 
     companion object {
+        const val NO_BLUETOOTH = "设备不支持蓝牙，蓝牙按键唤醒不可用。其他唤醒方式仍可使用。"
+        const val REGISTRATION_FAILED = "蓝牙广播注册失败，蓝牙按键唤醒不可用。其他唤醒方式仍可使用。"
         private const val TAG = "BluetoothWakeDetector"
     }
 
@@ -30,6 +32,9 @@ class BluetoothWakeDetector(private val context: Context) {
 
     private val _detected = MutableStateFlow(false)
     val detected: StateFlow<Boolean> = _detected.asStateFlow()
+
+    private val _unavailableReason = MutableStateFlow<String?>(null)
+    val unavailableReason: StateFlow<String?> = _unavailableReason.asStateFlow()
 
     private var registered = false
 
@@ -56,19 +61,23 @@ class BluetoothWakeDetector(private val context: Context) {
         }
     }
 
-    fun start() {
+    fun start(): Boolean {
         if (bluetoothAdapter == null) {
+            _unavailableReason.value = NO_BLUETOOTH
             Log.w(TAG, "设备不支持蓝牙，跳过蓝牙唤醒")
-            return
+            return false
         }
-        if (registered) return
+        if (registered) {
+            _unavailableReason.value = null
+            return true
+        }
 
         val filter = IntentFilter().apply {
             addAction(BluetoothHeadset.ACTION_VENDOR_SPECIFIC_HEADSET_EVENT)
             addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
             addAction(Intent.ACTION_HEADSET_PLUG)
         }
-        try {
+        return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(broadcastReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
@@ -80,8 +89,12 @@ class BluetoothWakeDetector(private val context: Context) {
                 )
             }
             registered = true
+            _unavailableReason.value = null
+            true
         } catch (e: Exception) {
+            _unavailableReason.value = REGISTRATION_FAILED
             Log.e(TAG, "注册蓝牙广播接收器失败", e)
+            false
         }
     }
 
