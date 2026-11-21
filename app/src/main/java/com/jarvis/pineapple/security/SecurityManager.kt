@@ -46,7 +46,7 @@ private val DANGEROUS_PERMISSIONS = setOf(
  * - 访问权限分级
  * - 手机锁定与防盗
  * - 本机数据擦除
- * - 权限使用审计
+ * - 敏感权限授权审计
  * - 安全策略效能评估
  * - 隐私风险评估
  * - 安全风险评估
@@ -320,22 +320,15 @@ class SecurityManager(private val context: Context) {
 
     // ==================== 权限管控与安全响应（#42） ====================
 
-    /**
-     * 权限使用记录
-     */
-    data class PermissionUsageRecord(
+    /** 已授予应用的敏感权限；不代表该权限已被实际调用。 */
+    data class PermissionGrantRecord(
         val permission: String,
-        val packageName: String,
-        val usageCount: Int,
-        val lastUsedTime: Long,
-        val isSensitive: Boolean
+        val packageName: String
     )
 
-    /**
-     * 检查权限使用
-     */
-    fun checkPermissionUsage(): List<PermissionUsageRecord> {
-        val result = mutableListOf<PermissionUsageRecord>()
+    /** 扫描其他应用已获授予的敏感权限。Android 不提供第三方权限调用次数与时间。 */
+    fun checkPermissionGrants(): List<PermissionGrantRecord> {
+        val result = mutableListOf<PermissionGrantRecord>()
         return try {
             val pm = context.packageManager
             @Suppress("DEPRECATION")
@@ -349,12 +342,9 @@ class SecurityManager(private val context: Context) {
                         (flags[index] and PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
                     ) {
                         result.add(
-                            PermissionUsageRecord(
+                            PermissionGrantRecord(
                                 permission = permission.substringAfterLast('.'),
-                                packageName = pkg.packageName,
-                                usageCount = 0,
-                                lastUsedTime = pkg.firstInstallTime,
-                                isSensitive = true
+                                packageName = pkg.packageName
                             )
                         )
                     }
@@ -403,7 +393,6 @@ class SecurityManager(private val context: Context) {
         val policies = mapOf(
             "生物识别" to evaluateBiometricPolicy(),
             "密码策略" to evaluatePasswordPolicy(),
-            "权限管控" to evaluatePermissionPolicy(),
             "本机擦除" to evaluateDeviceWipePolicy()
         )
 
@@ -415,9 +404,6 @@ class SecurityManager(private val context: Context) {
         }
         if (policies["密码策略"]!! < 0.8f) {
             recommendations.add("建议加强密码复杂度要求")
-        }
-        if (policies["权限管控"]!! < 0.8f) {
-            recommendations.add("建议定期审查应用权限")
         }
 
         return SecurityPolicyEvaluation(
@@ -448,14 +434,6 @@ class SecurityManager(private val context: Context) {
         } catch (e: Exception) {
             0.5f
         }
-    }
-
-    private fun evaluatePermissionPolicy(): Float {
-        // 基于权限使用情况的真实评估
-        val permissionRecords = checkPermissionUsage()
-        val highRiskCount = permissionRecords.count { it.isSensitive }
-        val total = permissionRecords.size.coerceAtLeast(1)
-        return (1f - highRiskCount.toFloat() / total).coerceIn(0f, 1f)
     }
 
     private fun evaluateDeviceWipePolicy(): Float {
@@ -492,8 +470,9 @@ class SecurityManager(private val context: Context) {
     fun assessPrivacyRisk(): PrivacyRiskAssessment {
         val riskFactors = mutableListOf<PrivacyRiskFactor>()
 
-        // 1) 敏感权限使用（真实统计）
-        val sensitivePermissions = checkPermissionUsage().filter { it.isSensitive }
+        // 1) 敏感权限授权面（仅统计授权，不声称实际调用）
+        val sensitivePermissions = checkPermissionGrants()
+        val appsWithSensitivePermissions = sensitivePermissions.map { it.packageName }.distinct().size
         if (sensitivePermissions.isNotEmpty()) {
             val severity = when {
                 sensitivePermissions.size >= 8 -> RiskLevel.HIGH
@@ -501,10 +480,10 @@ class SecurityManager(private val context: Context) {
                 else -> RiskLevel.LOW
             }
             riskFactors.add(PrivacyRiskFactor(
-                name = "敏感权限使用",
-                description = "发现 ${sensitivePermissions.size} 个应用使用敏感权限",
+                name = "敏感权限授权",
+                description = "$appsWithSensitivePermissions 个应用共获授 ${sensitivePermissions.size} 项敏感权限",
                 severity = severity,
-                mitigation = "建议审查并限制敏感权限使用"
+                mitigation = "建议审查并撤销不必要的敏感权限授权"
             ))
         }
 

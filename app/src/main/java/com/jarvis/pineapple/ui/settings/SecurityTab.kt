@@ -151,17 +151,18 @@ fun SecurityTab(showMsg: (String) -> Unit) {
         }) { Text("评估策略效能") }
     }
 
-    SectionCard("权限使用 (#38 / #42)") {
+    SectionCard("敏感权限授权 (#38 / #42)") {
         Text(permissionInfo, fontSize = 13.sp)
+        Text("仅统计已授权状态，不代表权限已被实际调用", fontSize = 12.sp)
         Button(onClick = {
             scope.launch {
-                val records = withContext(Dispatchers.IO) { security.checkPermissionUsage() }
-                val sensitive = records.count { it.isSensitive }
-                permissionInfo = "共 ${records.size} 条权限使用记录，其中敏感 ${sensitive} 条\n" +
+                val records = withContext(Dispatchers.IO) { security.checkPermissionGrants() }
+                val appCount = records.map { it.packageName }.distinct().size
+                permissionInfo = "${appCount} 个应用共获授 ${records.size} 项敏感权限\n" +
                     records.take(4).joinToString("\n") { "· ${it.permission} ← ${it.packageName}" }
-                showMsg("权限扫描完成")
+                showMsg("权限授权扫描完成")
             }
-        }) { Text("扫描权限使用") }
+        }) { Text("扫描敏感权限授权") }
     }
 
     SectionCard("反入侵与防御 (#46 / #47)") {
