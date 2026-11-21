@@ -167,19 +167,28 @@ class ChatEngine(
             append("\nJARVIS：")
         }
 
-        val aiMsg = ChatMessage(role = Role.ASSISTANT, content = "", isStreaming = true)
-        conversation.messages.add(aiMsg)
-        _messages.value = conversation.messages.toList()
-
         val candidate = if (decision.shouldSchedule && decision.assistantModel != null) {
             decision.assistantModel
         } else {
             primaryModel
         }
-        if (candidate.state != ModelState.READY) {
-            candidate.load()
+        val activeModel = try {
+            if (candidate.state != ModelState.READY) {
+                candidate.load()
+            }
+            if (candidate.state == ModelState.READY) candidate else primaryModel
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            _isGenerating.value = false
+            throw e
+        } catch (e: Exception) {
+            _lastSchedulingInfo.value =
+                "候选模型加载失败，已回退到 ${primaryModel.info.name}：${e.message ?: e.javaClass.simpleName}"
+            primaryModel
         }
-        val activeModel = if (candidate.state == ModelState.READY) candidate else primaryModel
+
+        val aiMsg = ChatMessage(role = Role.ASSISTANT, content = "", isStreaming = true)
+        conversation.messages.add(aiMsg)
+        _messages.value = conversation.messages.toList()
 
         // 将 stream() 的创建也纳入下方 catch，覆盖同步抛错的模型实现。
         val flow = flow { emitAll(activeModel.stream(fullPrompt, systemPrompt)) }

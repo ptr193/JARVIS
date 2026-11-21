@@ -15,7 +15,8 @@ class ModelSchedulerTest {
         name: String,
         source: ModelSource,
         priority: Int,
-        private val becomesReady: Boolean
+        private val becomesReady: Boolean,
+        private val loadFailure: Exception? = null
     ) : AiModel {
         override val info = ModelInfo(
             id = id,
@@ -28,6 +29,10 @@ class ModelSchedulerTest {
             private set
 
         override suspend fun load() {
+            loadFailure?.let {
+                state = ModelState.ERROR
+                throw it
+            }
             state = if (becomesReady) ModelState.READY else ModelState.ERROR
         }
 
@@ -114,6 +119,41 @@ class ModelSchedulerTest {
         scheduler.setApiModel(null)
         assertEquals(user, scheduler.getActive())
         assertEquals(listOf("local_user"), scheduler.rankedModels().map { it.info.id })
+    }
+
+    @Test
+    fun `resolve continues fallback when a model load throws`() = runBlocking {
+        val user = FakeModel(
+            "local_user", "用户自有模型", ModelSource.LOCAL_USER, 100, false,
+            loadFailure = java.io.IOException("corrupt model")
+        )
+        val api = FakeModel("api", "API", ModelSource.API, 20, true)
+        val scheduler = ModelScheduler(userModel = user)
+        scheduler.addApiModel(api)
+
+        assertEquals(api, scheduler.resolveOrLoad())
+        assertEquals(ModelState.ERROR, user.state)
+        assertEquals(api, scheduler.getActive())
+    }
+
+    @Test
+    fun `resolve propagates coroutine cancellation`() = runBlocking {
+        val user = FakeModel(
+            "local_user", "用户自有模型", ModelSource.LOCAL_USER, 100, false,
+            loadFailure = kotlinx.coroutines.CancellationException("cancelled")
+        )
+        val api = FakeModel("api", "API", ModelSource.API, 20, true)
+        val scheduler = ModelScheduler(userModel = user)
+        scheduler.addApiModel(api)
+
+        var cancelled = false
+        try {
+            scheduler.resolveOrLoad()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            cancelled = true
+        }
+        assertTrue(cancelled)
+        assertEquals(ModelState.UNLOADED, api.state)
     }
 
     @Test

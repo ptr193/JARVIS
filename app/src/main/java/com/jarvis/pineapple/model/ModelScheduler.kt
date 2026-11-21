@@ -89,12 +89,18 @@ class ModelScheduler(
     suspend fun resolveOrLoad(): AiModel? {
         val preferred = listOf(_activeModel.value) + rankedModels().filter { it.info.id != _activeModel.value.info.id }
         for (model in preferred) {
-            if (model.state != ModelState.READY) {
-                model.load()
-            }
-            if (isUsable(model)) {
-                _activeModel.value = model
-                return model
+            try {
+                if (model.state != ModelState.READY) {
+                    model.load()
+                }
+                if (isUsable(model)) {
+                    _activeModel.value = model
+                    return model
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 单个模型加载失败不得阻断后续模型回退。
             }
         }
         return null
