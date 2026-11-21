@@ -160,7 +160,13 @@ val appModule = module {
     // Virtual machine
     single { ProotManager(get()) }
     single { VmDistroManager(get(), get()) }
-    single { HavenVmManager(get(), get()) }
+    single {
+        val context = get<android.content.Context>()
+        HavenVmManager(get(), get()) {
+            context.getSharedPreferences("jarvis_vm_config", android.content.Context.MODE_PRIVATE)
+                .getBoolean("enable_root", true)
+        }
+    }
     single { VmImageImporter(get(), get()) }
 
     // Smart home

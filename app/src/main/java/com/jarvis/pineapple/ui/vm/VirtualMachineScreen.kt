@@ -428,8 +428,13 @@ private fun TerminalTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager,
     }
 
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val useRoot = remember {
+        context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE)
+            .getBoolean("enable_root", true)
+    }
     val terminal = remember(vm.id) {
-        VmTerminal(vm.id, vm.rootfsPath, prootManager).also { it.connect() }
+        VmTerminal(vm.id, vm.rootfsPath, prootManager, useRoot).also { it.connect() }
     }
     val output by terminal.output.collectAsState()
     var input by remember { mutableStateOf("") }
@@ -472,8 +477,13 @@ private fun PackageTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager, 
         return
     }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val useRoot = remember {
+        context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE)
+            .getBoolean("enable_root", true)
+    }
     val manager = remember(vm.id) {
-        VmPackageManager(vm.id, vm.rootfsPath, prootManager, vm.packageManager)
+        VmPackageManager(vm.id, vm.rootfsPath, prootManager, vm.packageManager, useRoot)
     }
     val packages by manager.packages.collectAsState()
     val isOperating by manager.isOperating.collectAsState()

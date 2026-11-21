@@ -15,7 +15,8 @@ import java.io.File
  */
 class HavenVmManager(
     private val prootManager: ProotManager,
-    private val distroManager: VmDistroManager
+    private val distroManager: VmDistroManager,
+    private val asRoot: () -> Boolean = { true }
 ) {
 
     private val _vms = MutableStateFlow<List<HavenVm>>(emptyList())
@@ -242,7 +243,7 @@ class HavenVmManager(
         findVm(vmId)?.installedPackages ?: emptyList()
 
     fun configFor(vm: HavenVm): ProotManager.ProotConfig =
-        ProotManager.ProotConfig(rootfsPath = vm.rootfsPath, workingDir = "/root")
+        ProotManager.ProotConfig(rootfsPath = vm.rootfsPath, workingDir = "/root", asRoot = asRoot())
 
     /**
      * 安装桌面会话所需组件并返回可用性说明。

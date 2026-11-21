@@ -35,7 +35,8 @@ class VmPackageManager(
     private val vmId: String,
     private val rootfsPath: String,
     private val prootManager: ProotManager,
-    private val packageManager: String = "apt"
+    private val packageManager: String = "apt",
+    private val useRoot: Boolean = true
 ) {
     private val _packages = MutableStateFlow<List<PackageInfo>>(emptyList())
     val packages: StateFlow<List<PackageInfo>> = _packages.asStateFlow()
@@ -46,7 +47,7 @@ class VmPackageManager(
     private val _operationLog = MutableStateFlow<List<String>>(emptyList())
     val operationLog: StateFlow<List<String>> = _operationLog.asStateFlow()
 
-    private fun config(useRoot: Boolean = true): ProotManager.ProotConfig =
+    private fun config(): ProotManager.ProotConfig =
         ProotManager.ProotConfig(rootfsPath = rootfsPath, asRoot = useRoot)
 
     /**
@@ -134,11 +135,11 @@ class VmPackageManager(
             .take(200)
     }
 
-    suspend fun installPackage(packageName: String, useRoot: Boolean = true): PackageOperationResult {
+    suspend fun installPackage(packageName: String): PackageOperationResult {
         _isOperating.value = true
         addLog("正在安装 $packageName ...")
         return try {
-            val ok = prootManager.installPackage(config(useRoot), packageManager, packageName)
+            val ok = prootManager.installPackage(config(), packageManager, packageName)
             if (ok) {
                 addLog("$packageName 安装成功")
                 PackageOperationResult.Success("$packageName 安装成功")
@@ -153,11 +154,11 @@ class VmPackageManager(
         }
     }
 
-    suspend fun uninstallPackage(packageName: String, useRoot: Boolean = true): PackageOperationResult {
+    suspend fun uninstallPackage(packageName: String): PackageOperationResult {
         _isOperating.value = true
         addLog("正在卸载 $packageName ...")
         return try {
-            val ok = prootManager.uninstallPackage(config(useRoot), packageManager, packageName)
+            val ok = prootManager.uninstallPackage(config(), packageManager, packageName)
             if (ok) {
                 addLog("$packageName 卸载成功")
                 PackageOperationResult.Success("$packageName 卸载成功")
@@ -171,11 +172,11 @@ class VmPackageManager(
         }
     }
 
-    suspend fun updatePackage(packageName: String, useRoot: Boolean = true): PackageOperationResult {
+    suspend fun updatePackage(packageName: String): PackageOperationResult {
         _isOperating.value = true
         addLog("正在更新 $packageName ...")
         return try {
-            val ok = prootManager.installPackage(config(useRoot), packageManager, packageName)
+            val ok = prootManager.installPackage(config(), packageManager, packageName)
             if (ok) PackageOperationResult.Success("$packageName 更新成功")
             else PackageOperationResult.Failure("$packageName 更新失败")
         } catch (e: Exception) {
@@ -185,11 +186,11 @@ class VmPackageManager(
         }
     }
 
-    suspend fun updateAllPackages(useRoot: Boolean = true): PackageOperationResult {
+    suspend fun updateAllPackages(): PackageOperationResult {
         _isOperating.value = true
         addLog("正在更新所有包 ...")
         return try {
-            val ok = prootManager.updatePackages(config(useRoot), packageManager)
+            val ok = prootManager.updatePackages(config(), packageManager)
             if (ok) {
                 addLog("所有包已更新")
                 PackageOperationResult.Success("所有包更新成功")

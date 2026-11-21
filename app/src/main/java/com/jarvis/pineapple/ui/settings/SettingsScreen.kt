@@ -462,66 +462,36 @@ private fun queryDisplayName(context: Context, uri: android.net.Uri): String? {
 @Composable
 private fun VmSettingsTab(showMsg: (String) -> Unit) {
     val context = LocalContext.current
-    var cpuCores by remember { mutableStateOf(2) }
-    var memoryMb by remember { mutableStateOf(2048) }
-    var diskGb by remember { mutableStateOf(20) }
-    var enableRoot by remember { mutableStateOf(true) }
+    val prefs = remember { context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE) }
+    var enableRoot by remember { mutableStateOf(prefs.getBoolean("enable_root", true)) }
 
-    // 加载已保存的配置
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE)
-        cpuCores = prefs.getInt("cpu_cores", 2)
-        memoryMb = prefs.getInt("memory_mb", 2048)
-        diskGb = prefs.getInt("disk_gb", 20)
-        enableRoot = prefs.getBoolean("enable_root", true)
-    }
-
-    Text("虚拟机配置", style = MaterialTheme.typography.titleMedium)
+    Text("PRoot 运行配置", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
-
-    OutlinedTextField(
-        value = cpuCores.toString(),
-        onValueChange = { cpuCores = it.toIntOrNull() ?: 2 },
-        label = { Text("CPU 核数") },
-        modifier = Modifier.fillMaxWidth()
+    Text(
+        "PRoot 与 Android 共享内核和硬件，CPU、内存及存储由系统统一调度，不能通过此处划分独立虚拟机资源。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
     )
-
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = memoryMb.toString(),
-        onValueChange = { memoryMb = it.toIntOrNull() ?: 2048 },
-        label = { Text("内存 (MB)") },
-        modifier = Modifier.fillMaxWidth()
-    )
-
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = diskGb.toString(),
-        onValueChange = { diskGb = it.toIntOrNull() ?: 20 },
-        label = { Text("磁盘 (GB)") },
-        modifier = Modifier.fillMaxWidth()
-    )
-
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(12.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("启用 Root 权限")
+        Column(modifier = Modifier.weight(1f)) {
+            Text("在 PRoot 内模拟 root 用户")
+            Text(
+                "仅改变 guest 内显示的用户身份，不授予 Android 系统 root 权限",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Switch(checked = enableRoot, onCheckedChange = { enableRoot = it })
     }
-
     Spacer(Modifier.height(8.dp))
     Button(onClick = {
-        val prefs = context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE)
-        prefs.edit()
-            .putInt("cpu_cores", cpuCores)
-            .putInt("memory_mb", memoryMb)
-            .putInt("disk_gb", diskGb)
-            .putBoolean("enable_root", enableRoot)
-            .apply()
-        showMsg("虚拟机配置已保存")
+        prefs.edit().putBoolean("enable_root", enableRoot).apply()
+        showMsg("PRoot 用户配置已保存，新命令与新终端会话生效")
     }) { Text("保存配置") }
 }
 
