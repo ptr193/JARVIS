@@ -919,55 +919,80 @@ private fun LogTab(
     Spacer(Modifier.height(4.dp))
     Row {
         Button(onClick = {
-            val text = runCatching { com.jarvis.pineapple.util.CrashRecorder.readAll(context) }.getOrDefault("（读取失败）")
-            val crashFile = java.io.File(context.filesDir, "crash_export_${System.currentTimeMillis()}.txt")
-            crashFile.writeText(text)
-            showMsg(if (text == "（无崩溃记录）") "无崩溃记录" else "崩溃记录已导出: ${crashFile.absolutePath}")
+            runCatching {
+                val text = com.jarvis.pineapple.util.CrashRecorder.readAll(context)
+                if (text == "（无崩溃记录）") {
+                    showMsg("无崩溃记录")
+                } else {
+                    val crashFile = java.io.File(context.filesDir, "crash_export_${System.currentTimeMillis()}.txt")
+                    crashFile.writeText(text)
+                    showMsg("崩溃记录已导出: ${crashFile.absolutePath}")
+                }
+            }.onFailure {
+                showMsg("崩溃记录导出失败: ${it.message ?: it.javaClass.simpleName}")
+            }
         }) { Text("导出崩溃记录") }
         Spacer(Modifier.width(8.dp))
         Button(onClick = {
-            val dir = java.io.File(context.filesDir, "crash")
-            if (dir.exists()) {
-                dir.listFiles()?.forEach { if (it.name.startsWith("crash_")) it.delete() }
-            }
-            showMsg("崩溃记录已清空")
+            runCatching { com.jarvis.pineapple.util.CrashRecorder.clear(context) }
+                .onSuccess { showMsg(if (it == 0) "无崩溃记录" else "崩溃记录已清空（$it 条）") }
+                .onFailure { showMsg("崩溃记录清空失败: ${it.message ?: it.javaClass.simpleName}") }
         }) { Text("清空崩溃记录") }
     }
 
     Row {
         Button(onClick = {
-            val logDir = java.io.File(context.filesDir, "logs")
-            val latest = logDir.listFiles { f -> f.isFile }?.maxByOrNull { it.lastModified() }
-            val crashText = runCatching { com.jarvis.pineapple.util.CrashRecorder.readAll(context) }.getOrDefault("")
-            if (latest == null && (crashText.isBlank() || crashText == "（无崩溃记录）")) {
-                showMsg("暂无日志文件")
-                return@Button
-            }
-            val logFile = java.io.File(context.filesDir, "logs/jarvis_log_${System.currentTimeMillis()}.txt")
-            logFile.parentFile?.mkdirs()
-            val header = "JARVIS 日志导出\n时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())}\n"
-            val body = buildString {
-                append(header)
-                if (latest != null) {
-                    append("\n########## ${latest.name} ##########\n")
-                    append(runCatching { latest.readText() }.getOrDefault("（读取失败）"))
+            runCatching {
+                val logDir = java.io.File(context.filesDir, "logs")
+                val logFiles = if (logDir.exists()) {
+                    logDir.listFiles { f -> f.isFile }
+                        ?: throw java.io.IOException("无法读取日志目录")
+                } else {
+                    emptyArray()
                 }
-                if (crashText.isNotBlank() && crashText != "（无崩溃记录）") {
-                    append("\n\n")
-                    append(crashText)
+                val latest = logFiles.maxByOrNull { it.lastModified() }
+                val crashText = com.jarvis.pineapple.util.CrashRecorder.readAll(context)
+                if (latest == null && crashText == "（无崩溃记录）") {
+                    showMsg("暂无日志文件")
+                } else {
+                    val logFile = java.io.File(logDir, "jarvis_log_${System.currentTimeMillis()}.txt")
+                    val header = "JARVIS 日志导出\n时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())}\n"
+                    val body = buildString {
+                        append(header)
+                        if (latest != null) {
+                            append("\n########## ${latest.name} ##########\n")
+                            append(latest.readText())
+                        }
+                        if (crashText != "（无崩溃记录）") {
+                            append("\n\n")
+                            append(crashText)
+                        }
+                    }
+                    logFile.writeText(body)
+                    showMsg("日志已导出: ${logFile.absolutePath}")
                 }
+            }.onFailure {
+                showMsg("日志导出失败: ${it.message ?: it.javaClass.simpleName}")
             }
-            logFile.writeText(body)
-            showMsg("日志已导出: ${logFile.absolutePath}")
         }) { Text("导出日志") }
         Spacer(Modifier.width(8.dp))
         Button(onClick = {
-            // 清空日志
-            val logDir = java.io.File(context.filesDir, "logs")
-            if (logDir.exists()) {
-                logDir.listFiles()?.forEach { it.delete() }
+            runCatching {
+                val logDir = java.io.File(context.filesDir, "logs")
+                val files = if (logDir.exists()) {
+                    logDir.listFiles { f -> f.isFile }?.toList()
+                        ?: throw java.io.IOException("无法读取日志目录")
+                } else {
+                    emptyList()
+                }
+                val failed = files.filter { it.exists() && !it.delete() }
+                if (failed.isNotEmpty()) throw java.io.IOException("${failed.size} 个日志文件删除失败")
+                files.size
+            }.onSuccess {
+                showMsg(if (it == 0) "暂无日志文件" else "日志已清空（$it 个文件）")
+            }.onFailure {
+                showMsg("日志清空失败: ${it.message ?: it.javaClass.simpleName}")
             }
-            showMsg("日志已清空")
         }) { Text("清空日志") }
     }
 
@@ -981,10 +1006,14 @@ private fun LogTab(
 
     Row {
         Button(onClick = {
-            val json = memorySystem.exportMemories()
-            val memFile = java.io.File(context.filesDir, "memory_export_${System.currentTimeMillis()}.json")
-            memFile.writeText(json)
-            showMsg("记忆已导出: ${memFile.absolutePath} (${json.length} 字符)")
+            runCatching {
+                val json = memorySystem.exportMemories()
+                val memFile = java.io.File(context.filesDir, "memory_export_${System.currentTimeMillis()}.json")
+                memFile.writeText(json)
+                showMsg("记忆已导出: ${memFile.absolutePath} (${json.length} 字符)")
+            }.onFailure {
+                showMsg("记忆导出失败: ${it.message ?: it.javaClass.simpleName}")
+            }
         }) { Text("导出记忆 (JSON)") }
         Spacer(Modifier.width(8.dp))
         Button(onClick = {
@@ -1017,11 +1046,20 @@ private fun LogTab(
     Spacer(Modifier.height(8.dp))
 
     // 真实日志：读取 logs 目录中最新文件，而不是伪造固定文本
-    val logLines = remember {
-        val logDir = java.io.File(context.filesDir, "logs")
-        val latest = logDir.listFiles { f -> f.isFile }?.maxByOrNull { it.lastModified() }
-        latest?.readLines()?.takeLast(20) ?: emptyList()
+    val logResult = remember {
+        runCatching {
+            val logDir = java.io.File(context.filesDir, "logs")
+            val logFiles = if (logDir.exists()) {
+                logDir.listFiles { f -> f.isFile }
+                    ?: throw java.io.IOException("无法读取日志目录")
+            } else {
+                emptyArray()
+            }
+            logFiles.maxByOrNull { it.lastModified() }?.readLines()?.takeLast(20).orEmpty()
+        }
     }
+    val logLines = logResult.getOrDefault(emptyList())
+    val logError = logResult.exceptionOrNull()
 
     Card(
         modifier = Modifier.fillMaxWidth().height(200.dp),
@@ -1030,7 +1068,15 @@ private fun LogTab(
         )
     ) {
         LazyColumn(modifier = Modifier.padding(12.dp)) {
-            if (logLines.isEmpty()) {
+            if (logError != null) {
+                item {
+                    Text(
+                        "日志读取失败: ${logError.message ?: logError.javaClass.simpleName}",
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp
+                    )
+                }
+            } else if (logLines.isEmpty()) {
                 item { Text("暂无日志（尚未写入日志文件）", fontSize = 12.sp) }
             } else {
                 items(logLines) { log ->

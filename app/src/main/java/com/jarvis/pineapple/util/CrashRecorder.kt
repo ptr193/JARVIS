@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import java.io.File
+import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.text.SimpleDateFormat
@@ -55,22 +56,35 @@ object CrashRecorder {
         }
     }
 
-    /** 列出已记录的崩溃文件（最新在前）。 */
+    /** 列出已记录的崩溃文件（最新在前）；目录不可读时明确失败。 */
     fun list(context: Context): List<File> {
         val dir = File(context.filesDir, DIR_NAME)
         if (!dir.exists()) return emptyList()
-        return (dir.listFiles() ?: emptyArray())
+        val files = dir.listFiles() ?: throw IOException("无法读取崩溃记录目录")
+        return files
             .filter { it.isFile && it.name.startsWith("crash_") }
             .sortedByDescending { it.name }
     }
 
-    /** 读取全部崩溃记录合并为文本，供导出。 */
-    fun readAll(context: Context): String {
-        val files = list(context)
+    /** 读取全部崩溃记录合并为文本；任何文件不可读都使导出失败。 */
+    fun readAll(context: Context): String = readRecords(list(context))
+
+    internal fun readRecords(files: List<File>): String {
         if (files.isEmpty()) return "（无崩溃记录）"
-        return files.joinToString("\n\n") { f ->
-            "########## ${f.name} ##########\n" + runCatching { f.readText() }.getOrDefault("（读取失败）")
+        return files.joinToString("\n\n") { file ->
+            "########## ${file.name} ##########\n${file.readText()}"
         }
+    }
+
+    /** 清空崩溃记录并返回删除数量；部分删除失败时不得报告成功。 */
+    fun clear(context: Context): Int = clearRecords(list(context))
+
+    internal fun clearRecords(files: List<File>): Int {
+        val failed = files.filter { it.exists() && !it.delete() }
+        if (failed.isNotEmpty()) {
+            throw IOException("${failed.size} 个崩溃文件删除失败: ${failed.joinToString { it.name }}")
+        }
+        return files.size
     }
 
     /** 保留最近 MAX_FILES 个记录，避免无限占用存储。 */
