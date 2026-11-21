@@ -3,9 +3,13 @@ package com.jarvis.pineapple.model
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.request.header
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
@@ -28,6 +32,8 @@ class ApiModel(
     )
     override var state: ModelState = ModelState.READY
 
+    private val json = Json { ignoreUnknownKeys = true }
+
     override suspend fun load() { state = ModelState.READY }
     override suspend fun unload() { state = ModelState.UNLOADED }
 
@@ -42,8 +48,12 @@ class ApiModel(
             header("Content-Type", "application/json")
             setBody(body)
         }
+        if (!response.status.isSuccess()) {
+            throw ApiRequestException(response.status.value, response.bodyAsText().take(MAX_ERROR_BODY))
+        }
         val result: ChatResponse = response.body()
-        return result.choices.firstOrNull()?.message?.content ?: ""
+        return result.choices.firstOrNull()?.message?.content?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("API 返回空回答")
     }
 
     override fun stream(prompt: String, systemPrompt: String?): Flow<String> = flow {
@@ -52,26 +62,49 @@ class ApiModel(
             add(Message("user", prompt))
         }
         val body = ChatRequest(model = modelName, messages = messages, stream = true)
-        val response = httpClient.post("$baseUrl/chat/completions") {
+        httpClient.preparePost("$baseUrl/chat/completions") {
             header("Authorization", "Bearer $apiKey")
             header("Content-Type", "application/json")
+            header("Accept", "text/event-stream")
             setBody(body)
-        }
-        val text = response.bodyAsText()
-        text.lineSequence().forEach { line ->
-            if (line.startsWith("data: ") && !line.contains("[DONE]")) {
-                val json = line.removePrefix("data: ").trim()
-                runCatching {
-                    val chunk = Json.decodeFromString<ChatChunkResponse>(json)
-                    chunk.choices.firstOrNull()?.delta?.content?.let { emit(it) }
+        }.execute { response ->
+            if (!response.status.isSuccess()) {
+                throw ApiRequestException(response.status.value, response.bodyAsText().take(MAX_ERROR_BODY))
+            }
+            val channel = response.bodyAsChannel()
+            var receivedData = false
+            var emittedContent = false
+            while (true) {
+                val line = channel.readUTF8Line() ?: break
+                if (!line.startsWith("data:")) continue
+                val payload = line.removePrefix("data:").trim()
+                if (payload == "[DONE]") break
+                if (payload.isEmpty()) continue
+                receivedData = true
+                val chunk = try {
+                    json.decodeFromString<ChatChunkResponse>(payload)
+                } catch (e: Exception) {
+                    throw IllegalStateException("API 返回了无效的流式数据", e)
+                }
+                chunk.choices.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }?.let {
+                    emittedContent = true
+                    emit(it)
                 }
             }
+            check(receivedData) { "API 未返回流式数据" }
+            check(emittedContent) { "API 返回空回答" }
         }
     }
 }
 
+private const val MAX_ERROR_BODY = 500
+
+private class ApiRequestException(status: Int, body: String) : IllegalStateException(
+    "API 请求失败（HTTP $status）" + if (body.isBlank()) "" else "：$body"
+)
+
 @Serializable
-data class Message(val role: String, val content: String)
+data class Message(val role: String = "", val content: String = "")
 
 @Serializable
 data class ChatRequest(

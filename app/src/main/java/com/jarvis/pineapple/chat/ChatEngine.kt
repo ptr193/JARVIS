@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
@@ -179,6 +180,7 @@ class ChatEngine(
 
         val flow = activeModel.stream(fullPrompt, systemPrompt)
         val collected = StringBuilder()
+        var failed = false
 
         return flow
             .onEach { chunk ->
@@ -188,6 +190,19 @@ class ChatEngine(
                     conversation.messages[idx] = conversation.messages[idx].copy(content = collected.toString())
                     _messages.value = conversation.messages.toList()
                 }
+            }
+            .catch { error ->
+                failed = true
+                val message = "模型请求失败：${error.message ?: error.javaClass.simpleName}"
+                val idx = conversation.messages.indexOfLast { it.isStreaming }
+                if (idx >= 0) {
+                    conversation.messages[idx] = conversation.messages[idx].copy(
+                        content = message,
+                        isStreaming = false
+                    )
+                    _messages.value = conversation.messages.toList()
+                }
+                _lastSchedulingInfo.value = message
             }
             .onCompletion {
                 val idx = conversation.messages.indexOfLast { it.isStreaming }
@@ -202,7 +217,7 @@ class ChatEngine(
 
                 conversationRepository.updateMessages(conversation.messages.toList())
 
-                if (collected.isNotEmpty()) {
+                if (!failed && collected.isNotEmpty()) {
                     val summary = "用户问：${content.take(50)}... JARVIS答：${collected.toString().take(100)}..."
                     memorySystem.recordConversation(summary)
                 }
