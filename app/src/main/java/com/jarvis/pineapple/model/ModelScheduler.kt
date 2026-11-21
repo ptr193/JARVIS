@@ -61,6 +61,15 @@ class ModelScheduler(
         refresh()
     }
 
+    /** 替换设置页配置的个人服务器模型；传 null 表示清除该配置。 */
+    fun setServerModel(model: AiModel?) {
+        val serverWasActive = serverModels.any { it.info.id == _activeModel.value.info.id }
+        serverModels.clear()
+        model?.let(serverModels::add)
+        if (serverWasActive) _activeModel.value = model ?: userModel
+        refresh()
+    }
+
     fun selectModel(modelId: String) {
         _availableModels.value.firstOrNull { it.info.id == modelId }?.let {
             _activeModel.value = it

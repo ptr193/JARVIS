@@ -203,6 +203,7 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
     var apiKey by remember { mutableStateOf("") }
     var serverUrl by remember { mutableStateOf("") }
     var modelName by remember { mutableStateOf("") }
+    var personalServerUrl by remember { mutableStateOf("") }
     val scheduler = remember {
         org.koin.core.context.GlobalContext.get().get<com.jarvis.pineapple.model.ModelScheduler>()
     }
@@ -216,6 +217,7 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
         apiKey = prefs.getString("api_key", "") ?: ""
         serverUrl = prefs.getString("server_url", "") ?: ""
         modelName = prefs.getString("model_name", "") ?: ""
+        personalServerUrl = prefs.getString("personal_server_url", "") ?: ""
     }
 
     Text("OpenAI 兼容 API 配置", style = MaterialTheme.typography.titleMedium)
@@ -269,6 +271,42 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
             .apply()
         showMsg(if (values.all(String::isEmpty)) "API 模型配置已清除" else "API 模型配置已保存并生效")
     }) { Text("保存配置") }
+
+    Spacer(Modifier.height(24.dp))
+    Text("个人服务器模型配置", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "服务需提供 POST /generate，接收 prompt 和 system 字段，并返回 JSON：{\"response\":\"回答\"}",
+        style = MaterialTheme.typography.bodySmall
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = personalServerUrl,
+        onValueChange = { personalServerUrl = it },
+        label = { Text("服务器基础地址（不含 /generate）") },
+        singleLine = true
+    )
+    Spacer(Modifier.height(8.dp))
+    Button(onClick = {
+        val url = personalServerUrl.trim().trimEnd('/')
+        if (url.isNotEmpty() && !com.jarvis.pineapple.model.ServerModel.isValidServerUrl(url)) {
+            showMsg("请输入完整有效的 HTTP(S) 服务器地址")
+            return@Button
+        }
+        scheduler.setServerModel(
+            if (url.isEmpty()) null else com.jarvis.pineapple.model.ServerModel(
+                id = "configured_server",
+                name = "个人服务器",
+                serverUrl = url,
+                httpClient = httpClient
+            )
+        )
+        context.getSharedPreferences("jarvis_service", Context.MODE_PRIVATE)
+            .edit()
+            .putString("personal_server_url", url)
+            .apply()
+        showMsg(if (url.isEmpty()) "个人服务器配置已清除" else "个人服务器配置已保存并生效")
+    }) { Text("保存服务器配置") }
 
     Spacer(Modifier.height(16.dp))
     Text("模型下载管理", style = MaterialTheme.typography.titleMedium)

@@ -114,6 +114,17 @@ val appModule = module {
                 )
             )
         }
+        val personalServerUrl = prefs.getString("personal_server_url", "")?.trim()?.trimEnd('/').orEmpty()
+        if (personalServerUrl.isNotEmpty()) {
+            scheduler.setServerModel(
+                com.jarvis.pineapple.model.ServerModel(
+                    id = "configured_server",
+                    name = "个人服务器",
+                    serverUrl = personalServerUrl,
+                    httpClient = get()
+                )
+            )
+        }
         scheduler.also { ModelRegistry.scheduler = it }
     }
     single { ModelCapabilityScheduler(get()).also { it.registerDefaultProfiles() } }
