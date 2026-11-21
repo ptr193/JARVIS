@@ -33,6 +33,8 @@ class ChatViewModel(
 
     val currentConversationId: StateFlow<String?> = chatEngine.currentConversationId
 
+    val persistenceError: StateFlow<String?> = chatEngine.persistenceError
+
     val activeModelName: StateFlow<String> = modelScheduler.activeModel
         .map { it.info.name }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "本地模型")

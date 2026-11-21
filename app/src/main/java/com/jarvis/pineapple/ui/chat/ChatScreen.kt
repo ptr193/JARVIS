@@ -97,6 +97,7 @@ fun ChatScreen(
     val schedulingInfo by viewModel.lastSchedulingInfo.collectAsState()
     val conversations by viewModel.conversations.collectAsState()
     val currentConversationId by viewModel.currentConversationId.collectAsState()
+    val persistenceError by viewModel.persistenceError.collectAsState()
     val wakeUnavailable by wakeEngine.unavailableReasons.collectAsState()
     var input by remember { mutableStateOf("") }
     var voiceNotice by remember { mutableStateOf<String?>(null) }
@@ -208,6 +209,21 @@ fun ChatScreen(
                     modifier = Modifier.padding(12.dp),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        persistenceError?.let { error ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = error,
+                    modifier = Modifier.padding(12.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
             }
         }

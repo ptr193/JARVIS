@@ -52,6 +52,7 @@ class ChatEngine(
 
     val conversations: StateFlow<List<Conversation>> = conversationRepository.conversations
     val currentConversationId: StateFlow<String?> = conversationRepository.currentConversationId
+    val persistenceError: StateFlow<String?> = conversationRepository.lastError
 
     private var conversation = Conversation()
 

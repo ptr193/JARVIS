@@ -1,9 +1,11 @@
 package com.jarvis.pineapple.chat
 
+import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -92,5 +94,45 @@ class ConversationRepositoryTest {
         pool.shutdownNow()
         assertEquals(workers * perWorker, repo.conversations.value.size)
         assertEquals(workers * perWorker, dir.listFiles { f -> f.extension == "json" }!!.size)
+    }
+
+    @Test
+    fun saveFailureIsVisibleAndDoesNotReplacePersistedState() {
+        val dir = tmp.newFolder("save-blocked")
+        val repo = ConversationRepository(conversationsDirOverride = dir)
+        val conversation = repo.createConversation("保留原状态")
+        assertTrue(File(dir, "${conversation.id}.json").delete())
+        assertTrue(dir.delete())
+        dir.writeText("not-a-directory")
+
+        assertFalse(repo.updateMessages(listOf(ChatMessage(role = Role.USER, content = "未保存"))))
+        assertTrue(repo.getCurrentConversation()?.messages?.isEmpty() == true)
+        assertTrue(repo.lastError.value?.contains("保存失败") == true)
+    }
+
+    @Test
+    fun deleteFailureRetainsConversationAndReportsError() {
+        val dir = tmp.newFolder("delete-blocked")
+        val repo = ConversationRepository(conversationsDirOverride = dir)
+        val conversation = repo.createConversation("不能静默删除")
+        val file = File(dir, "${conversation.id}.json")
+        assertTrue(file.delete())
+        assertTrue(file.mkdir())
+        File(file, "child").writeText("prevent delete")
+
+        assertFalse(repo.deleteConversation(conversation.id))
+        assertEquals(1, repo.conversations.value.size)
+        assertTrue(repo.lastError.value?.contains("删除失败") == true)
+    }
+
+    @Test
+    fun malformedConversationIsReportedDuringLoad() {
+        val dir = tmp.newFolder("malformed")
+        File(dir, "broken.json").writeText("{not-json")
+
+        val repo = ConversationRepository(conversationsDirOverride = dir)
+
+        assertTrue(repo.conversations.value.isEmpty())
+        assertTrue(repo.lastError.value?.contains("读取失败") == true)
     }
 }
