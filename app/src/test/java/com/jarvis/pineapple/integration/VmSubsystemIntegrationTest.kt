@@ -20,7 +20,7 @@ class VmSubsystemIntegrationTest {
     @Test
     fun `guest files and terminal paths use the same rootfs`() {
         val rootfs = tmp.newFolder("rootfs")
-        val files = VmFileManager("vm_test", rootfs.absolutePath)
+        val files = VmFileManager(rootfs.absolutePath)
 
         assertTrue(files.createDirectory("workspace"))
         files.navigateTo("/workspace")

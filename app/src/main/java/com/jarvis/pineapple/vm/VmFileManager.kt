@@ -15,8 +15,7 @@ data class VmFile(
     val path: String,
     val isDirectory: Boolean,
     val sizeBytes: Long = 0,
-    val lastModified: Long = System.currentTimeMillis(),
-    val permissions: String = "rwxr-xr-x"
+    val lastModified: Long = System.currentTimeMillis()
 )
 
 /**
@@ -26,11 +25,10 @@ data class VmFile(
  * 无需 root，支持浏览、增删改、上传下载与搜索。
  */
 class VmFileManager(
-    private val vmId: String,
-    private val rootfsPath: String,
+    rootfsPath: String,
     private val basePath: String = "/"
 ) {
-    private val root: File get() = File(rootfsPath)
+    private val root: File = File(rootfsPath).canonicalFile
 
     private val _currentPath = MutableStateFlow(basePath)
     val currentPath: StateFlow<String> = _currentPath.asStateFlow()
@@ -43,36 +41,43 @@ class VmFileManager(
 
     private val navigationHistory = mutableListOf<String>()
 
-    /** guest 路径 -> 宿主机 File（含路径穿越防护） */
-    private fun hostFile(guestPath: String): File {
-        val rel = guestPath.trimStart('/')
-        val file = File(root, rel)
-        val canonicalRoot = root.canonicalPath
-        val canonical = try { file.canonicalFile } catch (e: Exception) { file }
-        return if (canonical.path.startsWith(canonicalRoot)) canonical else root
+    /** guest 路径 -> 宿主机 File；越界路径返回 null，绝不回退到根目录。 */
+    private fun hostFile(guestPath: String): File? {
+        return try {
+            val file = File(root, guestPath.trimStart('/')).canonicalFile
+            if (isInsideRoot(file)) file else null
+        } catch (e: Exception) {
+            null
+        }
     }
 
-    /** 宿主机 File -> guest 路径 */
+    private fun isInsideRoot(file: File): Boolean =
+        file == root || file.path.startsWith(root.path + File.separator)
+
+    /** 宿主机 File -> guest 路径，不解析符号链接的显示路径。 */
     private fun guestPath(file: File): String {
-        val rel = file.canonicalPath.removePrefix(root.canonicalPath)
-        return if (rel.isEmpty()) "/" else rel
+        val relative = file.absoluteFile.relativeTo(root).invariantSeparatorsPath
+        return if (relative.isEmpty()) "/" else "/$relative"
     }
 
     fun listFiles(path: String = _currentPath.value): List<VmFile> {
         _isLoading.value = true
-        _currentPath.value = path
-        val dir = hostFile(path)
-        val result = if (dir.isDirectory) {
-            dir.listFiles()
-                ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
-                ?.map { toVmFile(it) }
-                ?: emptyList()
-        } else {
-            emptyList()
+        return try {
+            val dir = hostFile(path)
+            val result = if (dir?.isDirectory == true) {
+                dir.listFiles()
+                    ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                    ?.map { toVmFile(it) }
+                    ?: emptyList()
+            } else {
+                emptyList()
+            }
+            if (dir != null) _currentPath.value = guestPath(dir)
+            _files.value = result
+            result
+        } finally {
+            _isLoading.value = false
         }
-        _files.value = result
-        _isLoading.value = false
-        return result
     }
 
     private fun toVmFile(file: File): VmFile = VmFile(
@@ -80,23 +85,20 @@ class VmFileManager(
         path = guestPath(file),
         isDirectory = file.isDirectory,
         sizeBytes = if (file.isDirectory) dirSize(file) else file.length(),
-        lastModified = file.lastModified(),
-        permissions = formatPermissions(file)
+        lastModified = file.lastModified()
     )
 
-    private fun formatPermissions(file: File): String {
-        val type = if (file.isDirectory) "d" else "-"
-        val r = if (file.canRead()) "r" else "-"
-        val w = if (file.canWrite()) "w" else "-"
-        val x = if (file.canExecute()) "x" else "-"
-        return "$type$r$w$x$r$w$x$r$w$x"
-    }
-
     private fun dirSize(dir: File): Long {
+        if (isSymbolicLink(dir) || !isInsideRoot(dir.canonicalFile)) return 0
         var size = 0L
-        dir.listFiles()?.forEach { size += if (it.isDirectory) dirSize(it) else it.length() }
+        dir.listFiles()?.forEach { file ->
+            size += if (file.isDirectory) dirSize(file) else if (isInsideRoot(file.canonicalFile)) file.length() else 0L
+        }
         return size
     }
+
+    private fun isSymbolicLink(file: File): Boolean =
+        try { file.canonicalFile != file.absoluteFile } catch (e: Exception) { true }
 
     fun enterDirectory(dirName: String) {
         val currentPath = _currentPath.value
@@ -118,10 +120,10 @@ class VmFileManager(
     }
 
     fun createDirectory(name: String): Boolean {
-        val target = hostFile(joinPath(_currentPath.value, name))
+        val target = hostFile(joinPath(_currentPath.value, name)) ?: return false
         return try {
             val ok = target.mkdirs()
-            listFiles(_currentPath.value)
+            if (ok) listFiles(_currentPath.value)
             ok
         } catch (e: Exception) {
             false
@@ -129,7 +131,7 @@ class VmFileManager(
     }
 
     fun createFile(name: String, content: String = ""): Boolean {
-        val target = hostFile(joinPath(_currentPath.value, name))
+        val target = hostFile(joinPath(_currentPath.value, name)) ?: return false
         return try {
             target.parentFile?.mkdirs()
             target.writeText(content)
@@ -141,23 +143,28 @@ class VmFileManager(
     }
 
     fun delete(path: String): Boolean {
-        val target = hostFile(path)
+        val target = hostFile(path) ?: return false
+        if (target == root) return false
         val ok = try {
             if (target.isDirectory) target.deleteRecursively() else target.delete()
         } catch (e: Exception) {
             false
         }
-        listFiles(_currentPath.value)
+        if (ok) listFiles(_currentPath.value)
         return ok
     }
 
     fun rename(oldPath: String, newName: String): Boolean {
-        val source = hostFile(oldPath)
+        val source = hostFile(oldPath) ?: return false
+        if (source == root || newName.isBlank() || newName == "." || newName == ".." || newName.contains('/')) {
+            return false
+        }
         val parent = source.parentFile ?: return false
-        val dest = File(parent, newName)
+        val dest = try { File(parent, newName).canonicalFile } catch (e: Exception) { return false }
+        if (!isInsideRoot(dest)) return false
         return try {
             val ok = source.renameTo(dest)
-            listFiles(_currentPath.value)
+            if (ok) listFiles(_currentPath.value)
             ok
         } catch (e: Exception) {
             false
@@ -165,8 +172,8 @@ class VmFileManager(
     }
 
     fun readFile(path: String, maxChars: Int = 100_000): String {
-        val target = hostFile(path)
-        if (!target.exists() || target.isDirectory) return ""
+        val target = hostFile(path) ?: return ""
+        if (!target.isFile) return ""
         return try {
             val text = target.readText()
             if (text.length > maxChars) text.substring(0, maxChars) + "\n...(已截断)" else text
@@ -176,7 +183,7 @@ class VmFileManager(
     }
 
     fun writeFile(path: String, content: String): Boolean {
-        val target = hostFile(path)
+        val target = hostFile(path) ?: return false
         return try {
             target.parentFile?.mkdirs()
             target.writeText(content)
@@ -187,15 +194,14 @@ class VmFileManager(
         }
     }
 
-    /**
-     * 将宿主机文件上传到 guest 指定目录。
-     */
+    /** 将宿主机文件上传到 guest 指定目录。 */
     suspend fun uploadFile(localPath: String, remotePath: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val source = File(localPath)
-            if (!source.exists()) return@withContext false
-            val targetDir = hostFile(remotePath)
-            val target = if (targetDir.isDirectory) File(targetDir, source.name) else targetDir
+            if (!source.isFile) return@withContext false
+            val targetDir = hostFile(remotePath) ?: return@withContext false
+            val target = if (targetDir.isDirectory) File(targetDir, source.name).canonicalFile else targetDir
+            if (!isInsideRoot(target)) return@withContext false
             target.parentFile?.mkdirs()
             source.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
             listFiles(_currentPath.value)
@@ -205,13 +211,11 @@ class VmFileManager(
         }
     }
 
-    /**
-     * 从 guest 下载文件到宿主机路径。
-     */
+    /** 从 guest 下载文件到宿主机路径。 */
     suspend fun downloadFile(remotePath: String, localPath: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val source = hostFile(remotePath)
-            if (!source.exists() || source.isDirectory) return@withContext false
+            val source = hostFile(remotePath) ?: return@withContext false
+            if (!source.isFile) return@withContext false
             val target = File(localPath)
             target.parentFile?.mkdirs()
             source.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
@@ -221,14 +225,15 @@ class VmFileManager(
         }
     }
 
-    /**
-     * 递归搜索文件名。
-     */
+    /** 递归搜索文件名，不跟随符号链接或进入 rootfs 外目录。 */
     fun searchFiles(query: String, path: String = _currentPath.value): List<VmFile> {
-        val start = hostFile(path)
+        val start = hostFile(path) ?: return emptyList()
         val result = mutableListOf<VmFile>()
         start.walkTopDown()
-            .onEnter { it.name != "proc" && it.name != "sys" && it.name != "dev" }
+            .onEnter { file ->
+                file.name != "proc" && file.name != "sys" && file.name != "dev" &&
+                    !isSymbolicLink(file) && isInsideRoot(file.canonicalFile)
+            }
             .forEach { file ->
                 if (file != start && file.name.contains(query, ignoreCase = true)) {
                     result.add(toVmFile(file))
@@ -238,7 +243,7 @@ class VmFileManager(
     }
 
     fun getFileDetails(path: String): VmFile? {
-        val target = hostFile(path)
+        val target = hostFile(path) ?: return null
         return if (target.exists()) toVmFile(target) else null
     }
 

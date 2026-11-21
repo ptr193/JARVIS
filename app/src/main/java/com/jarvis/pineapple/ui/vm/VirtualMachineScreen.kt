@@ -555,7 +555,7 @@ private fun FileTab(vm: HavenVmManager.HavenVm?, showMsg: (String) -> Unit) {
         EmptyHint("请先在“虚拟机”中选择一个虚拟机")
         return
     }
-    val manager = remember(vm.id) { VmFileManager(vm.id, vm.rootfsPath) }
+    val manager = remember(vm.id) { VmFileManager(vm.rootfsPath) }
     val currentPath by manager.currentPath.collectAsState()
     var files by remember { mutableStateOf<List<VmFile>>(emptyList()) }
 

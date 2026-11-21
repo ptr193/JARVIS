@@ -2,11 +2,13 @@ package com.jarvis.pineapple.vm
 
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * PRoot 验收：ABI 拒绝、缺失二进制中文错误、创建失败原因、Kali 校验和。
@@ -62,6 +64,23 @@ class ProotManagerTest {
         assertEquals("发行版未下载", HavenVmManager.createFailureReason(distroDownloaded = false))
         assertEquals("校验失败", HavenVmManager.createFailureReason(distroDownloaded = false, downloadError = "校验失败"))
         assertEquals("rootfs 为空", HavenVmManager.createFailureReason(rootfsReady = false))
+    }
+
+    @Test
+    fun `guest copies reject paths outside rootfs`() = runBlocking {
+        val rootfs = tmp.newFolder("rootfs")
+        val outside = tmp.newFolder("outside")
+        val secret = File(outside, "secret.txt").apply { writeText("private") }
+        val source = File(tmp.root, "source.txt").apply { writeText("content") }
+        val downloaded = File(tmp.root, "downloaded.txt")
+        val mgr = ProotManager(tmp.newFolder("proot-home"), tmp.newFolder("cache"), { arrayOf("arm64-v8a") })
+        val config = ProotManager.ProotConfig(rootfsPath = rootfs.absolutePath)
+
+        assertFalse(mgr.copyToGuest(config, source.absolutePath, "../outside/copied.txt"))
+        assertFalse(mgr.copyFromGuest(config, "../outside/secret.txt", downloaded.absolutePath))
+        assertFalse(File(outside, "copied.txt").exists())
+        assertFalse(downloaded.exists())
+        assertEquals("private", secret.readText())
     }
 
     @Test

@@ -353,8 +353,8 @@ class ProotManager internal constructor(
     suspend fun copyToGuest(config: ProotConfig, hostPath: String, guestPath: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val hostFile = File(hostPath)
-            if (!hostFile.exists()) return@withContext false
-            val guestFile = File(config.rootfsPath, guestPath.trimStart('/'))
+            if (!hostFile.isFile) return@withContext false
+            val guestFile = resolveGuestFile(config, guestPath) ?: return@withContext false
             guestFile.parentFile?.mkdirs()
             hostFile.inputStream().use { input ->
                 FileOutputStream(guestFile).use { output -> input.copyTo(output) }
@@ -370,8 +370,8 @@ class ProotManager internal constructor(
      */
     suspend fun copyFromGuest(config: ProotConfig, guestPath: String, hostPath: String): Boolean = withContext(Dispatchers.IO) {
         try {
-            val guestFile = File(config.rootfsPath, guestPath.trimStart('/'))
-            if (!guestFile.exists()) return@withContext false
+            val guestFile = resolveGuestFile(config, guestPath) ?: return@withContext false
+            if (!guestFile.isFile) return@withContext false
             val hostFile = File(hostPath)
             hostFile.parentFile?.mkdirs()
             guestFile.inputStream().use { input ->
@@ -380,6 +380,16 @@ class ProotManager internal constructor(
             true
         } catch (e: Exception) {
             false
+        }
+    }
+
+    private fun resolveGuestFile(config: ProotConfig, guestPath: String): File? {
+        return try {
+            val root = File(config.rootfsPath).canonicalFile
+            val target = File(root, guestPath.trimStart('/')).canonicalFile
+            if (target == root || target.path.startsWith(root.path + File.separator)) target else null
+        } catch (e: Exception) {
+            null
         }
     }
 
