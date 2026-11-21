@@ -28,7 +28,10 @@ import java.net.URL
 class ProotManager internal constructor(
     private val filesDir: File,
     private val cacheDir: File,
-    private val abiProvider: () -> Array<String> = { Build.SUPPORTED_ABIS }
+    private val abiProvider: () -> Array<String> = { Build.SUPPORTED_ABIS },
+    private val symbolicLinkChecker: (File) -> Boolean = { file ->
+        android.system.OsConstants.S_ISLNK(android.system.Os.lstat(file.absolutePath).st_mode)
+    }
 ) {
 
     constructor(context: Context) : this(context.filesDir, context.cacheDir)
@@ -346,12 +349,11 @@ class ProotManager internal constructor(
         return listOf("/bin/sh")
     }
 
-    private fun isRealBinary(file: File): Boolean {
+    internal fun isRealBinary(file: File): Boolean {
         return try {
-            val mode = android.system.Os.lstat(file.absolutePath).st_mode
-            !android.system.OsConstants.S_ISLNK(mode)
+            !symbolicLinkChecker(file)
         } catch (e: Exception) {
-            true
+            false
         }
     }
 

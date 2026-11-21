@@ -123,6 +123,27 @@ class ProotManagerTest {
     }
 
     @Test
+    fun `shell detection rejects symlinks and lstat failures`() {
+        val binary = tmp.newFile("bash")
+        val regular = ProotManager(
+            tmp.newFolder("regular-home"), tmp.newFolder("regular-cache"),
+            { arrayOf("arm64-v8a") }, { false }
+        )
+        val symlink = ProotManager(
+            tmp.newFolder("symlink-home"), tmp.newFolder("symlink-cache"),
+            { arrayOf("arm64-v8a") }, { true }
+        )
+        val failed = ProotManager(
+            tmp.newFolder("failed-home"), tmp.newFolder("failed-cache"),
+            { arrayOf("arm64-v8a") }, { throw java.io.IOException("lstat failed") }
+        )
+
+        assertTrue(regular.isRealBinary(binary))
+        assertFalse(symlink.isRealBinary(binary))
+        assertFalse(failed.isRealBinary(binary))
+    }
+
+    @Test
     fun `package list preserves guest failure`() = runBlocking {
         val rootfs = tmp.newFolder("package-rootfs")
         val filesDir = tmp.newFolder("package-proot")
