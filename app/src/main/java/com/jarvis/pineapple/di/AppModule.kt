@@ -49,7 +49,6 @@ import com.jarvis.pineapple.system.CommunicationManager
 import com.jarvis.pineapple.system.PermissionManager
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.CrossAppOperator
-import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.DeviceMonitor
 import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.NavigationController
@@ -119,7 +118,6 @@ val appModule = module {
     single { DeviceMonitor(get()) }
     single { CrossAppOperator(get()) }
     single { CommunicationManager(get()) }
-    single { DeviceControlManager(get()) }
     single { ScreenshotManager(get()) }
     single { HardwareDiagnostics(get()) }
 

@@ -32,7 +32,6 @@ import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 import com.jarvis.pineapple.system.CalendarController
 import com.jarvis.pineapple.system.CommunicationManager
 import com.jarvis.pineapple.system.CrossAppOperator
-import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
@@ -58,12 +57,10 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val media = remember { GlobalContext.get().get<MediaController>() }
     val crossApp = remember { GlobalContext.get().get<CrossAppOperator>() }
     val communication = remember { GlobalContext.get().get<CommunicationManager>() }
-    val deviceControl = remember { GlobalContext.get().get<DeviceControlManager>() }
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
     val reminders by communication.reminders.collectAsState()
-    val lightStates by deviceControl.lightStates.collectAsState()
 
     var phoneNumber by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
@@ -252,20 +249,6 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
                 systemInfo = "白名单：${crossApp.getWhitelist().joinToString("、")}"
                 showMsg(if (added) "已加入跨应用白名单" else "未加入：包名无效、应用不可见或已在白名单中")
             }) { Text("加入白名单") }
-        }
-        Text("智能家居灯具：${lightStates.size} 台", fontSize = 12.sp)
-        Row {
-            OutlinedButton(onClick = {
-                val light = deviceControl.lightStates.value.firstOrNull()
-                if (light == null) showMsg("未检测到设备")
-                else {
-                    scope.launch {
-                        showMsg(deviceControl.turnOnLight(light.deviceId))
-                    }
-                }
-            }) { Text("开灯") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = { deviceControl.disarmSecurity(); showMsg("已解除安防布防") }) { Text("解除布防") }
         }
     }
 
