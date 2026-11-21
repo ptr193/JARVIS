@@ -124,12 +124,6 @@ class MainActivity : ComponentActivity() {
         apply(WakeSource.POWER_BUTTON, "power_wake", true)
         apply(WakeSource.SHAKE, "shake_wake", true)
         apply(WakeSource.BLUETOOTH, "bluetooth_wake", true)
-        // 云端总开关恢复
-        runCatching {
-            org.koin.core.context.GlobalContext.get()
-                .get<com.jarvis.pineapple.cloud.CloudSyncManager>()
-                .setCloudEnabled(prefs.getBoolean("cloud_sync", false))
-        }
     }
 
     /** 处理来自通知唤醒按钮 / 快捷磁贴的 Intent，转为 WakeEngine 唤醒事件。 */

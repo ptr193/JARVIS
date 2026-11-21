@@ -33,7 +33,6 @@ data class ConnectedDevice(
 enum class DeviceType { PHONE, TABLET, COMPUTER, SMART_HOME, OTHER }
 
 data class SyncStatus(
-    val isCloudEnabled: Boolean = false,
     val isSyncing: Boolean = false,
     val lastSyncTime: Long = 0,
     val pendingCommands: Int = 0,
@@ -99,16 +98,11 @@ class CloudSyncManager(
         }
     }
 
-    private val _syncStatus = MutableStateFlow(SyncStatus(isCloudEnabled = serverUrl.isNotBlank()))
+    private val _syncStatus = MutableStateFlow(SyncStatus())
     val syncStatus: StateFlow<SyncStatus> = _syncStatus.asStateFlow()
 
     /** 云端功能是否可用 */
     fun isCloudAvailable(): Boolean = serverUrl.isNotBlank()
-
-    /** 启用/禁用云端同步 */
-    fun setCloudEnabled(enabled: Boolean) {
-        _syncStatus.value = _syncStatus.value.copy(isCloudEnabled = enabled && serverUrl.isNotBlank())
-    }
 
     // ==================== 账号与多设备接入（#134） ====================
 
@@ -131,15 +125,18 @@ class CloudSyncManager(
     suspend fun login(account: String, password: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            val response: AccountLoginResponse = httpClient.post("$serverUrl/api/auth/login") {
+            val httpResponse = httpClient.post("$serverUrl/api/auth/login") {
                 contentType(ContentType.Application.Json)
                 setBody(AccountLoginRequest(account, password))
-            }.body()
-            if (response.success && response.token != null) {
+            }
+            if (httpResponse.status.value !in 200..299) return false
+            val response: AccountLoginResponse = httpResponse.body()
+            val authenticated = response.success && !response.token.isNullOrBlank()
+            if (authenticated) {
                 _accountName.value = account
                 _accountToken.value = response.token
             }
-            response.success
+            authenticated
         } catch (e: Exception) {
             Log.w("CloudSyncManager", "login failed", e)
             false
@@ -150,16 +147,19 @@ class CloudSyncManager(
     suspend fun register(account: String, password: String, deviceName: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            val response: AccountLoginResponse = httpClient.post("$serverUrl/api/auth/register") {
+            val httpResponse = httpClient.post("$serverUrl/api/auth/register") {
                 contentType(ContentType.Application.Json)
                 setBody(AccountLoginRequest(account, password))
                 header("X-Device-Name", deviceName)
-            }.body()
-            if (response.success && response.token != null) {
+            }
+            if (httpResponse.status.value !in 200..299) return false
+            val response: AccountLoginResponse = httpResponse.body()
+            val authenticated = response.success && !response.token.isNullOrBlank()
+            if (authenticated) {
                 _accountName.value = account
                 _accountToken.value = response.token
             }
-            response.success
+            authenticated
         } catch (e: Exception) {
             Log.w("CloudSyncManager", "register failed", e)
             false
@@ -177,11 +177,13 @@ class CloudSyncManager(
         _accountToken.value?.let { header(HttpHeaders.Authorization, "Bearer $it") }
     }
 
-    /** 发现设备（云端不可用时返回空列表） */
-    suspend fun discoverDevices(): List<ConnectedDevice> {
-        if (!isCloudAvailable()) return emptyList()
+    /** 发现设备；请求失败返回 null，空列表只表示服务端确实没有设备。 */
+    suspend fun discoverDevices(): List<ConnectedDevice>? {
+        if (!isCloudAvailable()) return null
         return try {
-            val response: DeviceInfoResponse = httpClient.get("$serverUrl/api/devices") { authHeader() }.body()
+            val httpResponse = httpClient.get("$serverUrl/api/devices") { authHeader() }
+            if (httpResponse.status.value !in 200..299) return null
+            val response: DeviceInfoResponse = httpResponse.body()
             response.devices.map {
                 ConnectedDevice(
                     deviceId = it.id,
@@ -193,7 +195,7 @@ class CloudSyncManager(
             }
         } catch (e: Exception) {
             Log.w("CloudSyncManager", "discoverDevices failed", e)
-            emptyList()
+            null
         }
     }
 
@@ -201,11 +203,13 @@ class CloudSyncManager(
     suspend fun pairDevice(pairingCode: String, deviceName: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            val response: PairingResponse = httpClient.post("$serverUrl/api/devices/pair") {
+            val httpResponse = httpClient.post("$serverUrl/api/devices/pair") {
                 authHeader()
                 contentType(ContentType.Application.Json)
                 setBody(PairingRequest(pairingCode, deviceName))
-            }.body()
+            }
+            if (httpResponse.status.value !in 200..299) return false
+            val response: PairingResponse = httpResponse.body()
             response.success
         } catch (e: Exception) {
             Log.w("CloudSyncManager", "pairDevice failed", e)
@@ -217,11 +221,12 @@ class CloudSyncManager(
     suspend fun syncConversationState(state: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            httpClient.post("$serverUrl/api/sync/conversation") {
+            val response = httpClient.post("$serverUrl/api/sync/conversation") {
                 authHeader()
                 contentType(ContentType.Application.Json)
                 setBody(SyncData(deviceId = getDeviceId(), timestamp = System.currentTimeMillis(), conversationState = state))
             }
+            if (response.status.value !in 200..299) return false
             _syncStatus.value = _syncStatus.value.copy(lastSyncTime = System.currentTimeMillis())
             true
         } catch (e: Exception) {
@@ -233,12 +238,12 @@ class CloudSyncManager(
     suspend fun syncMemory(encryptedData: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            httpClient.post("$serverUrl/api/sync/memory") {
+            val response = httpClient.post("$serverUrl/api/sync/memory") {
                 authHeader()
                 contentType(ContentType.Application.Json)
                 setBody(SyncData(deviceId = getDeviceId(), timestamp = System.currentTimeMillis(), memoryData = encryptedData))
             }
-            true
+            response.status.value in 200..299
         } catch (e: Exception) {
             false
         }
@@ -248,12 +253,12 @@ class CloudSyncManager(
     suspend fun syncSettings(settingsJson: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            httpClient.post("$serverUrl/api/sync/settings") {
+            val response = httpClient.post("$serverUrl/api/sync/settings") {
                 authHeader()
                 contentType(ContentType.Application.Json)
                 setBody(SyncData(deviceId = getDeviceId(), timestamp = System.currentTimeMillis(), settings = settingsJson))
             }
-            true
+            response.status.value in 200..299
         } catch (e: Exception) {
             false
         }
@@ -263,12 +268,12 @@ class CloudSyncManager(
     suspend fun syncReminders(remindersJson: String): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            httpClient.post("$serverUrl/api/sync/reminders") {
+            val response = httpClient.post("$serverUrl/api/sync/reminders") {
                 authHeader()
                 contentType(ContentType.Application.Json)
                 setBody(SyncData(deviceId = getDeviceId(), timestamp = System.currentTimeMillis(), reminders = remindersJson))
             }
-            true
+            response.status.value in 200..299
         } catch (e: Exception) {
             false
         }
@@ -278,13 +283,13 @@ class CloudSyncManager(
     suspend fun sendRemoteCommand(targetDeviceId: String, action: String, params: Map<String, String>): Boolean {
         if (!isCloudAvailable()) return false
         return try {
-            httpClient.post("$serverUrl/api/commands") {
+            val response = httpClient.post("$serverUrl/api/commands") {
                 authHeader()
                 contentType(ContentType.Application.Json)
                 setBody(RemoteCommandRequest(action, params))
                 header("X-Target-Device", targetDeviceId)
             }
-            true
+            response.status.value in 200..299
         } catch (e: Exception) {
             false
         }

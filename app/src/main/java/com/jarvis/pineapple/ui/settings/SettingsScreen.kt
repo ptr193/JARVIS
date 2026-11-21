@@ -624,8 +624,10 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
             val c = cloud
             if (c != null && c.isCloudAvailable() && c.isLoggedIn()) {
                 val latest = withContext(Dispatchers.IO) { c.discoverDevices() }
-                devices.clear()
-                devices.addAll(latest)
+                if (latest != null) {
+                    devices.clear()
+                    devices.addAll(latest)
+                }
             }
             kotlinx.coroutines.delay(8_000)
         }
@@ -655,6 +657,7 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
             value = password,
             onValueChange = { password = it },
             label = { Text("密码") },
+            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
@@ -669,8 +672,11 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                         loggedIn = true
                         val token = c.accountToken.value
                         prefs.edit().putString("account", account.trim()).putString("token", token).apply()
-                        devices.clear()
-                        devices.addAll(c.discoverDevices())
+                        password = ""
+                        c.discoverDevices()?.let { discovered ->
+                            devices.clear()
+                            devices.addAll(discovered)
+                        }
                         showMsg("登录成功，已接入多设备")
                     } else {
                         showMsg(if (c.isCloudAvailable()) "登录失败，请检查账号密码" else "云端未配置，无法登录")
@@ -687,6 +693,7 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                         loggedIn = true
                         val token = c.accountToken.value
                         prefs.edit().putString("account", account.trim()).putString("token", token).apply()
+                        password = ""
                         showMsg("注册成功并已绑定当前设备")
                     } else {
                         showMsg(if (c.isCloudAvailable()) "注册失败" else "云端未配置，无法注册")
@@ -717,9 +724,14 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
             if (!c.isCloudAvailable()) { showMsg("云端未配置，无法发现远程设备"); return@Button }
             scope.launch {
                 showMsg("正在扫描设备...")
-                devices.clear()
-                devices.addAll(c.discoverDevices())
-                showMsg("发现 ${devices.size} 台设备")
+                val discovered = c.discoverDevices()
+                if (discovered == null) {
+                    showMsg("设备扫描失败，请检查网络、登录状态与服务响应")
+                } else {
+                    devices.clear()
+                    devices.addAll(discovered)
+                    showMsg("发现 ${discovered.size} 台设备")
+                }
             }
         }) { Text("扫描设备") }
         Spacer(Modifier.width(8.dp))
@@ -731,8 +743,10 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                 val ok = c.pairDevice(pairingCode.trim(), android.os.Build.MODEL)
                 showMsg(if (ok) "配对成功" else "配对失败，请检查配对码")
                 if (ok) {
-                    devices.clear()
-                    devices.addAll(c.discoverDevices())
+                    c.discoverDevices()?.let { discovered ->
+                        devices.clear()
+                        devices.addAll(discovered)
+                    }
                 }
             }
         }) { Text("配对") }
@@ -771,10 +785,6 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Button(onClick = {
-                        devices.remove(device)
-                        showMsg("设备已断开")
-                    }) { Text("断开") }
                 }
             }
         }
@@ -1048,7 +1058,6 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     var powerWake by remember { mutableStateOf(true) }
     var shakeWake by remember { mutableStateOf(true) }
     var bluetoothWake by remember { mutableStateOf(true) }
-    var cloudSync by remember { mutableStateOf(false) }
     var isDefaultAssistant by remember { mutableStateOf(false) }
 
     // 加载已保存的配置
@@ -1058,7 +1067,6 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
         powerWake = prefs.getBoolean("power_wake", true)
         shakeWake = prefs.getBoolean("shake_wake", true)
         bluetoothWake = prefs.getBoolean("bluetooth_wake", true)
-        cloudSync = prefs.getBoolean("cloud_sync", false)
         val detector = runCatching {
             org.koin.core.context.GlobalContext.get()
                 .get<com.jarvis.pineapple.wake.HomeLongPressDetector>()
@@ -1096,36 +1104,22 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     SettingSwitch("语音唤醒", voiceWake, {
         voiceWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.VOICE, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
     })
     SettingSwitch("电源键唤醒", powerWake, {
         powerWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.POWER_BUTTON, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
     })
     SettingSwitch("摇一摇唤醒", shakeWake, {
         shakeWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.SHAKE, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
     })
     SettingSwitch("蓝牙按键唤醒", bluetoothWake, {
         bluetoothWake = it
         applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.BLUETOOTH, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
-    })
-
-    Spacer(Modifier.height(16.dp))
-    Text("云端同步", style = MaterialTheme.typography.bodyMedium)
-    val cloud = remember { runCatching { org.koin.core.context.GlobalContext.get().get<com.jarvis.pineapple.cloud.CloudSyncManager>() }.getOrNull() }
-    SettingSwitch("启用云端同步", cloudSync, {
-        cloudSync = it
-        cloud?.setCloudEnabled(it)
-        if (it && cloud?.isCloudAvailable() == false) {
-            showMsg("未配置云端服务地址，云端能力不可用（本地功能不受影响）")
-        } else {
-            showMsg(if (it) "云端同步已开启" else "云端同步已关闭")
-        }
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake, cloudSync)
+        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
     })
 
     Spacer(Modifier.height(16.dp))
@@ -1182,8 +1176,7 @@ private fun saveGeneralPrefs(
     voiceWake: Boolean,
     powerWake: Boolean,
     shakeWake: Boolean,
-    bluetoothWake: Boolean,
-    cloudSync: Boolean
+    bluetoothWake: Boolean
 ) {
     val prefs = context.getSharedPreferences("jarvis_general", Context.MODE_PRIVATE)
     prefs.edit()
@@ -1191,7 +1184,6 @@ private fun saveGeneralPrefs(
         .putBoolean("power_wake", powerWake)
         .putBoolean("shake_wake", shakeWake)
         .putBoolean("bluetooth_wake", bluetoothWake)
-        .putBoolean("cloud_sync", cloudSync)
         .apply()
 }
 
