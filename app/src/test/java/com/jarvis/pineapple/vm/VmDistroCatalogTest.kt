@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.vm
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -26,6 +27,18 @@ class VmDistroCatalogTest {
         assertEquals(KALI_MINIMAL_ARM64_SHA256, kali.checksumSha256)
         assertEquals(VmDistroManager.ROCKY_IMPORT, catalog.first { it.id == "rocky_linux" }.unavailableReason)
         assertEquals(VmDistroManager.WINDOWS_IMPORT, catalog.first { it.id == "windows" }.unavailableReason)
+    }
+
+    @Test
+    fun distroDeletionMessageUsesActualResult() {
+        val path = "app/src/main/java/com/jarvis/pineapple/ui/vm/VirtualMachineScreen.kt"
+        val source = listOf(File(path), File("../$path")).firstOrNull { it.exists() }?.readText()
+            ?: error("无法定位源文件: $path")
+        val delete = source.substringAfter("onDelete = { id ->")
+            .substringBefore("onCreateVm = { id ->")
+
+        assertTrue(delete.contains("val deleted = distroManager.deleteDistro(id)"))
+        assertTrue(delete.contains("if (deleted) \"已删除发行版\" else \"发行版删除失败\""))
     }
 
     @Test

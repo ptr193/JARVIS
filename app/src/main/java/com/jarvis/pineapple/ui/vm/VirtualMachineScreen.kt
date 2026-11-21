@@ -168,8 +168,8 @@ fun VirtualMachineScreen(
                         }
                     },
                     onDelete = { id ->
-                        distroManager.deleteDistro(id)
-                        showMsg("已删除发行版")
+                        val deleted = distroManager.deleteDistro(id)
+                        showMsg(if (deleted) "已删除发行版" else "发行版删除失败")
                     },
                     onCreateVm = { id ->
                         scope.launch {
