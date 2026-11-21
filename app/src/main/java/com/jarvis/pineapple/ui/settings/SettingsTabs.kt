@@ -1,7 +1,7 @@
 package com.jarvis.pineapple.ui.settings
 
 /**
- * 设置页标签规格（产品规格书 3.3 十标签 + 已接入的扩展入口）。
+ * 设置页标签规格（仅保留已接入实际功能的入口）。
  */
 data class SettingsTabSpec(
     val title: String,
@@ -16,9 +16,8 @@ object SettingsTabs {
         SettingsTabSpec("代理", "设置灵魂（人格描述）"),
         SettingsTabSpec("服务", "AI、API 接入与服务器连接"),
         SettingsTabSpec("工具", "技能导入与卸载"),
-        SettingsTabSpec("虚拟机", "虚拟机参数与性能限制"),
+        SettingsTabSpec("虚拟机", "PRoot 用户设置与资源使用说明"),
         SettingsTabSpec("状态", "CPU、内存、温度与电池实时信息"),
-        SettingsTabSpec("仓库", "GitHub / GitLab 仓库管理"),
         SettingsTabSpec("连接设备", "已连接与可发现的手机、电脑、家居设备"),
         SettingsTabSpec("语言语音", "AI 声线与语言（默认钢铁侠中文男声）"),
         SettingsTabSpec("日志", "日志文件查看与导出"),

@@ -11,7 +11,7 @@ class SettingsTabsTest {
     fun specTabsMatchProductSpecSection33() {
         val titles = SettingsTabs.SPEC_TABS.map { it.title }
         assertEquals(
-            listOf("代理", "服务", "工具", "虚拟机", "状态", "仓库", "连接设备", "语言语音", "日志", "通用"),
+            listOf("代理", "服务", "工具", "虚拟机", "状态", "连接设备", "语言语音", "日志", "通用"),
             titles
         )
         SettingsTabs.SPEC_TABS.forEach { tab ->
@@ -19,7 +19,7 @@ class SettingsTabsTest {
         }
         assertEquals("设置灵魂（人格描述）", SettingsTabs.SPEC_TABS[0].description)
         assertEquals("CPU、内存、温度与电池实时信息", SettingsTabs.SPEC_TABS[4].description)
-        assertEquals("背景图、主题色、唤醒方式与默认助手", SettingsTabs.SPEC_TABS[9].description)
+        assertEquals("背景图、主题色、唤醒方式与默认助手", SettingsTabs.SPEC_TABS[8].description)
     }
 
     @Test

@@ -77,7 +77,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * 设置界面（规格书 3.3 十标签可滑动 + 扩展入口）
+ * 设置界面（仅展示已接入实际功能的标签）
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,14 +140,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                         2 -> ToolsTab(showMsg)
                         3 -> VmSettingsTab(showMsg)
                         4 -> StatusTab(showMsg)
-                        5 -> RepoTab(showMsg)
-                        6 -> ConnectedDevicesTab(showMsg)
-                        7 -> LanguageVoiceTab(showMsg)
-                        8 -> LogTab(showMsg = showMsg)
-                        9 -> GeneralTab(showMsg)
-                        10 -> SmartHubTab(showMsg)
-                        11 -> SecurityTab(showMsg)
-                        12 -> SystemControlTab(showMsg)
+                        5 -> ConnectedDevicesTab(showMsg)
+                        6 -> LanguageVoiceTab(showMsg)
+                        7 -> LogTab(showMsg = showMsg)
+                        8 -> GeneralTab(showMsg)
+                        9 -> SmartHubTab(showMsg)
+                        10 -> SecurityTab(showMsg)
+                        11 -> SystemControlTab(showMsg)
                     }
                 }
             }
@@ -542,72 +541,6 @@ private fun StatusItem(label: String, value: String) {
     ) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, fontWeight = FontWeight.Bold)
-    }
-}
-
-// ⑥ 仓库
-@Composable
-private fun RepoTab(showMsg: (String) -> Unit) {
-    val context = LocalContext.current
-    var repo by remember { mutableStateOf("") }
-
-    Text("仓库管理", style = MaterialTheme.typography.titleMedium)
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(value = repo, onValueChange = { repo = it }, label = { Text("GitHub/GitLab 仓库地址") })
-    Spacer(Modifier.height(8.dp))
-    Button(onClick = {
-        if (repo.isNotBlank()) {
-            val prefs = context.getSharedPreferences("jarvis_repos", Context.MODE_PRIVATE)
-            val repos = prefs.getStringSet("repos", emptySet())?.toMutableSet() ?: mutableSetOf()
-            repos.add(repo)
-            prefs.edit().putStringSet("repos", repos).apply()
-            repo = ""
-            showMsg("仓库已添加")
-        }
-    }) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(4.dp))
-        Text("添加")
-    }
-
-    Spacer(Modifier.height(8.dp))
-    Text("已添加仓库", style = MaterialTheme.typography.bodyMedium)
-    Spacer(Modifier.height(8.dp))
-
-    val repos = remember { mutableStateListOf<String>() }
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("jarvis_repos", Context.MODE_PRIVATE)
-        repos.clear()
-        repos.addAll(prefs.getStringSet("repos", emptySet()) ?: emptySet())
-    }
-
-    LazyColumn(modifier = Modifier.height(200.dp)) {
-        items(repos) { repoUrl ->
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(repoUrl, modifier = Modifier.weight(1f))
-                    IconButton(onClick = {
-                        val prefs = context.getSharedPreferences("jarvis_repos", Context.MODE_PRIVATE)
-                        val currentRepos = prefs.getStringSet("repos", emptySet())?.toMutableSet() ?: mutableSetOf()
-                        currentRepos.remove(repoUrl)
-                        prefs.edit().putStringSet("repos", currentRepos).apply()
-                        repos.remove(repoUrl)
-                        showMsg("仓库已移除")
-                    }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "删除")
-                    }
-                }
-            }
-        }
     }
 }
 
