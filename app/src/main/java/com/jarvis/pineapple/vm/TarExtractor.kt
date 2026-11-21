@@ -25,7 +25,9 @@ object TarExtractor {
      */
     @Throws(Exception::class)
     fun extract(archive: File, targetDir: File) {
-        if (!targetDir.exists()) targetDir.mkdirs()
+        if (!targetDir.exists() && !targetDir.mkdirs()) {
+            throw IllegalArgumentException("无法创建解压目录: ${targetDir.absolutePath}")
+        }
         val name = archive.name.lowercase()
         val raw = BufferedInputStream(FileInputStream(archive))
         val decompressed: InputStream = when {
@@ -36,41 +38,45 @@ object TarExtractor {
 
         decompressed.use { input ->
             TarArchiveInputStream(input).use { tar ->
-                val targetCanonical = targetDir.canonicalPath
                 var entry: TarArchiveEntry? = tar.nextEntry as? TarArchiveEntry
                 while (entry != null) {
-                    val outFile = File(targetDir, entry.name)
-                    // 路径穿越防护
-                    if (!outFile.canonicalPath.startsWith(targetCanonical)) {
-                        entry = tar.nextEntry as? TarArchiveEntry
-                        continue
+                    val currentEntry = entry
+                    if (currentEntry.name.startsWith("/")) {
+                        throw SecurityException("归档包含绝对路径: ${currentEntry.name}")
                     }
+                    val outFile = resolveInside(targetDir, currentEntry.name)
                     when {
-                        entry.isDirectory -> outFile.mkdirs()
-                        entry.isSymbolicLink -> {
-                            outFile.parentFile?.mkdirs()
-                            try {
-                                if (outFile.exists()) outFile.delete()
-                                Os.symlink(entry.linkName, outFile.absolutePath)
-                            } catch (_: Exception) {
-                                // 某些文件系统不允许符号链接，忽略
+                        currentEntry.isDirectory -> {
+                            if (!outFile.isDirectory && !outFile.mkdirs()) {
+                                throw IllegalArgumentException("无法创建目录: ${outFile.absolutePath}")
                             }
                         }
-                        entry.isLink -> {
-                            outFile.parentFile?.mkdirs()
-                            try {
-                                Os.link(resolveSafe(targetDir, entry.linkName).absolutePath, outFile.absolutePath)
-                            } catch (_: Exception) {
+                        currentEntry.isSymbolicLink -> {
+                            outFile.parentFile?.let { requireDirectory(it) }
+                            if (outFile.exists() && !outFile.delete()) {
+                                throw IllegalArgumentException("无法替换现有文件: ${outFile.absolutePath}")
                             }
+                            Os.symlink(currentEntry.linkName, outFile.absolutePath)
+                        }
+                        currentEntry.isLink -> {
+                            outFile.parentFile?.let { requireDirectory(it) }
+                            val source = resolveInside(targetDir, currentEntry.linkName)
+                            if (!source.isFile) {
+                                throw IllegalArgumentException("硬链接源不存在: ${currentEntry.linkName}")
+                            }
+                            if (outFile.exists() && !outFile.delete()) {
+                                throw IllegalArgumentException("无法替换现有文件: ${outFile.absolutePath}")
+                            }
+                            Os.link(source.absolutePath, outFile.absolutePath)
                         }
                         else -> {
-                            outFile.parentFile?.mkdirs()
+                            outFile.parentFile?.let { requireDirectory(it) }
                             FileOutputStream(outFile).use { out -> tar.copyTo(out) }
                         }
                     }
-                    // 还原可执行位 / 权限
-                    val mode = entry.mode
-                    if (mode != 0) {
+                    // 不跟随符号链接修改其目标权限。
+                    val mode = currentEntry.mode
+                    if (!currentEntry.isSymbolicLink && mode != 0) {
                         outFile.setReadable(true, false)
                         outFile.setWritable(true, true)
                         if (mode and 0b001_000_000 != 0) outFile.setExecutable(true, false)
@@ -81,9 +87,19 @@ object TarExtractor {
         }
     }
 
-    private fun resolveSafe(baseDir: File, path: String): File {
-        val f = if (path.startsWith("/")) File(baseDir, path.trimStart('/')) else File(baseDir, path)
-        return f
+    private fun resolveInside(baseDir: File, path: String): File {
+        val base = baseDir.canonicalFile
+        val resolved = File(base, path).canonicalFile
+        if (resolved != base && !resolved.path.startsWith(base.path + File.separator)) {
+            throw SecurityException("归档路径超出目标目录: $path")
+        }
+        return resolved
+    }
+
+    private fun requireDirectory(directory: File) {
+        if (!directory.isDirectory && !directory.mkdirs()) {
+            throw IllegalArgumentException("无法创建目录: ${directory.absolutePath}")
+        }
     }
 
     /** 计算文件 SHA-256（小写十六进制）。 */
