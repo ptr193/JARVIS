@@ -2,6 +2,7 @@ package com.jarvis.pineapple.ui.settings
 
 import java.io.File
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -37,6 +38,22 @@ class SettingsTabsTest {
         assertTrue("Pager 不得预组合相邻页", src.contains("beyondViewportPageCount = 0"))
         assertTrue("状态采样必须走 IO", src.contains("withContext(Dispatchers.IO) { deviceMonitor.refresh() }"))
         assertTrue("服务页必须复用 ModelDownloadManager 单例", src.contains("get<ModelDownloadManager>()"))
+    }
+
+    @Test
+    fun backgroundUpdateRequiresPersistableReadPermission() {
+        val src = readSource("app/src/main/java/com/jarvis/pineapple/ui/settings/SettingsScreen.kt")
+        val picker = src.substringAfter("val bgPicker =")
+            .substringBefore("Button(onClick = { bgPicker.launch")
+
+        assertTrue(picker.contains("takePersistableUriPermission"))
+        assertTrue(picker.contains("catch (e: Exception)"))
+        assertTrue(picker.contains("背景图设置失败"))
+        assertFalse(picker.contains("runCatching"))
+        assertTrue(
+            picker.indexOf("takePersistableUriPermission") <
+                picker.indexOf("uiRepo.setBackgroundUri")
+        )
     }
 
     private fun readSource(relativePath: String): String {

@@ -1184,13 +1184,16 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     val currentColor by uiRepo.themeColor.collectAsState()
     val bgPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            runCatching {
+            try {
                 context.contentResolver.takePersistableUriPermission(
                     uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
+                uiRepo.setBackgroundUri(uri.toString())
+                showMsg("背景图已更新")
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsScreen", "背景图读取授权失败: $uri", e)
+                showMsg("背景图设置失败：无法保留图片读取权限")
             }
-            uiRepo.setBackgroundUri(uri.toString())
-            showMsg("背景图已更新")
         }
     }
     Button(onClick = { bgPicker.launch(arrayOf("image/*")) }) { Text("更换背景图") }
