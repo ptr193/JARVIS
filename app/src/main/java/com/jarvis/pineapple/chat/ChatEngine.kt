@@ -87,7 +87,7 @@ class ChatEngine(
         // ===== 翻译指令（#12/#13）：直接调用翻译引擎，无需经过大模型 =====
         parseTranslationRequest(content)?.let { (text, target) ->
             val result = conversationEnhancer.translate(text, targetLang = target)
-            val reply = result.translatedText.ifBlank { "翻译失败：翻译服务不可用" }
+            val reply = if (result.isSuccess) result.translatedText else "翻译失败：${result.errorMessage}"
             return finishDirectReply(content, reply, "翻译请求：${content.take(50)}")
         }
 

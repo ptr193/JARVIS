@@ -24,8 +24,8 @@ android {
         buildConfigField("String", "VOICE_DOWNLOAD_BASE_URL", "\"file:///android_asset/voices/\"")
         // 云端同步 - 默认关闭（设为空字符串时自动禁用云端功能）
         buildConfigField("String", "CLOUD_SYNC_BASE_URL", "\"\"")
-        // 翻译 API - 默认使用 DuckDuckGo HTML（国内可直接访问）
-        buildConfigField("String", "TRANSLATE_API_BASE_URL", "\"https://html.duckduckgo.com/html/\"")
+        // 翻译 API - 默认关闭；服务须返回包含 translated_text 的 JSON
+        buildConfigField("String", "TRANSLATE_API_BASE_URL", "\"\"")
         // 地图服务商 - 国内首选高德
         buildConfigField("String", "MAP_PROVIDER", "\"amap\"")
     }

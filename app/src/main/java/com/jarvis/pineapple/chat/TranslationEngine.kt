@@ -7,17 +7,22 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.net.URLEncoder
 
 /**
- * 翻译引擎（功能 #12 多语言翻译，#13 外语实时转译）。
+ * HTTP 翻译客户端。
  *
- * 默认使用 DuckDuckGo HTML 端点（国内可直接访问，无需 API Key）。
- * 也支持配置为国内翻译 API（百度/有道/彩云小译等）。
- * 翻译服务地址通过 BuildConfig.TRANSLATE_API_BASE_URL 配置。
+ * 服务地址由 BuildConfig.TRANSLATE_API_BASE_URL 配置，响应须为 JSON 且包含
+ * `translated_text` 字符串。未配置、HTTP 失败或响应无效都会返回明确错误，
+ * 不会把原文或搜索摘要冒充译文。
  */
-class TranslationEngine {
-
+class TranslationEngine(
+    private val apiBaseUrl: String = BuildConfig.TRANSLATE_API_BASE_URL
+) {
     private val httpClient = HttpClient(Android)
 
     data class TranslationResult(
@@ -26,139 +31,110 @@ class TranslationEngine {
         val sourceLanguage: String,
         val targetLanguage: String,
         val confidence: Float,
-        val alternatives: List<String> = emptyList()
-    )
+        val alternatives: List<String> = emptyList(),
+        val errorMessage: String? = null
+    ) {
+        val isSuccess: Boolean get() = errorMessage == null
+    }
 
     data class LanguageInfo(val code: String, val name: String, val nativeName: String)
 
-    /**
-     * 翻译文本 - DuckDuckGo HTML 端点
-     */
     suspend fun translate(
         text: String,
         targetLanguage: String = "zh",
         sourceLanguage: String = "auto"
     ): TranslationResult {
-        val apiUrl = BuildConfig.TRANSLATE_API_BASE_URL
+        if (text.isBlank()) return failure(text, sourceLanguage, targetLanguage, "翻译内容为空")
+        if (apiBaseUrl.isBlank()) {
+            return failure(text, sourceLanguage, targetLanguage, "未配置翻译服务地址")
+        }
+        if (apiBaseUrl.contains("duckduckgo", ignoreCase = true)) {
+            return failure(text, sourceLanguage, targetLanguage, "DuckDuckGo 搜索页不是翻译服务，请配置真实翻译 API")
+        }
         return withContext(Dispatchers.IO) {
             try {
                 val encodedText = URLEncoder.encode(text, "UTF-8")
-                val url = if (apiUrl.contains("duckduckgo")) {
-                    "${apiUrl}?q=$encodedText&kl=zh-cn"
+                val response = httpClient.get(
+                    "$apiBaseUrl?q=$encodedText&sl=$sourceLanguage&tl=$targetLanguage"
+                )
+                if (response.status.value !in 200..299) {
+                    failure(text, sourceLanguage, targetLanguage, "翻译服务返回 HTTP ${response.status.value}")
                 } else {
-                    "$apiUrl?q=$encodedText&sl=$sourceLanguage&tl=$targetLanguage"
-                }
-
-                val response = httpClient.get(url)
-                val html = response.bodyAsText()
-
-                if (apiUrl.contains("duckduckgo")) {
-                    parseDuckDuckGoResponse(text, html)
-                } else {
-                    parseGenericResponse(text, sourceLanguage, targetLanguage, html)
+                    parseGenericResponse(text, sourceLanguage, targetLanguage, response.bodyAsText())
                 }
             } catch (e: Exception) {
-                TranslationResult(text, text, sourceLanguage, targetLanguage, 0f)
+                failure(text, sourceLanguage, targetLanguage, "翻译服务不可用: ${e.message ?: "网络错误"}")
             }
         }
     }
 
-    /**
-     * 检测语言 - 基于 Unicode 字符范围
-     */
-    suspend fun detectLanguage(text: String): String {
-        return withContext(Dispatchers.IO) {
-            try {
-                // 基于 Unicode 字符范围的简单语言检测
-                val chineseChars = text.count { it.code in 0x4E00..0x9FFF }
-                val japaneseChars = text.count { it.code in 0x3040..0x309F || it.code in 0x30A0..0x30FF }
-                val koreanChars = text.count { it.code in 0xAC00..0xD7AF }
-                val cyrillicChars = text.count { it.code in 0x0400..0x04FF }
-                val arabicChars = text.count { it.code in 0x0600..0x06FF }
-                val latinChars = text.count { it.code in 0x0041..0x007A }
-
-                val total = text.length.coerceAtLeast(1)
-                when {
-                    chineseChars > total * 0.3 -> "zh"
-                    japaneseChars > total * 0.3 -> "ja"
-                    koreanChars > total * 0.3 -> "ko"
-                    cyrillicChars > total * 0.3 -> "ru"
-                    arabicChars > total * 0.3 -> "ar"
-                    latinChars > total * 0.3 -> "en"
-                    else -> "unknown"
-                }
-            } catch (e: Exception) {
-                "unknown"
-            }
+    suspend fun detectLanguage(text: String): String = withContext(Dispatchers.Default) {
+        val chineseChars = text.count { it.code in 0x4E00..0x9FFF }
+        val japaneseChars = text.count { it.code in 0x3040..0x309F || it.code in 0x30A0..0x30FF }
+        val koreanChars = text.count { it.code in 0xAC00..0xD7AF }
+        val cyrillicChars = text.count { it.code in 0x0400..0x04FF }
+        val arabicChars = text.count { it.code in 0x0600..0x06FF }
+        val latinChars = text.count { it.code in 0x0041..0x007A }
+        val total = text.length.coerceAtLeast(1)
+        when {
+            chineseChars > total * 0.3 -> "zh"
+            japaneseChars > total * 0.3 -> "ja"
+            koreanChars > total * 0.3 -> "ko"
+            cyrillicChars > total * 0.3 -> "ru"
+            arabicChars > total * 0.3 -> "ar"
+            latinChars > total * 0.3 -> "en"
+            else -> "unknown"
         }
     }
 
-    /**
-     * 批量翻译
-     */
     suspend fun translateBatch(
         texts: List<String>,
         targetLanguage: String = "zh",
         sourceLanguage: String = "auto"
     ): List<TranslationResult> = texts.map { translate(it, targetLanguage, sourceLanguage) }
 
-    /**
-     * 解析 DuckDuckGo HTML 响应
-     */
-    private fun parseDuckDuckGoResponse(originalText: String, html: String): TranslationResult {
-        // DuckDuckGo HTML 结果解析
-        val resultPattern = Regex("result__snippet[^>]*>(.*?)</a>", RegexOption.DOT_MATCHES_ALL)
-        val results = resultPattern.findAll(html).map { cleanHtml(it.groupValues[1]) }.toList()
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true }
 
-        val translated = results.firstOrNull() ?: originalText
-        val confidence = if (results.isNotEmpty()) 0.7f else 0.3f
-
-        return TranslationResult(
-            originalText = originalText,
-            translatedText = translated,
-            sourceLanguage = "auto",
-            targetLanguage = "zh",
-            confidence = confidence,
-            alternatives = results.drop(1).take(3)
-        )
-    }
-
-    /**
-     * 解析通用翻译 API 响应
-     */
-    private fun parseGenericResponse(
-        originalText: String,
-        sourceLanguage: String,
-        targetLanguage: String,
-        responseText: String
-    ): TranslationResult {
-        // 尝试 JSON 格式
-        val jsonPattern = Regex("\"translated_text\"\\s*:\\s*\"([^\"]+)\"")
-        val jsonMatch = jsonPattern.find(responseText)
-        if (jsonMatch != null) {
-            return TranslationResult(
-                originalText = originalText,
-                translatedText = jsonMatch.groupValues[1],
-                sourceLanguage = sourceLanguage,
-                targetLanguage = targetLanguage,
-                confidence = 0.9f
-            )
+        internal fun parseGenericResponse(
+            originalText: String,
+            sourceLanguage: String,
+            targetLanguage: String,
+            responseText: String
+        ): TranslationResult {
+            val translated = try {
+                json.parseToJsonElement(responseText).jsonObject["translated_text"]
+                    ?.jsonPrimitive?.contentOrNull
+            } catch (_: Exception) {
+                null
+            }
+            return if (translated.isNullOrBlank()) {
+                failure(originalText, sourceLanguage, targetLanguage, "翻译服务响应缺少 translated_text")
+            } else {
+                TranslationResult(
+                    originalText = originalText,
+                    translatedText = translated,
+                    sourceLanguage = sourceLanguage,
+                    targetLanguage = targetLanguage,
+                    confidence = 0f
+                )
+            }
         }
 
-        // 降级：返回原文
-        return TranslationResult(originalText, originalText, sourceLanguage, targetLanguage, 0.3f)
-    }
+        internal fun failure(
+            originalText: String,
+            sourceLanguage: String,
+            targetLanguage: String,
+            message: String
+        ) = TranslationResult(
+            originalText = originalText,
+            translatedText = "",
+            sourceLanguage = sourceLanguage,
+            targetLanguage = targetLanguage,
+            confidence = 0f,
+            errorMessage = message
+        )
 
-    private fun cleanHtml(html: String): String {
-        return html.replace(Regex("<[^>]*>"), "")
-            .replace("&amp;", "&")
-            .replace("&lt;", "<")
-            .replace("&gt;", ">")
-            .replace("&quot;", "\"")
-            .trim()
-    }
-
-    companion object {
         val SUPPORTED_LANGUAGES = mapOf(
             "auto" to "自动检测", "zh" to "中文", "en" to "English",
             "ja" to "日本語", "ko" to "한국어", "fr" to "Français",

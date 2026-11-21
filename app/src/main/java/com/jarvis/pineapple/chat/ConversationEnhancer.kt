@@ -1,6 +1,5 @@
 package com.jarvis.pineapple.chat
 
-import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +18,7 @@ import java.util.Calendar
  * - 修辞与指令区分
  * - 隐含意图推断
  */
-class ConversationEnhancer(private val context: Context) {
+class ConversationEnhancer(private val translationEngine: TranslationEngine) {
 
     // ==================== 语气与情绪适配（#9） ====================
 
@@ -153,32 +152,12 @@ class ConversationEnhancer(private val context: Context) {
 
     // ==================== 外语实时转译（#13） ====================
 
-    /**
-     * 转译结果
-     */
-    data class TranslationResult(
-        val originalText: String,
-        val translatedText: String,
-        val sourceLanguage: String,
-        val targetLanguage: String,
-        val confidence: Float
-    )
-
-    /**
-     * 实时转译
-     */
-    suspend fun translate(text: String, sourceLang: String = "auto", targetLang: String = "zh"): TranslationResult {
-        // 使用 TranslationEngine 进行真实翻译
-        val engine = TranslationEngine()
-        val result = engine.translate(text, targetLang, sourceLang)
-        return TranslationResult(
-            originalText = result.originalText,
-            translatedText = result.translatedText,
-            sourceLanguage = result.sourceLanguage,
-            targetLanguage = result.targetLanguage,
-            confidence = result.confidence
-        )
-    }
+    /** 实时转译；服务不可用或响应无效时保留明确错误。 */
+    suspend fun translate(
+        text: String,
+        sourceLang: String = "auto",
+        targetLang: String = "zh"
+    ): TranslationEngine.TranslationResult = translationEngine.translate(text, targetLang, sourceLang)
 
     /**
      * 检测语言

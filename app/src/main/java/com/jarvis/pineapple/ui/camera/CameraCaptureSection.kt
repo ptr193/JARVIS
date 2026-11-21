@@ -100,7 +100,8 @@ fun CameraCaptureSection(
                 } else {
                     val source = labels.joinToString(" ")
                     val translated = translator.translate(source, targetLanguage = "zh")
-                    "原文：$source\n译文：${translated.translatedText}"
+                    if (translated.isSuccess) "原文：$source\n译文：${translated.translatedText}"
+                    else "翻译失败：${translated.errorMessage}"
                 }
             },
             onScene = CameraCaptureSession.ImageHandler { bytes ->
