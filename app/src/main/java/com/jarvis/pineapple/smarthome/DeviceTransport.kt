@@ -30,7 +30,19 @@ import java.net.URL
  *
  * 未配置网关时所有方法安全降级（返回空/失败），不会伪造成功。
  */
-class DeviceTransport(context: Context) {
+internal interface SmartHomeTransport {
+    val isConfigured: Boolean
+
+    suspend fun ssdpDiscover(timeoutMs: Long = 3000L): List<DeviceTransport.DiscoveredDevice>
+    suspend fun fetchDevices(): List<DeviceTransport.DiscoveredDevice>
+    suspend fun sendCommand(
+        deviceId: String,
+        command: String,
+        params: Map<String, Any?> = emptyMap()
+    ): Boolean
+}
+
+class DeviceTransport(context: Context) : SmartHomeTransport {
 
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences("jarvis_smarthome", Context.MODE_PRIVATE)
@@ -52,7 +64,7 @@ class DeviceTransport(context: Context) {
         get() = prefs.getString(KEY_GATEWAY_TOKEN, "") ?: ""
         set(value) = prefs.edit().putString(KEY_GATEWAY_TOKEN, value.trim()).apply()
 
-    val isConfigured: Boolean get() = gatewayUrl.isNotEmpty()
+    override val isConfigured: Boolean get() = gatewayUrl.isNotEmpty()
 
     // ==================== SSDP 发现 ====================
 
@@ -61,7 +73,7 @@ class DeviceTransport(context: Context) {
      *
      * @param timeoutMs 等待应答的总时长
      */
-    suspend fun ssdpDiscover(timeoutMs: Long = 3000L): List<DiscoveredDevice> = withContext(Dispatchers.IO) {
+    override suspend fun ssdpDiscover(timeoutMs: Long): List<DiscoveredDevice> = withContext(Dispatchers.IO) {
         val results = linkedMapOf<String, DiscoveredDevice>()
         val wifi = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
         val lock = wifi?.createMulticastLock("jarvis-ssdp")?.apply { setReferenceCounted(false) }
@@ -137,7 +149,7 @@ class DeviceTransport(context: Context) {
     /**
      * 从网关拉取设备清单。未配置网关时返回空列表。
      */
-    suspend fun fetchDevices(): List<DiscoveredDevice> = withContext(Dispatchers.IO) {
+    override suspend fun fetchDevices(): List<DiscoveredDevice> = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext emptyList()
         val response = request("GET", "/devices", null) ?: return@withContext emptyList()
         runCatching {
@@ -164,10 +176,10 @@ class DeviceTransport(context: Context) {
      *
      * @return 网关返回 2xx 时返回 true
      */
-    suspend fun sendCommand(
+    override suspend fun sendCommand(
         deviceId: String,
         command: String,
-        params: Map<String, Any?> = emptyMap()
+        params: Map<String, Any?>
     ): Boolean = withContext(Dispatchers.IO) {
         if (!isConfigured) return@withContext false
         val body = JSONObject().apply {

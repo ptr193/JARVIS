@@ -2,9 +2,13 @@ package com.jarvis.pineapple.smarthome
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,12 +24,17 @@ import java.util.UUID
  * - 设备控制
  * - 多设备协同
  */
-class SmartHomeManager(private val context: Context) {
+class SmartHomeManager internal constructor(
+    private val transport: SmartHomeTransport,
+    private val sceneNotifier: (String) -> Boolean
+) {
+    constructor(context: Context) : this(
+        transport = DeviceTransport(context),
+        sceneNotifier = { message -> postSceneNotification(context, message) }
+    )
 
-
-    /** 局域网/网关传输层：SSDP 发现 + HTTP 指令下发。 */
-    private val transport = DeviceTransport(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var discoveryJob: Job? = null
 
     // ==================== 设备管理（6.2） ====================
 
@@ -58,6 +67,7 @@ class SmartHomeManager(private val context: Context) {
     data class DeviceState(
         val isOn: Boolean = false,
         val brightness: Int = 100,
+        val colorTemperature: Int = 4000,
         val temperature: Float = 25f,
         val targetTemperature: Float = 25f,
         val humidity: Float = 50f,
@@ -134,48 +144,61 @@ class SmartHomeManager(private val context: Context) {
     val discoveryStatus: StateFlow<String> = _discoveryStatus.asStateFlow()
 
     fun startDiscovery(protocols: List<ProtocolType> = ProtocolType.values().toList()) {
+        discoveryJob?.cancel()
         _isDiscovering.value = true
-        _discoveryStatus.value = ""
-        scope.launch {
-            val found = mutableListOf<SmartDevice>()
-            val ssdp = transport.ssdpDiscover()
-            found += ssdp.map { discovered ->
-                SmartDevice(
-                    id = discovered.id,
-                    name = discovered.name.ifBlank { discovered.location },
-                    type = inferType(discovered.rawType, discovered.server),
-                    protocol = runCatching { ProtocolType.valueOf(discovered.protocol) }
-                        .getOrDefault(ProtocolType.OTHER),
-                    manufacturer = discovered.server,
-                    model = discovered.location,
-                    isOnline = true,
-                    isConnected = false
-                )
+        _discoveryStatus.value = "正在发现设备"
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val found = mutableListOf<SmartDevice>()
+                val ssdp = transport.ssdpDiscover()
+                found += ssdp.map { discovered ->
+                    SmartDevice(
+                        id = discovered.id,
+                        name = discovered.name.ifBlank { discovered.location },
+                        type = inferType(discovered.rawType, discovered.server),
+                        protocol = runCatching { ProtocolType.valueOf(discovered.protocol) }
+                            .getOrDefault(ProtocolType.OTHER),
+                        manufacturer = discovered.server,
+                        model = discovered.location,
+                        isOnline = true,
+                        isConnected = false
+                    )
+                }
+                val gatewayDevices = transport.fetchDevices()
+                found += gatewayDevices.map { discovered ->
+                    SmartDevice(
+                        id = discovered.id,
+                        name = discovered.name,
+                        type = inferType(discovered.rawType, discovered.server),
+                        protocol = runCatching { ProtocolType.valueOf(discovered.protocol) }
+                            .getOrDefault(ProtocolType.WIFI),
+                        model = discovered.server,
+                        isOnline = true,
+                        isConnected = true
+                    )
+                }
+                val filtered = found.filter { device -> protocols.contains(device.protocol) }
+                val current = _devices.value.toMutableList()
+                filtered.forEach { device ->
+                    val index = current.indexOfFirst { it.id == device.id }
+                    if (index >= 0) current[index] = device else current.add(device)
+                }
+                _devices.value = current
+                _discoveryStatus.value = DeviceTransport.emptyScanMessage(transport.isConfigured, filtered.size)
+                Log.i(TAG, "发现 ${filtered.size} 个设备（SSDP=${ssdp.size} 网关=${gatewayDevices.size}）")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _discoveryStatus.value = "发现失败：${e.message ?: "未知错误"}"
+                Log.w(TAG, "设备发现失败", e)
+            } finally {
+                if (discoveryJob === coroutineContext[Job]) {
+                    _isDiscovering.value = false
+                }
             }
-            val gatewayDevices = transport.fetchDevices()
-            found += gatewayDevices.map { discovered ->
-                SmartDevice(
-                    id = discovered.id,
-                    name = discovered.name,
-                    type = inferType(discovered.rawType, discovered.server),
-                    protocol = runCatching { ProtocolType.valueOf(discovered.protocol) }
-                        .getOrDefault(ProtocolType.WIFI),
-                    model = discovered.server,
-                    isOnline = true,
-                    isConnected = true
-                )
-            }
-            val filtered = found.filter { device -> protocols.contains(device.protocol) }
-            val current = _devices.value.toMutableList()
-            filtered.forEach { device ->
-                val index = current.indexOfFirst { it.id == device.id }
-                if (index >= 0) current[index] = device else current.add(device)
-            }
-            _devices.value = current
-            _isDiscovering.value = false
-            _discoveryStatus.value = DeviceTransport.emptyScanMessage(transport.isConfigured, current.size)
-            Log.i(TAG, "发现 ${filtered.size} 个设备（SSDP=${ssdp.size} 网关=${gatewayDevices.size}）")
         }
+        discoveryJob = job
+        job.start()
     }
 
     private fun inferType(rawType: String, server: String): DeviceType {
@@ -198,55 +221,47 @@ class SmartHomeManager(private val context: Context) {
     /**
      * 向设备/网关下发指令。未配置网关或设备不存在时返回中文失败原因，不伪造成功。
      */
-    suspend fun dispatch(deviceId: String, command: String, params: Map<String, Any?> = emptyMap()): String {
+    suspend fun dispatch(deviceId: String, command: String, params: Map<String, Any?> = emptyMap()): String =
+        dispatchResult(deviceId, command, params)
+
+    private suspend fun dispatchResult(
+        deviceId: String,
+        command: String,
+        params: Map<String, Any?> = emptyMap(),
+        onDelivered: (() -> Unit)? = null
+    ): String {
         val known = _devices.value.any { it.id == deviceId }
         if (!transport.isConfigured || !known) {
             return DeviceTransport.controlResult(transport.isConfigured, known, delivered = false)
         }
-        val ok = transport.sendCommand(deviceId, command, params)
-        return DeviceTransport.controlResult(configured = true, deviceKnown = true, delivered = ok)
+        val delivered = transport.sendCommand(deviceId, command, params)
+        if (delivered) onDelivered?.invoke()
+        return DeviceTransport.controlResult(configured = true, deviceKnown = true, delivered = delivered)
     }
 
-    private fun dispatchAsync(deviceId: String, command: String, params: Map<String, Any?> = emptyMap()) {
-        scope.launch { dispatch(deviceId, command, params) }
-    }
-
-    /**
-     * 停止设备发现
-     */
+    /** 停止当前发现任务，已取消任务的结果不会覆盖后续发现状态。 */
     fun stopDiscovery() {
+        discoveryJob?.cancel()
         _isDiscovering.value = false
+        _discoveryStatus.value = "已停止发现"
     }
 
-    /**
-     * 配对设备（配对码非空时校验为 4~8 位数字，符合常见 BLE/Matter 配对规范）
-     */
-    fun pairDevice(deviceId: String, pairingCode: String? = null): Boolean {
-        if (pairingCode != null && !PAIRING_CODE_REGEX.matches(pairingCode)) {
-            return false
+    /** 通过网关执行真实配对，配对码非空时校验为 4~8 位数字。 */
+    suspend fun pairDevice(deviceId: String, pairingCode: String? = null): Boolean {
+        if (pairingCode != null && !PAIRING_CODE_REGEX.matches(pairingCode)) return false
+        val params = pairingCode?.let { mapOf<String, Any?>("pairingCode" to it) }.orEmpty()
+        val result = dispatchResult(deviceId, "pair", params) {
+            updateDevice(deviceId) { it.copy(isConnected = true, isOnline = true) }
         }
-        val current = _devices.value.toMutableList()
-        val index = current.indexOfFirst { it.id == deviceId }
-        if (index >= 0) {
-            current[index] = current[index].copy(isConnected = true, isOnline = true)
-            _devices.value = current
-            return true
-        }
-        return false
+        return result == DELIVERED
     }
 
-    /**
-     * 取消配对
-     */
-    fun unpairDevice(deviceId: String): Boolean {
-        val current = _devices.value.toMutableList()
-        val index = current.indexOfFirst { it.id == deviceId }
-        if (index >= 0) {
-            current[index] = current[index].copy(isConnected = false, isOnline = false)
-            _devices.value = current
-            return true
+    /** 通过网关执行真实取消配对。 */
+    suspend fun unpairDevice(deviceId: String): Boolean {
+        val result = dispatchResult(deviceId, "unpair") {
+            updateDevice(deviceId) { it.copy(isConnected = false, isOnline = false) }
         }
-        return false
+        return result == DELIVERED
     }
 
     // ==================== 设备控制（6.3） ====================
@@ -254,98 +269,65 @@ class SmartHomeManager(private val context: Context) {
     /**
      * 开灯
      */
-    suspend fun turnOnLight(deviceId: String): String {
-        val result = dispatch(deviceId, "on")
-        if (result == "已下发") {
-            updateDeviceState(deviceId) { it.copy(isOn = true) }
-        }
-        return result
+    suspend fun turnOnLight(deviceId: String): String = dispatchResult(deviceId, "on") {
+        updateDeviceState(deviceId) { it.copy(isOn = true) }
     }
 
-    /**
-     * 关灯
-     */
-    suspend fun turnOffLight(deviceId: String): String {
-        val result = dispatch(deviceId, "off")
-        if (result == "已下发") {
-            updateDeviceState(deviceId) { it.copy(isOn = false) }
-        }
-        return result
+    /** 关灯。 */
+    suspend fun turnOffLight(deviceId: String): String = dispatchResult(deviceId, "off") {
+        updateDeviceState(deviceId) { it.copy(isOn = false) }
     }
 
-    /**
-     * 设置亮度
-     */
-    fun setLightBrightness(deviceId: String, brightness: Int) {
+    /** 设置亮度，仅在网关确认送达后更新本地状态。 */
+    suspend fun setLightBrightness(deviceId: String, brightness: Int): String {
         val value = brightness.coerceIn(0, 100)
-        dispatchAsync(deviceId, "brightness", mapOf("value" to value))
-        updateDeviceState(deviceId) { it.copy(brightness = value) }
+        return dispatchResult(deviceId, "brightness", mapOf("value" to value)) {
+            updateDeviceState(deviceId) { it.copy(brightness = value) }
+        }
     }
 
-    /**
-     * 设置色温
-     */
-    fun setLightColorTemperature(deviceId: String, temperature: Int) {
-        dispatchAsync(deviceId, "color_temperature", mapOf("value" to temperature))
-        updateDeviceState(deviceId) { it.copy(brightness = it.brightness) }
+    /** 设置色温，仅在网关确认送达后更新本地状态。 */
+    suspend fun setLightColorTemperature(deviceId: String, temperature: Int): String {
+        val value = temperature.coerceIn(2700, 6500)
+        return dispatchResult(deviceId, "color_temperature", mapOf("value" to value)) {
+            updateDeviceState(deviceId) { it.copy(colorTemperature = value) }
+        }
     }
 
-    /**
-     * 设置目标温度
-     */
-    fun setTargetTemperature(deviceId: String, temperature: Float) {
+    /** 设置目标温度。 */
+    suspend fun setTargetTemperature(deviceId: String, temperature: Float): String {
         val value = temperature.coerceIn(16f, 30f)
-        dispatchAsync(deviceId, "target_temperature", mapOf("value" to value))
-        updateDeviceState(deviceId) { it.copy(targetTemperature = value) }
+        return dispatchResult(deviceId, "target_temperature", mapOf("value" to value)) {
+            updateDeviceState(deviceId) { it.copy(targetTemperature = value) }
+        }
     }
 
-    /**
-     * 打开窗帘
-     */
-    fun openCurtain(deviceId: String) {
-        dispatchAsync(deviceId, "position", mapOf("value" to 100))
-        updateDeviceState(deviceId) { it.copy(position = 100) }
-    }
+    /** 打开窗帘。 */
+    suspend fun openCurtain(deviceId: String): String = setCurtainPosition(deviceId, 100)
 
-    /**
-     * 关闭窗帘
-     */
-    fun closeCurtain(deviceId: String) {
-        dispatchAsync(deviceId, "position", mapOf("value" to 0))
-        updateDeviceState(deviceId) { it.copy(position = 0) }
-    }
+    /** 关闭窗帘。 */
+    suspend fun closeCurtain(deviceId: String): String = setCurtainPosition(deviceId, 0)
 
-    /**
-     * 设置窗帘位置
-     */
-    fun setCurtainPosition(deviceId: String, position: Int) {
+    /** 设置窗帘位置。 */
+    suspend fun setCurtainPosition(deviceId: String, position: Int): String {
         val value = position.coerceIn(0, 100)
-        dispatchAsync(deviceId, "position", mapOf("value" to value))
-        updateDeviceState(deviceId) { it.copy(position = value) }
+        return dispatchResult(deviceId, "position", mapOf("value" to value)) {
+            updateDeviceState(deviceId) { it.copy(position = value) }
+        }
     }
 
-    /**
-     * 开锁
-     */
-    fun unlock(deviceId: String) {
-        dispatchAsync(deviceId, "unlock")
+    /** 开锁。 */
+    suspend fun unlock(deviceId: String): String = dispatchResult(deviceId, "unlock") {
         updateDeviceState(deviceId) { it.copy(isLocked = false) }
     }
 
-    /**
-     * 关锁
-     */
-    fun lock(deviceId: String) {
-        dispatchAsync(deviceId, "lock")
+    /** 关锁。 */
+    suspend fun lock(deviceId: String): String = dispatchResult(deviceId, "lock") {
         updateDeviceState(deviceId) { it.copy(isLocked = true) }
     }
 
-    /**
-     * 控制摄像头
-     * 支持 RTSP/ONVIF/厂商 SDK 协议
-     */
-    fun controlCamera(deviceId: String, action: CameraAction) {
-        getDevice(deviceId) ?: return
+    /** 通过已配置网关控制摄像头。 */
+    suspend fun controlCamera(deviceId: String, action: CameraAction): String {
         val command = when (action) {
             CameraAction.START_STREAMING -> "stream_start"
             CameraAction.STOP_STREAMING -> "stream_stop"
@@ -357,13 +339,14 @@ class SmartHomeManager(private val context: Context) {
             CameraAction.TILT_UP -> "tilt_up"
             CameraAction.TILT_DOWN -> "tilt_down"
         }
-        dispatchAsync(deviceId, command)
-        when (action) {
-            CameraAction.START_STREAMING, CameraAction.START_RECORDING ->
-                updateDeviceState(deviceId) { it.copy(isOn = true) }
-            CameraAction.STOP_STREAMING, CameraAction.STOP_RECORDING ->
-                updateDeviceState(deviceId) { it.copy(isOn = false) }
-            else -> Unit
+        return dispatchResult(deviceId, command) {
+            when (action) {
+                CameraAction.START_STREAMING, CameraAction.START_RECORDING ->
+                    updateDeviceState(deviceId) { it.copy(isOn = true) }
+                CameraAction.STOP_STREAMING, CameraAction.STOP_RECORDING ->
+                    updateDeviceState(deviceId) { it.copy(isOn = false) }
+                else -> Unit
+            }
         }
     }
 
@@ -372,12 +355,14 @@ class SmartHomeManager(private val context: Context) {
         TAKE_SNAPSHOT, PAN_LEFT, PAN_RIGHT, TILT_UP, TILT_DOWN
     }
 
-    private fun updateDeviceState(deviceId: String, update: (DeviceState) -> DeviceState) {
+    private fun updateDevice(deviceId: String, update: (SmartDevice) -> SmartDevice) {
         _devices.value = _devices.value.map { device ->
-            if (device.id == deviceId) {
-                device.copy(state = update(device.state))
-            } else device
+            if (device.id == deviceId) update(device) else device
         }
+    }
+
+    private fun updateDeviceState(deviceId: String, update: (DeviceState) -> DeviceState) {
+        updateDevice(deviceId) { it.copy(state = update(it.state)) }
     }
 
     // ==================== 设备分组（6.2） ====================
@@ -417,20 +402,15 @@ class SmartHomeManager(private val context: Context) {
     /**
      * 控制组
      */
-    fun controlGroup(groupId: String, action: DeviceControlAction) {
-        val group = _groups.value.firstOrNull { it.id == groupId } ?: return
-        group.deviceIds.forEach { deviceId ->
-            when (action) {
-                is DeviceControlAction.TurnOn -> turnOnDevice(deviceId)
-                is DeviceControlAction.TurnOff -> turnOffDevice(deviceId)
-                is DeviceControlAction.SetBrightness -> setLightBrightness(deviceId, action.value)
-                is DeviceControlAction.SetTemperature -> setTargetTemperature(deviceId, action.value)
-                is DeviceControlAction.OpenCurtain -> openCurtain(deviceId)
-                is DeviceControlAction.CloseCurtain -> closeCurtain(deviceId)
-                is DeviceControlAction.Lock -> lock(deviceId)
-                is DeviceControlAction.Unlock -> unlock(deviceId)
-            }
+    suspend fun controlGroup(groupId: String, action: DeviceControlAction): String {
+        val group = _groups.value.firstOrNull { it.id == groupId } ?: return "未找到设备组"
+        val deviceIds = group.deviceIds.filter { it.isNotBlank() }.distinct()
+        if (deviceIds.isEmpty()) return "设备组为空"
+        val failures = deviceIds.mapNotNull { deviceId ->
+            val result = executeDeviceAction(deviceId, action)
+            if (result == DELIVERED) null else "$deviceId：$result"
         }
+        return if (failures.isEmpty()) DELIVERED else "部分指令失败：${failures.joinToString("；")}"
     }
 
     sealed class DeviceControlAction {
@@ -442,16 +422,6 @@ class SmartHomeManager(private val context: Context) {
         object CloseCurtain : DeviceControlAction()
         object Lock : DeviceControlAction()
         object Unlock : DeviceControlAction()
-    }
-
-    private fun turnOnDevice(deviceId: String) {
-        dispatchAsync(deviceId, "on")
-        updateDeviceState(deviceId) { it.copy(isOn = true) }
-    }
-
-    private fun turnOffDevice(deviceId: String) {
-        dispatchAsync(deviceId, "off")
-        updateDeviceState(deviceId) { it.copy(isOn = false) }
     }
 
     // ==================== 多设备协同（6.4） ====================
@@ -495,32 +465,35 @@ class SmartHomeManager(private val context: Context) {
     /**
      * 激活场景
      */
-    fun activateScene(sceneId: String) {
-        val scene = _scenes.value.firstOrNull { it.id == sceneId } ?: return
-        if (!scene.isEnabled) return
+    suspend fun activateScene(sceneId: String): String {
+        val scene = _scenes.value.firstOrNull { it.id == sceneId } ?: return "未找到场景"
+        if (!scene.isEnabled) return "场景已禁用"
+        return executeActions(scene.actions)
+    }
 
-        scene.actions.forEach { action ->
+    /** 顺序执行场景动作，并汇总所有未完成的动作。 */
+    private suspend fun executeActions(actions: List<SceneAction>): String {
+        if (actions.isEmpty()) return "场景没有动作"
+        val failures = mutableListOf<String>()
+        actions.forEachIndexed { index, action ->
+            val number = index + 1
             when (action) {
                 is SceneAction.DeviceAction -> {
-                    when (action.action) {
-                        is DeviceControlAction.TurnOn -> turnOnDevice(action.deviceId)
-                        is DeviceControlAction.TurnOff -> turnOffDevice(action.deviceId)
-                        is DeviceControlAction.SetBrightness -> setLightBrightness(action.deviceId, action.action.value)
-                        is DeviceControlAction.SetTemperature -> setTargetTemperature(action.deviceId, action.action.value)
-                        is DeviceControlAction.OpenCurtain -> openCurtain(action.deviceId)
-                        is DeviceControlAction.CloseCurtain -> closeCurtain(action.deviceId)
-                        is DeviceControlAction.Lock -> lock(action.deviceId)
-                        is DeviceControlAction.Unlock -> unlock(action.deviceId)
-                    }
+                    val result = executeDeviceAction(action.deviceId, action.action)
+                    if (result != DELIVERED) failures += "动作 $number：$result"
                 }
                 is SceneAction.DelayAction -> {
-                    // 延迟执行
+                    if (action.delayMs < 0) failures += "动作 $number：延迟时长无效"
+                    else delay(action.delayMs)
                 }
                 is SceneAction.NotifyAction -> {
-                    // 发送通知
+                    val posted = action.message.isNotBlank() &&
+                        runCatching { sceneNotifier(action.message) }.getOrDefault(false)
+                    if (!posted) failures += "动作 $number：通知发送失败"
                 }
             }
         }
+        return if (failures.isEmpty()) "场景已执行" else "场景执行失败：${failures.joinToString("；")}"
     }
 
     /**
@@ -670,20 +643,15 @@ class SmartHomeManager(private val context: Context) {
 
     private fun executeRuleActions(actions: List<SceneAction>) {
         scope.launch {
-            actions.forEach { action ->
-                when (action) {
-                    is SceneAction.DeviceAction -> executeDeviceAction(action.deviceId, action.action)
-                    is SceneAction.DelayAction -> kotlinx.coroutines.delay(action.delayMs)
-                    is SceneAction.NotifyAction -> postSceneNotification(action.message)
-                }
-            }
+            val result = executeActions(actions)
+            if (result != SCENE_EXECUTED) Log.w(TAG, result)
         }
     }
 
-    private fun executeDeviceAction(deviceId: String, action: DeviceControlAction) {
+    private suspend fun executeDeviceAction(deviceId: String, action: DeviceControlAction): String =
         when (action) {
-            is DeviceControlAction.TurnOn -> turnOnDevice(deviceId)
-            is DeviceControlAction.TurnOff -> turnOffDevice(deviceId)
+            is DeviceControlAction.TurnOn -> turnOnLight(deviceId)
+            is DeviceControlAction.TurnOff -> turnOffLight(deviceId)
             is DeviceControlAction.SetBrightness -> setLightBrightness(deviceId, action.value)
             is DeviceControlAction.SetTemperature -> setTargetTemperature(deviceId, action.value)
             is DeviceControlAction.OpenCurtain -> openCurtain(deviceId)
@@ -691,79 +659,6 @@ class SmartHomeManager(private val context: Context) {
             is DeviceControlAction.Lock -> lock(deviceId)
             is DeviceControlAction.Unlock -> unlock(deviceId)
         }
-    }
-
-    private fun postSceneNotification(message: String) {
-        runCatching {
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                manager.createNotificationChannel(
-                    android.app.NotificationChannel(
-                        SCENE_CHANNEL_ID, "智能家居", android.app.NotificationManager.IMPORTANCE_DEFAULT
-                    )
-                )
-            }
-            val notification = androidx.core.app.NotificationCompat.Builder(context, SCENE_CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("JARVIS 家居场景")
-                .setContentText(message)
-                .setAutoCancel(true)
-                .build()
-            manager.notify(SCENE_NOTIFICATION_ID, notification)
-        }
-    }
-
-    // ==================== 预定义场景 ====================
-
-    /**
-     * 创建预定义场景
-     */
-    fun createPredefinedScenes() {
-        // 回家场景
-        createScene(
-            name = "回家模式",
-            description = "打开客厅灯，调节温度到舒适水平",
-            actions = listOf(
-                SceneAction.DeviceAction("", DeviceControlAction.TurnOn),
-                SceneAction.DeviceAction("", DeviceControlAction.SetTemperature(25f)),
-                SceneAction.NotifyAction("欢迎回家")
-            )
-        )
-
-        // 离家场景
-        createScene(
-            name = "离家模式",
-            description = "关闭所有灯，锁门，启动安防",
-            actions = listOf(
-                SceneAction.DeviceAction("", DeviceControlAction.TurnOff),
-                SceneAction.DeviceAction("", DeviceControlAction.Lock),
-                SceneAction.NotifyAction("已启动安防系统")
-            )
-        )
-
-        // 睡眠场景
-        createScene(
-            name = "睡眠模式",
-            description = "关闭所有灯，调节温度，锁门",
-            actions = listOf(
-                SceneAction.DeviceAction("", DeviceControlAction.TurnOff),
-                SceneAction.DeviceAction("", DeviceControlAction.SetTemperature(22f)),
-                SceneAction.DeviceAction("", DeviceControlAction.Lock),
-                SceneAction.NotifyAction("晚安")
-            )
-        )
-
-        // 起床场景
-        createScene(
-            name = "起床模式",
-            description = "打开窗帘，调节温度，播放音乐",
-            actions = listOf(
-                SceneAction.DeviceAction("", DeviceControlAction.OpenCurtain),
-                SceneAction.DeviceAction("", DeviceControlAction.SetTemperature(24f)),
-                SceneAction.NotifyAction("早上好")
-            )
-        )
-    }
 
     // ==================== 设备状态监控 ====================
 
@@ -814,7 +709,33 @@ class SmartHomeManager(private val context: Context) {
         /** 设备状态条件表达式：字段 运算符 值，如 temperature>28 */
         private val CONDITION_REGEX = Regex("^([A-Za-z]+)\\s*(==|!=|>=|<=|>|<)\\s*(.+)$")
 
+        private const val DELIVERED = "已下发"
+        private const val SCENE_EXECUTED = "场景已执行"
         private const val SCENE_CHANNEL_ID = "jarvis_smarthome_scene"
         private const val SCENE_NOTIFICATION_ID = 7301
+
+        private fun postSceneNotification(context: Context, message: String): Boolean = runCatching {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as? android.app.NotificationManager ?: return@runCatching false
+            if (!manager.areNotificationsEnabled()) return@runCatching false
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                manager.createNotificationChannel(
+                    android.app.NotificationChannel(
+                        SCENE_CHANNEL_ID, "智能家居", android.app.NotificationManager.IMPORTANCE_DEFAULT
+                    )
+                )
+            }
+            val notification = androidx.core.app.NotificationCompat.Builder(context, SCENE_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("JARVIS 家居场景")
+                .setContentText(message)
+                .setAutoCancel(true)
+                .build()
+            manager.notify(SCENE_NOTIFICATION_ID, notification)
+            true
+        }.getOrElse {
+            Log.w(TAG, "发送场景通知失败", it)
+            false
+        }
     }
 }
