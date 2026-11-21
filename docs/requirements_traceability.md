@@ -1,7 +1,7 @@
 # 需求追踪矩阵
 
 > 基于《JARVIS_产品规格书.md》第五章 144 项功能规格逐条对照当前代码实现。
-> 本次为**从零复核（re-audit）**后的结果，逐条核对真实调用链，而非仅看文件是否存在。
+> 2026-11-22 在既有调用链矩阵上复核本轮修复、最终测试证据与已知可达性限制。
 >
 > 状态定义：
 > - `DONE` = 真实实现，有真实平台 API/数据支撑，且**可从 UI 或对话链路触达**。
@@ -9,15 +9,24 @@
 > - `RESERVED` = 规格书明确"接口预留"（科幻/违法/系统限制），按规格书计为完成。
 > - `MISSING` = 无实现。
 >
-> 复核日期：2026-10-20 | 复核版本：v2.0
-> 复核方式：逐文件 grep 调用链 + 构建验证（`assembleDebug` EXIT=0）+ 单元/集成测试（190/190 通过）+ `lintDebug` 0 error。
+> 复核日期：2026-11-22 | 复核版本：v3.0
+> 最终验证：40/40 轮加压通过 + 272/272 项 Debug JVM 测试通过 + `lintDebug` 0 error / 44 warning + `assembleDebug` 成功。
+> 边界：`DONE` 表示代码真实且可从 UI/对话触达，不等于对应硬件或外部服务已通过真机验收。
 
 ---
 
-## 本轮复核修复的关键问题
+## 2026-11-22 最终审计与回归
 
-复核发现大量功能"有实现但无任何界面入口"（dead code），违反 REQ-05「禁止占位/必须真实可用」。
-本轮新增 3 个真实界面页签并接通对话链路，使以下功能从"不可达"变为"可达"：
+本轮重点检查失败返回是否被 UI 忽略、异常是否被吞掉、状态是否在失败时被错误清空，以及 API 版本兼容性。已修复会话/日志/模型/插件/发行版持久化，唤醒与传感器启动，PRoot 解压与进程，心率降级和生物识别等问题；逐项提交见 `docs/regression_test_report.md` 第 5 节。
+
+最终 40/40 轮加压和 272/272 项 Debug JVM 测试通过，Lint 为 0 error。静态源码契约测试只证明代码结构与 JVM 行为，不代表硬件、电话、短信、传感器、云服务或 arm64 PRoot 已完成真机验收。
+
+---
+
+## 历史可达性复核（2026-10-20）
+
+历史复核发现大量功能"有实现但无任何界面入口"（dead code），违反 REQ-05「禁止占位/必须真实可用」。
+当时新增 3 个真实界面页签并接通对话链路，使以下功能从"不可达"变为"可达"：
 
 | 新增入口 | 文件 | 接通的功能 |
 |---------|------|-----------|
@@ -105,7 +114,7 @@
 | # | 功能 | 代码文件 | 状态 | 证据 |
 |---|------|---------|------|------|
 | 49 | 拨打电话 | `system/PhoneController.kt` | DONE | 本轮接入：系统操控"拨打电话" |
-| 50 | 接听电话 | `system/PhoneController.kt` | DONE | `answerCall()`（需 ANSWER_PHONE_CALLS） |
+| 50 | 接听电话 | `system/PhoneController.kt` | PARTIAL | `answerCall()` 有系统 API 实现，需权限/角色；当前未发现 UI 或对话调用点 |
 | 51 | 短信发送 | `system/SmsController.kt` | DONE | 本轮接入：系统操控"发送短信" |
 | 52 | 通话/短信读取 | `system/PhoneController.kt`、`system/SmsController.kt` | DONE | 本轮接入：读取通话记录/短信 |
 | 53 | 日历与提醒 | `system/CalendarController.kt`、`system/CommunicationManager.kt` | DONE | 本轮接入：创建日程/添加提醒 |
@@ -235,14 +244,14 @@
 
 | 状态 | 数量 | 占比 |
 |------|------|------|
-| DONE | 129 | 89.6% |
-| PARTIAL | 2 | 1.4% |
+| DONE | 128 | 88.9% |
+| PARTIAL | 3 | 2.1% |
 | RESERVED | 13 | 9.0% |
 | MISSING | 0 | 0% |
 | **合计** | **144** | 100% |
 
-**PARTIAL 明细（2 项）**：#72 外接显示、#99 睡眠监测。
-**PARTIAL 共同原因**：缺外接显示/PPG 长时间采集等硬件条件；相机入口 #33/#34/#35/#94/#112/#113 已于 2026-11-04 接通。
+**PARTIAL 明细（3 项）**：#50 接听电话、#72 外接显示、#99 睡眠监测。
+**PARTIAL 原因**：#50 缺少 UI/对话调用点；#72/#99 依赖外接显示或 PPG 长时间采集等硬件条件。相机入口 #33/#34/#35/#94/#112/#113 已于 2026-11-04 接通。
 **RESERVED（13 项）**：#36、#114、#116、#123、#126、#127、#131、#135、#137、#138、#140、#142、#144，均为规格书明确预留的科幻/医疗合规/云端算力项。
 
 ---
@@ -251,11 +260,11 @@
 
 | 编号 | 需求 | 状态 | 证据 |
 |------|------|------|------|
-| REQ-01 | 完整实现规格书 | ✅ | 本矩阵 144/144 有实现，MISSING=0 |
-| REQ-02 | 无占位符 | ✅ | 全项目 0 处 `TODO`/`UnsupportedOperationException`/空 `onClick` |
+| REQ-01 | 完整实现规格书 | 部分达成 | 144/144 有代码或明确预留，MISSING=0；3 项 PARTIAL 见第九节 |
+| REQ-02 | 无占位符 | ✅ | 生产源码 `app/src/main` 0 处 `TODO`/`FIXME`/`UnsupportedOperationException`/空 `onClick` |
 | REQ-03 | 唤醒与前台服务 | ✅ | 8 种唤醒方式 + `KeepAliveService` |
 | REQ-04 | 多模型切换 | ✅ | `ModelScheduler` + 4 模型配置 |
-| REQ-05 | 禁止占位、必须真实可用 | ✅ | 本轮将 40+ 死代码功能接入真实 UI/对话链路 |
+| REQ-05 | 禁止占位、必须真实可用 | 部分达成 | 本轮已修复确认的假成功/吞错；#50 仍缺用户入口，硬件能力待真机验收 |
 | REQ-06 | 虚拟机（Haven 式 PRoot） | ✅ | `vm/HavenVmManager`、`ProotManager`，集成测试覆盖 |
 | REQ-07 | 人格与灵魂 | ✅ | `personality/Personality.kt` |
 | REQ-08 | 长期记忆 | ✅ | `autonomous/MemorySystem.kt`，本轮补齐导入 |
@@ -271,11 +280,16 @@
 
 | 验证项 | 命令 | 结果 |
 |--------|------|------|
-| 编译 | `gradle assembleDebug` | EXIT=0，BUILD SUCCESSFUL |
-| 单元+集成测试 | `gradle testDebugUnitTest` | 64/64 通过，0 失败 0 错误 |
-| 占位符扫描 | `grep -rn "TODO\|UnsupportedOperationException"` | 0 命中 |
-| 死代码扫描 | 逐 DI manager 调用链 | 本轮修复全部主要死代码 |
+| Debug 编译 | `./gradlew :app:assembleDebug` | BUILD SUCCESSFUL |
+| Debug JVM 测试 | `./gradlew :app:testDebugUnitTest` | 272/272 通过，48 个测试类，0 失败/错误/跳过 |
+| 递增加压 | `ProgressiveLoadTest` | 40/40 通过，`weight` 23 → 486360，逐轮证据见回归报告 |
+| Lint | `./gradlew :app:lintDebug` | 0 error / 44 warning / 1 information |
+| 占位符扫描 | `app/src/main` 中 `TODO`/`FIXME`/`UnsupportedOperationException` | 0 命中 |
+| 空点击扫描 | `app/src/main` 中 `onClick = {}` 形式 | 0 命中 |
+| 调用链复核 | DI、UI、对话与失败返回路径 | 已修复本轮确认问题；#50 可达性限制保留为 PARTIAL |
+
+真机硬件、系统权限、厂商 ROM、云服务和 arm64 PRoot 验收边界详见 `docs/regression_test_report.md` 第 6 节，不能由上述 JVM 测试替代。
 
 ---
 
-*文档版本：v2.0 | 复核日期：2026-10-20 | 上一版本：v1.0（2026-10-09，结论已失效）*
+*文档版本：v3.0 | 复核日期：2026-11-22 | 上一版本：v2.0（2026-10-20）*

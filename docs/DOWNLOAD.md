@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-21 | 版本：v0.0.1（Debug，lint 清零 + 权限/API 守卫）
+> 生成日期：2026-11-22 | 版本：v0.0.1（Debug，40 轮加压 + 272 项 JVM 回归）
 
 ---
 
@@ -28,15 +28,15 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（lint 清零 + 权限/API 守卫）
+版本：   v0.0.1-debug（40 轮加压 + 272 项 JVM 回归）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 82,488,056 字节（78.7 MB）
-压缩包 SHA256： 7c8aa096f3e90e490954297050a43e5c3b838963b489aeba92c8120500287acd
-APK 大小： 219,227,864 字节（209.1 MB）
-APK SHA256： 6ffdc7bc679ffffd75a88802da181eff546bb2ce832d21b333fe13f2aebf9df8
-构建：   2026-11-21
-构建命令：JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew assembleDebug --no-daemon --max-workers=2
-Git：    origin/main（本提交）
+压缩包大小： 79,937,860 字节（76.2 MiB）
+压缩包 SHA256： a35002266d76f1e6f650e45978f619827ac784ee4c04011defdf4e6b29afc3bc
+APK 大小： 218,762,591 字节（208.6 MiB）
+APK SHA256： 12dda3e9ef6bba67f65cbe05532d8300f754c271fbea9a2c0c27e38191cc341d
+构建：   2026-11-22
+构建命令：JAVA_HOME=/root/.local/share/mise/installs/java/17.0.20+101 ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew --no-daemon :app:assembleDebug
+代码基线：c645d37；交付物以 origin/main 最新提交为准
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
 ```
 
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-7c8aa096f3e90e490954297050a43e5c3b838963b489aeba92c8120500287acd
+a35002266d76f1e6f650e45978f619827ac784ee4c04011defdf4e6b29afc3bc
 ```
 
 解压后校验 APK：
 
 ```text
-6ffdc7bc679ffffd75a88802da181eff546bb2ce832d21b333fe13f2aebf9df8
+12dda3e9ef6bba67f65cbe05532d8300f754c271fbea9a2c0c27e38191cc341d
 ```
 
-本包含护眼暖色 OLED / 纸质浅色主题、聊天快捷指令、overlay 加压与会话仓库并发测试，并完成 lint 清零：蓝牙/电话权限显式门禁、Android 版本 API 守卫、Compose StateFlow 正确订阅。失败中文提示，不拉起主界面。`*.apk` 不入 Git，仅提交 `.7z`。Release 仍阻断。
+本包基于最终修复后的代码构建：40/40 轮递增加压、272/272 项 Debug JVM 测试通过，Lint 为 0 error / 44 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
 
 ---
 
@@ -108,4 +108,4 @@ sha256sum apk/jarvis-debug.apk.7z
 
 ---
 
-*文档版本：v3.3 | 生成日期：2026-11-21*
+*文档版本：v3.4 | 生成日期：2026-11-22*
