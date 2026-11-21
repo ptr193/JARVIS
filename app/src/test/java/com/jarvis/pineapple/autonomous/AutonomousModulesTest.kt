@@ -10,6 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 
 /**
  * 单元测试：自主决策模块（仅测试无 Android Context 依赖的类）
@@ -87,5 +88,35 @@ class AutonomousModulesTest {
         assertTrue(dest.importMemories(json))
         assertEquals(1, dest.search("红茶").size)
         assertFalse(dest.importMemories("{not-json"))
+        assertEquals(1, dest.search("红茶").size)
+        assertTrue(dest.lastError.value?.contains("导入失败") == true)
+    }
+
+    @Test
+    fun `memory save failure is visible and does not change state`() {
+        val blockedParent = tmp.newFile("not-a-directory")
+        val memory = MemorySystem(
+            File(blockedParent, "memories.json"),
+            File(tmp.root, "unused-archive")
+        )
+
+        assertFalse(memory.rememberFact("不能丢失的事实"))
+        assertEquals(0, memory.getStats().totalCount)
+        assertTrue(memory.lastError.value?.contains("保存失败") == true)
+    }
+
+    @Test
+    fun `memory archive failure retains all current entries`() {
+        val dir = tmp.newFolder("archive-blocked")
+        val blockedArchive = tmp.newFile("archive-is-a-file")
+        val memory = MemorySystem(File(dir, "memories.json"), File(blockedArchive, "archive"))
+
+        repeat(1000) { index ->
+            assertTrue(memory.recordConversation("记忆-$index"))
+        }
+        assertFalse(memory.recordConversation("触发归档"))
+
+        assertEquals(1000, memory.getStats().totalCount)
+        assertTrue(memory.lastError.value?.contains("归档失败") == true)
     }
 }

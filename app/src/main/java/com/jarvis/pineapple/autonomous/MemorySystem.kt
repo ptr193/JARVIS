@@ -8,6 +8,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -53,54 +54,44 @@ class MemorySystem internal constructor(
     private val _memories = MutableStateFlow<List<MemoryEntry>>(emptyList())
     val memories: StateFlow<List<MemoryEntry>> = _memories.asStateFlow()
 
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
     private val maxMemories = 1000
 
     init {
-        if (!memoryFile.parentFile!!.exists()) memoryFile.parentFile!!.mkdirs()
-        if (!archiveDir.exists()) archiveDir.mkdirs()
         loadMemories()
     }
 
-    fun rememberFact(content: String, importance: Int = 7, metadata: Map<String, String> = emptyMap()) {
-        addEntry(MemoryEntry(type = MemoryType.KEY_FACT, content = content, importance = importance, metadata = metadata))
-    }
+    fun rememberFact(content: String, importance: Int = 7, metadata: Map<String, String> = emptyMap()): Boolean =
+        addEntries(listOf(MemoryEntry(type = MemoryType.KEY_FACT, content = content, importance = importance, metadata = metadata)))
 
-    fun rememberPreference(content: String, importance: Int = 6) {
-        addEntry(MemoryEntry(type = MemoryType.PREFERENCE, content = content, importance = importance))
-    }
+    fun rememberPreference(content: String, importance: Int = 6): Boolean =
+        addEntries(listOf(MemoryEntry(type = MemoryType.PREFERENCE, content = content, importance = importance)))
 
-    fun recordConversation(summary: String, importance: Int = 3) {
-        addEntry(MemoryEntry(type = MemoryType.CONVERSATION_RECORD, content = summary, importance = importance))
-    }
+    fun recordConversation(summary: String, importance: Int = 3): Boolean =
+        addEntries(listOf(MemoryEntry(type = MemoryType.CONVERSATION_RECORD, content = summary, importance = importance)))
 
-    fun recordTask(taskSummary: String, importance: Int = 5) {
-        addEntry(MemoryEntry(type = MemoryType.TASK_RECORD, content = taskSummary, importance = importance))
-    }
+    fun recordTask(taskSummary: String, importance: Int = 5): Boolean =
+        addEntries(listOf(MemoryEntry(type = MemoryType.TASK_RECORD, content = taskSummary, importance = importance)))
 
-    fun updateUserProfile(content: String, importance: Int = 8) {
-        addEntry(MemoryEntry(type = MemoryType.USER_PROFILE, content = content, importance = importance))
-    }
+    fun updateUserProfile(content: String, importance: Int = 8): Boolean =
+        addEntries(listOf(MemoryEntry(type = MemoryType.USER_PROFILE, content = content, importance = importance)))
 
-    private fun addEntry(entry: MemoryEntry) {
-        synchronized(lock) {
-            val current = _memories.value.toMutableList()
-
+    private fun addEntries(entries: List<MemoryEntry>): Boolean = synchronized(lock) {
+        val current = _memories.value.toMutableList()
+        entries.forEach { entry ->
             val existingIdx = current.indexOfFirst {
                 it.type == entry.type && it.content == entry.content
             }
-            if (existingIdx >= 0) {
-                current[existingIdx] = entry
-            } else {
-                current.add(entry)
-            }
-
-            if (current.size > maxMemories) {
-                archiveOldMemories(current)
-            }
-
-            _memories.value = current.sortedByDescending { it.timestamp }
-            saveMemories()
+            if (existingIdx >= 0) current[existingIdx] = entry else current.add(entry)
         }
+
+        if (current.size > maxMemories && !archiveOldMemories(current)) return false
+        val sorted = current.sortedByDescending { it.timestamp }
+        if (!saveMemories(sorted)) return false
+        _memories.value = sorted
+        true
     }
 
     fun search(query: String, limit: Int = 10): List<MemoryEntry> {
@@ -151,25 +142,24 @@ class MemorySystem internal constructor(
         }
     }
 
-    fun forget(memoryId: String) {
-        synchronized(lock) {
-            _memories.value = _memories.value.filterNot { it.id == memoryId }
-            saveMemories()
-        }
+    fun forget(memoryId: String): Boolean = synchronized(lock) {
+        val updated = _memories.value.filterNot { it.id == memoryId }
+        if (!saveMemories(updated)) return false
+        _memories.value = updated
+        true
     }
 
-    fun forgetByType(type: MemoryType) {
-        synchronized(lock) {
-            _memories.value = _memories.value.filterNot { it.type == type }
-            saveMemories()
-        }
+    fun forgetByType(type: MemoryType): Boolean = synchronized(lock) {
+        val updated = _memories.value.filterNot { it.type == type }
+        if (!saveMemories(updated)) return false
+        _memories.value = updated
+        true
     }
 
-    fun clearAll() {
-        synchronized(lock) {
-            _memories.value = emptyList()
-            saveMemories()
-        }
+    fun clearAll(): Boolean = synchronized(lock) {
+        if (!saveMemories(emptyList())) return false
+        _memories.value = emptyList()
+        true
     }
 
     fun exportMemories(): String {
@@ -178,54 +168,76 @@ class MemorySystem internal constructor(
     }
 
     fun importMemories(jsonStr: String): Boolean {
-        return try {
-            val dtos = json.decodeFromString<List<MemoryEntryDto>>(jsonStr)
-            dtos.forEach { dto ->
-                addEntry(dto.toEntry())
-            }
-            true
+        val entries = try {
+            json.decodeFromString<List<MemoryEntryDto>>(jsonStr).map { it.toEntry() }
         } catch (e: Exception) {
-            false
+            _lastError.value = "记忆导入失败：${e.message ?: e.javaClass.simpleName}"
+            return false
         }
+        return addEntries(entries)
     }
 
-    private fun saveMemories() {
-        try {
-            val dtos = _memories.value.map { MemoryEntryDto.fromEntry(it) }
-            memoryFile.writeText(json.encodeToString(dtos))
+    private fun saveMemories(entries: List<MemoryEntry>): Boolean {
+        return try {
+            val dtos = entries.map { MemoryEntryDto.fromEntry(it) }
+            writeAtomically(memoryFile, json.encodeToString(dtos))
+            _lastError.value = null
+            true
         } catch (e: Exception) {
-            // 保存失败时静默处理
+            _lastError.value = "记忆保存失败：${e.message ?: e.javaClass.simpleName}"
+            false
         }
     }
 
     private fun loadMemories() {
         try {
-            if (memoryFile.exists()) {
+            if (memoryFile.exists() && memoryFile.length() > 0) {
                 val dtos = json.decodeFromString<List<MemoryEntryDto>>(memoryFile.readText())
                 _memories.value = dtos.map { it.toEntry() }
                     .sortedByDescending { it.timestamp }
             }
+            _lastError.value = null
         } catch (e: Exception) {
             _memories.value = emptyList()
+            _lastError.value = "记忆读取失败：${e.message ?: e.javaClass.simpleName}"
         }
     }
 
-    private fun archiveOldMemories(current: MutableList<MemoryEntry>) {
-        val toArchive = current
+    private fun archiveOldMemories(current: MutableList<MemoryEntry>): Boolean {
+        val archiveCount = current.size - maxMemories + 100
+        val lowImportance = current
             .filter { it.importance <= 3 }
             .sortedBy { it.timestamp }
-            .take(current.size - maxMemories + 100)
+            .take(archiveCount)
+        val lowImportanceIds = lowImportance.mapTo(mutableSetOf()) { it.id }
+        val remaining = current
+            .filterNot { it.id in lowImportanceIds }
+            .sortedWith(compareBy<MemoryEntry> { it.importance > 3 }.thenBy { it.timestamp })
+            .take(archiveCount - lowImportance.size)
+        val toArchive = lowImportance + remaining
+        if (toArchive.isEmpty()) return true
 
-        if (toArchive.isNotEmpty()) {
-            try {
-                val archiveFile = File(archiveDir, "archive_${System.currentTimeMillis()}.json")
-                val dtos = toArchive.map { MemoryEntryDto.fromEntry(it) }
-                archiveFile.writeText(json.encodeToString(dtos))
-                current.removeAll(toArchive.toSet())
-            } catch (e: Exception) {
-                current.sortBy { it.timestamp }
-                repeat(100) { if (current.isNotEmpty()) current.removeAt(0) }
-            }
+        return try {
+            val archiveFile = File(archiveDir, "archive_${System.currentTimeMillis()}_${System.nanoTime()}.json")
+            val dtos = toArchive.map { MemoryEntryDto.fromEntry(it) }
+            writeAtomically(archiveFile, json.encodeToString(dtos))
+            current.removeAll(toArchive.toSet())
+            true
+        } catch (e: Exception) {
+            _lastError.value = "记忆归档失败：${e.message ?: e.javaClass.simpleName}"
+            false
+        }
+    }
+
+    private fun writeAtomically(file: File, content: String) {
+        val parent = file.parentFile ?: throw IOException("存储路径没有父目录")
+        if (!parent.isDirectory && !parent.mkdirs()) throw IOException("无法创建存储目录：$parent")
+        val temp = File(parent, "${file.name}.tmp")
+        try {
+            temp.writeText(content)
+            if (!temp.renameTo(file)) throw IOException("无法写入文件：${file.name}")
+        } finally {
+            if (temp.exists()) temp.delete()
         }
     }
 

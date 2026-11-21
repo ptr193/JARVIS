@@ -910,6 +910,7 @@ private fun LogTab(
     memorySystem: com.jarvis.pineapple.autonomous.MemorySystem = org.koin.androidx.compose.get()
 ) {
     val context = LocalContext.current
+    val memoryError by memorySystem.lastError.collectAsState()
     Text("日志与记忆", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
 
@@ -972,6 +973,10 @@ private fun LogTab(
 
     Spacer(Modifier.height(16.dp))
     Text("记忆管理 (REQ-11)", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+    memoryError?.let {
+        Spacer(Modifier.height(4.dp))
+        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+    }
     Spacer(Modifier.height(8.dp))
 
     Row {
@@ -983,8 +988,8 @@ private fun LogTab(
         }) { Text("导出记忆 (JSON)") }
         Spacer(Modifier.width(8.dp))
         Button(onClick = {
-            memorySystem.clearAll()
-            showMsg("所有记忆已清空")
+            val cleared = memorySystem.clearAll()
+            showMsg(if (cleared) "所有记忆已清空" else memorySystem.lastError.value ?: "记忆清空失败")
         }) { Text("清空所有记忆") }
     }
 
@@ -999,7 +1004,7 @@ private fun LogTab(
                 showMsg("读取文件失败")
             } else {
                 val ok = memorySystem.importMemories(json)
-                showMsg(if (ok) "记忆已导入（${json.length} 字符）" else "导入失败：JSON 格式无效")
+                showMsg(if (ok) "记忆已导入（${json.length} 字符）" else memorySystem.lastError.value ?: "记忆导入失败")
             }
         }
     }
