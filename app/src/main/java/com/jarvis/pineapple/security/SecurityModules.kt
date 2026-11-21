@@ -11,6 +11,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,7 +27,7 @@ class BiometricAuth(private val context: Context) {
     }
 
     fun authenticate(activity: FragmentActivity, callback: BiometricPrompt.AuthenticationCallback) {
-        val executor = context.mainExecutor
+        val executor = ContextCompat.getMainExecutor(context)
         val prompt = BiometricPrompt(activity, executor, callback)
         val info = BiometricPrompt.PromptInfo.Builder()
             .setTitle("JARVIS 身份验证")
