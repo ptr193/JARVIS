@@ -1,10 +1,8 @@
 package com.jarvis.pineapple.vm
 
-import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.io.File
 
 /**
  * 基于 PRoot 的 Linux 虚拟机管理器。
@@ -15,7 +13,6 @@ import java.io.File
  * 所有操作均基于真实的 [ProotManager] 执行，不产生模拟输出。
  */
 class HavenVmManager(
-    private val context: Context,
     private val prootManager: ProotManager,
     private val distroManager: VmDistroManager
 ) {
@@ -223,10 +220,6 @@ class HavenVmManager(
     private fun updateVm(vmId: String, transform: (HavenVm) -> HavenVm) {
         _vms.value = _vms.value.map { if (it.id == vmId) transform(it) else it }
     }
-
-    /** context 保留用于未来的会话存储/日志扩展。 */
-    @Suppress("unused")
-    private fun storageDir(): File = File(context.filesDir, "vm")
 
     companion object {
         fun createFailureReason(

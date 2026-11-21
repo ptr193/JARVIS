@@ -62,10 +62,6 @@ import com.jarvis.pineapple.system.SystemSettingsController
 import com.jarvis.pineapple.ui.chat.ChatViewModel
 import com.jarvis.pineapple.vm.HavenVmManager
 import com.jarvis.pineapple.vm.ProotManager
-import com.jarvis.pineapple.vm.VmManager
-import com.jarvis.pineapple.vm.VmPlatformManager
-import com.jarvis.pineapple.vm.VmRootManager
-import com.jarvis.pineapple.vm.VmTypeSelector
 import com.jarvis.pineapple.wake.AppIconWakeDetector
 import com.jarvis.pineapple.wake.BluetoothWakeDetector
 import com.jarvis.pineapple.wake.HomeLongPressDetector
@@ -145,13 +141,9 @@ val appModule = module {
     single { ChatEngine(get(), get(), get(), get(), get(), get(), get(), get()) }
 
     // Virtual machine
-    single { VmManager(get<android.content.Context>()) }
     single { ProotManager(get()) }
     single { VmDistroManager(get(), get()) }
-    single { HavenVmManager(get(), get(), get()) }
-    single { VmRootManager(get()) }
-    single { VmPlatformManager(get()) }
-    single { VmTypeSelector() }
+    single { HavenVmManager(get(), get()) }
     single { VmImageImporter(get()) }
 
     // Smart home
