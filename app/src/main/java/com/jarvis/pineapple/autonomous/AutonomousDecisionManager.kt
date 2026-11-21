@@ -340,7 +340,6 @@ class AutonomousDecisionManager(private val context: Context) {
     sealed class EmergencyAction {
         data class CallEmergency(val phoneNumber: String) : EmergencyAction()
         data class SendMessage(val recipient: String, val message: String) : EmergencyAction()
-        data class ActivateSystem(val systemName: String) : EmergencyAction()
         data class NotifyContacts(val message: String) : EmergencyAction()
         data class Lockdown(val reason: String) : EmergencyAction()
     }
@@ -368,99 +367,94 @@ class AutonomousDecisionManager(private val context: Context) {
     suspend fun triggerEmergency(protocolId: String, reason: String): Boolean {
         val protocol = _emergencyProtocols.value.firstOrNull { it.id == protocolId }
             ?: return false
+        if (!protocol.isEnabled || protocol.actions.isEmpty()) return false
 
-        // 记录活跃应急事件
-        val current = _activeEmergencies.value.toMutableList()
-        current.add(protocolId)
-        _activeEmergencies.value = current
+        val outcomes = protocol.actions.map { executeEmergencyAction(it, reason) }
+        if (outcomes.none { it }) return false
 
-        // 执行应急动作
-        for (action in protocol.actions) {
-            executeEmergencyAction(action, reason)
+        if (protocolId !in _activeEmergencies.value) {
+            _activeEmergencies.value = _activeEmergencies.value + protocolId
         }
-
-        return true
+        return outcomes.all { it }
     }
 
-    private suspend fun executeEmergencyAction(action: EmergencyAction, reason: String) {
-        when (action) {
+    private fun executeEmergencyAction(action: EmergencyAction, reason: String): Boolean {
+        return when (action) {
             is EmergencyAction.CallEmergency -> callEmergency(action.phoneNumber, reason)
             is EmergencyAction.SendMessage ->
                 sendSms(action.recipient, "【JARVIS 紧急告警】${action.message}（原因：$reason）")
-            is EmergencyAction.ActivateSystem -> {
-                // 真实可观测效果：发出高优先级应急通知并记录系统激活事件
-                postEmergencyNotification("系统激活：${action.systemName}", reason)
-                appendEmergencyLog("ACTIVATE\t${action.systemName}\t$reason")
-            }
             is EmergencyAction.NotifyContacts -> {
                 val contacts = emergencyContacts()
                 if (contacts.isEmpty()) {
                     Log.w(TAG, "未配置紧急联系人，无法发送告警")
+                    return false
                 }
-                contacts.forEach { phone ->
+                val submitted = contacts.count { phone ->
                     sendSms(phone, "【JARVIS 紧急告警】${action.message}（原因：$reason）")
                 }
-                postEmergencyNotification("已通知 ${contacts.size} 位紧急联系人", reason)
+                if (submitted > 0) {
+                    postEmergencyNotification("已提交 $submitted/${contacts.size} 位联系人的短信", reason)
+                }
+                submitted == contacts.size
             }
             is EmergencyAction.Lockdown -> performLockdown(action.reason.ifBlank { reason })
         }
     }
 
     @SuppressLint("MissingPermission")
-    private fun callEmergency(phoneNumber: String, reason: String) {
-        if (phoneNumber.isBlank()) return
-        try {
+    private fun callEmergency(phoneNumber: String, reason: String): Boolean {
+        if (phoneNumber.isBlank()) return false
+        return try {
             val canCall = hasPermission(Manifest.permission.CALL_PHONE)
             val intent = Intent(
                 if (canCall) Intent.ACTION_CALL else Intent.ACTION_DIAL,
                 Uri.parse("tel:$phoneNumber")
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
-            appendEmergencyLog("CALL\t$phoneNumber\t$reason")
+            appendEmergencyLog("${if (canCall) "CALL_REQUESTED" else "DIALER_OPENED"}\t$phoneNumber\t$reason")
+            canCall
         } catch (e: Exception) {
             Log.e(TAG, "拨打紧急电话失败: $phoneNumber", e)
+            false
         }
     }
 
     @SuppressLint("MissingPermission")
-    private fun sendSms(recipient: String, message: String) {
-        if (recipient.isBlank()) return
+    private fun sendSms(recipient: String, message: String): Boolean {
+        if (recipient.isBlank()) return false
         if (!hasPermission(Manifest.permission.SEND_SMS)) {
             Log.w(TAG, "缺少 SEND_SMS 权限，无法发送应急短信")
-            return
+            return false
         }
-        try {
+        return try {
             val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
                 SmsManager.getDefault()
-            }
-            smsManager?.sendTextMessage(recipient, null, message, null, null)
-            appendEmergencyLog("SMS\t$recipient\t$message")
+            } ?: return false
+            smsManager.sendTextMessage(recipient, null, message, null, null)
+            appendEmergencyLog("SMS_SUBMITTED\t$recipient\t$message")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "发送应急短信失败: $recipient", e)
+            false
         }
     }
 
-    private fun performLockdown(reason: String) {
-        try {
+    private fun performLockdown(reason: String): Boolean {
+        return try {
             val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE)
-                as? DevicePolicyManager
+                as? DevicePolicyManager ?: return false
             val admin = JarvisDeviceAdminReceiver.componentName(context)
-            if (dpm != null && dpm.isAdminActive(admin)) {
-                dpm.lockNow()
-                appendEmergencyLog("LOCKDOWN\tlockNow\t$reason")
-            } else {
-                // 未激活设备管理员：通过锁屏 Activity 触发真实锁定流程
-                val intent = Intent(DevicePolicyManager.ACTION_SET_NEW_PASSWORD)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(intent)
-                appendEmergencyLog("LOCKDOWN\tpassword-screen\t$reason")
-            }
+            if (!dpm.isAdminActive(admin)) return false
+            dpm.lockNow()
+            appendEmergencyLog("LOCKDOWN\tlockNow\t$reason")
             postEmergencyNotification("已执行安全锁定", reason)
+            true
         } catch (e: Exception) {
             Log.e(TAG, "执行锁定失败", e)
+            false
         }
     }
 

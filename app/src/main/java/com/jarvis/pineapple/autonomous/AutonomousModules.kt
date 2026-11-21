@@ -106,63 +106,64 @@ class EmergencyProtocol(private val context: Context) {
     var lastResult: String = ""
         private set
 
-    @SuppressLint("MissingPermission")
     private fun executeEmergencyResponse(type: EmergencyType): String {
         val location = lastKnownLocation()
-        val missing = mutableListOf<String>()
-        if (!hasPermission(Manifest.permission.SEND_SMS)) missing += "缺少 SEND_SMS"
-        if (!hasPermission(Manifest.permission.CALL_PHONE)) missing += "缺少 CALL_PHONE"
+        val outcomes = mutableListOf(
+            postNotification(type, location),
+            sendLocationToContacts(type, location),
+            dialEmergency(type)
+        )
+        if (!recordEvent(type, location)) outcomes += "应急日志写入失败"
+        return outcomes.joinToString("；")
+    }
+
+    private fun postNotification(type: EmergencyType, location: String): String {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
         ) {
-            missing += "缺少 POST_NOTIFICATIONS"
+            return "通知未发送：缺少 POST_NOTIFICATIONS"
         }
-        postNotification(type, location)
-        sendLocationToContacts(type, location)
-        dialEmergency(type)
-        recordEvent(type, location)
-        return missingMessage(missing)
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: return "通知未发送：系统通知服务不可用"
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                manager.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ID, "应急告警", NotificationManager.IMPORTANCE_HIGH)
+                )
+            }
+            val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            val pending = intent?.let {
+                PendingIntent.getActivity(
+                    context, 0, it,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            }
+            val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.stat_sys_warning)
+                .setContentTitle("紧急事件：${type.label}")
+                .setContentText("JARVIS 已启动应急响应，位置：$location")
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setAutoCancel(true)
+                .apply { pending?.let { setContentIntent(it) } }
+                .build()
+            manager.notify(NOTIFICATION_ID, notification)
+            "高优先级通知已提交"
+        } catch (e: Exception) {
+            Log.e(TAG, "发送应急通知失败", e)
+            "通知发送失败：${e.message ?: e.javaClass.simpleName}"
+        }
     }
 
-    private fun postNotification(type: EmergencyType, location: String) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            !hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-        ) {
-            return
-        }
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "应急告警", NotificationManager.IMPORTANCE_HIGH)
-            )
-        }
-        val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
-        val pending = intent?.let {
-            PendingIntent.getActivity(
-                context, 0, it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("紧急事件：${type.label}")
-            .setContentText("JARVIS 已启动应急响应，位置：$location")
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setAutoCancel(true)
-            .apply { pending?.let { setContentIntent(it) } }
-            .build()
-        manager.notify(NOTIFICATION_ID, notification)
-    }
-
-    private fun sendLocationToContacts(type: EmergencyType, location: String) {
+    @SuppressLint("MissingPermission")
+    private fun sendLocationToContacts(type: EmergencyType, location: String): String {
         if (!hasPermission(Manifest.permission.SEND_SMS)) {
             Log.w(TAG, "缺少 SEND_SMS 权限，无法发送应急短信")
-            return
+            return "短信未发送：缺少 SEND_SMS"
         }
         val contacts = emergencyContacts()
         if (contacts.isEmpty()) {
             Log.w(TAG, "未配置紧急联系人")
-            return
+            return "短信未发送：未配置紧急联系人"
         }
         val message = "【JARVIS 紧急告警】检测到${type.label}，我的位置：$location"
         val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -170,35 +171,49 @@ class EmergencyProtocol(private val context: Context) {
         } else {
             @Suppress("DEPRECATION")
             SmsManager.getDefault()
-        }
+        } ?: return "短信未发送：系统短信服务不可用"
+        var submitted = 0
         contacts.forEach { phone ->
             try {
-                smsManager?.sendTextMessage(phone, null, message, null, null)
+                smsManager.sendTextMessage(phone, null, message, null, null)
+                submitted++
             } catch (e: Exception) {
                 Log.e(TAG, "发送应急短信失败: $phone", e)
             }
         }
+        val failed = contacts.size - submitted
+        return "短信已提交 $submitted/${contacts.size} 条（无送达回执）" +
+            if (failed > 0) "，失败 $failed 条" else ""
     }
 
-    private fun dialEmergency(type: EmergencyType) {
-        val number = type.dialNumber ?: return
-        try {
+    @SuppressLint("MissingPermission")
+    private fun dialEmergency(type: EmergencyType): String {
+        val number = type.dialNumber ?: return "此事件类型无需拨打电话"
+        return try {
             val uri = Uri.parse("tel:$number")
             val canCall = hasPermission(Manifest.permission.CALL_PHONE)
             val intent = Intent(if (canCall) Intent.ACTION_CALL else Intent.ACTION_DIAL, uri)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
+            if (canCall) {
+                "已请求系统拨打 $number（通话结果未确认）"
+            } else {
+                "缺少 CALL_PHONE，已打开拨号界面，请手动确认拨打 $number"
+            }
         } catch (e: Exception) {
             Log.e(TAG, "拨打应急电话失败", e)
+            "电话操作失败：${e.message ?: e.javaClass.simpleName}"
         }
     }
 
-    private fun recordEvent(type: EmergencyType, location: String) {
-        try {
+    private fun recordEvent(type: EmergencyType, location: String): Boolean {
+        return try {
             val file = File(context.filesDir, "emergency_log.txt")
             file.appendText("${System.currentTimeMillis()}\t${type.label}\t$location\n")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "记录应急事件失败", e)
+            false
         }
     }
 
@@ -232,9 +247,6 @@ class EmergencyProtocol(private val context: Context) {
     companion object {
         private const val TAG = "EmergencyProtocol"
 
-        fun missingMessage(missing: List<String>): String {
-            return if (missing.isEmpty()) "应急流程已执行" else missing.joinToString("；")
-        }
         private const val CHANNEL_ID = "jarvis_emergency"
         private const val NOTIFICATION_ID = 9001
     }

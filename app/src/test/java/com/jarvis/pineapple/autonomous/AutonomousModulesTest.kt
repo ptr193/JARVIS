@@ -1,6 +1,9 @@
 package com.jarvis.pineapple.autonomous
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -42,28 +45,35 @@ class AutonomousModulesTest {
     }
 
     @Test
-    fun `ProactiveNotifier threshold alert`() {
+    fun `ProactiveNotifier threshold alert`() = runBlocking {
         val notifier = ProactiveNotifier()
-        // 不抛异常即视为通过（SharedFlow 有 buffer）
-        notifier.heartbeatCheck(40f, 30f) // 40 > 30 触发 WARNING
-        notifier.heartbeatCheck(10f, 30f) // 10 < 30 不触发
-        assertTrue(true)
+        var received: ProactiveNotifier.Alert? = null
+        val collector = launch { received = notifier.alerts.first() }
+        yield()
+
+        notifier.heartbeatCheck(40f, 30f)
+        notifier.heartbeatCheck(10f, 30f)
+        collector.join()
+
+        assertEquals("threshold", received?.type)
+        assertEquals(ProactiveNotifier.Severity.WARNING, received?.severity)
+        assertTrue(received?.message?.contains("40") == true)
     }
 
     @Test
-    fun `ProactiveNotifier emit alert with custom severity`() {
+    fun `ProactiveNotifier emit alert with custom severity`() = runBlocking {
         val notifier = ProactiveNotifier()
+        var received: ProactiveNotifier.Alert? = null
+        val collector = launch { received = notifier.alerts.first() }
+        yield()
+
         notifier.notify("test_type", "test_message", ProactiveNotifier.Severity.CRITICAL)
-        assertTrue(true)
-    }
+        collector.join()
 
-    @Test
-    fun `emergency protocol reports missing permissions`() {
         assertEquals(
-            "缺少 SEND_SMS；缺少 CALL_PHONE",
-            EmergencyProtocol.missingMessage(listOf("缺少 SEND_SMS", "缺少 CALL_PHONE"))
+            ProactiveNotifier.Alert("test_type", "test_message", ProactiveNotifier.Severity.CRITICAL),
+            received
         )
-        assertEquals("应急流程已执行", EmergencyProtocol.missingMessage(emptyList()))
     }
 
     @Test
