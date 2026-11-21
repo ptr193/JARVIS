@@ -1138,25 +1138,39 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
     }) { Text(if (isDefaultAssistant) "打开默认助手设置" else "一键设为默认 AI 助手") }
     Spacer(Modifier.height(8.dp))
 
-    SettingSwitch("语音唤醒", voiceWake, {
-        voiceWake = it
-        applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.VOICE, it)
+    fun updateWakeSource(
+        source: com.jarvis.pineapple.wake.WakeSource,
+        label: String,
+        enabled: Boolean,
+        updateState: () -> Unit
+    ) {
+        if (!applyWakeSource(context, source, enabled)) {
+            showMsg("$label${if (enabled) "启用" else "停用"}失败，设置未保存")
+            return
+        }
+        updateState()
         saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
+    }
+
+    SettingSwitch("语音唤醒", voiceWake, { requested ->
+        updateWakeSource(com.jarvis.pineapple.wake.WakeSource.VOICE, "语音唤醒", requested) {
+            voiceWake = requested
+        }
     })
-    SettingSwitch("电源键唤醒", powerWake, {
-        powerWake = it
-        applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.POWER_BUTTON, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
+    SettingSwitch("电源键唤醒", powerWake, { requested ->
+        updateWakeSource(com.jarvis.pineapple.wake.WakeSource.POWER_BUTTON, "电源键唤醒", requested) {
+            powerWake = requested
+        }
     })
-    SettingSwitch("摇一摇唤醒", shakeWake, {
-        shakeWake = it
-        applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.SHAKE, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
+    SettingSwitch("摇一摇唤醒", shakeWake, { requested ->
+        updateWakeSource(com.jarvis.pineapple.wake.WakeSource.SHAKE, "摇一摇唤醒", requested) {
+            shakeWake = requested
+        }
     })
-    SettingSwitch("蓝牙按键唤醒", bluetoothWake, {
-        bluetoothWake = it
-        applyWakeSource(context, com.jarvis.pineapple.wake.WakeSource.BLUETOOTH, it)
-        saveGeneralPrefs(context, voiceWake, powerWake, shakeWake, bluetoothWake)
+    SettingSwitch("蓝牙按键唤醒", bluetoothWake, { requested ->
+        updateWakeSource(com.jarvis.pineapple.wake.WakeSource.BLUETOOTH, "蓝牙按键唤醒", requested) {
+            bluetoothWake = requested
+        }
     })
 
     Spacer(Modifier.height(16.dp))
@@ -1201,10 +1215,13 @@ private fun applyWakeSource(
     context: android.content.Context,
     source: com.jarvis.pineapple.wake.WakeSource,
     enabled: Boolean
-) {
-    runCatching {
+): Boolean {
+    return try {
         org.koin.core.context.GlobalContext.get().get<com.jarvis.pineapple.wake.WakeEngine>()
             .setEnabled(source, enabled)
+    } catch (e: Exception) {
+        android.util.Log.e("SettingsScreen", "唤醒源启停失败: $source", e)
+        false
     }
 }
 

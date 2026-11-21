@@ -118,7 +118,16 @@ class MainActivity : ComponentActivity() {
     private fun applySavedWakePreferences() {
         val prefs = getSharedPreferences("jarvis_general", MODE_PRIVATE)
         fun apply(source: WakeSource, key: String, default: Boolean) {
-            runCatching { wakeEngine.setEnabled(source, prefs.getBoolean(key, default)) }
+            val requested = prefs.getBoolean(key, default)
+            val applied = try {
+                wakeEngine.setEnabled(source, requested)
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "恢复唤醒源失败: $source", e)
+                false
+            }
+            if (requested && !applied) {
+                prefs.edit().putBoolean(key, false).apply()
+            }
         }
         apply(WakeSource.VOICE, "voice_wake", true)
         apply(WakeSource.POWER_BUTTON, "power_wake", true)

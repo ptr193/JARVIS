@@ -169,28 +169,8 @@ class WakeEngine(private val context: Context) {
         trigger(WakeSource.HOME_LONG_PRESS)
     }
 
-    fun setEnabled(source: WakeSource, enabled: Boolean) {
-        if (enabled) {
-            enabledSources.add(source)
-            when (source) {
-                WakeSource.VOICE -> {
-                    if (!voiceWakeDetector.start()) {
-                        voiceWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
-                    }
-                }
-                WakeSource.POWER_BUTTON -> powerButtonWakeDetector.start()
-                WakeSource.NOTIFICATION -> notificationWakeDetector.start()
-                WakeSource.SHAKE -> {
-                    if (!shakeWakeDetector.start()) {
-                        shakeWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
-                    }
-                }
-                WakeSource.BLUETOOTH -> bluetoothWakeDetector.start()
-                WakeSource.TILE -> Unit
-                WakeSource.APP_ICON -> appIconWakeDetector.start()
-                WakeSource.HOME_LONG_PRESS -> homeLongPressDetector.start()
-            }
-        } else {
+    fun setEnabled(source: WakeSource, enabled: Boolean): Boolean {
+        if (!enabled) {
             enabledSources.remove(source)
             when (source) {
                 WakeSource.VOICE -> voiceWakeDetector.stop()
@@ -202,7 +182,25 @@ class WakeEngine(private val context: Context) {
                 WakeSource.APP_ICON -> appIconWakeDetector.stop()
                 WakeSource.HOME_LONG_PRESS -> homeLongPressDetector.stop()
             }
+            return true
         }
+
+        val started = when (source) {
+            WakeSource.VOICE -> voiceWakeDetector.start().also { started ->
+                if (!started) voiceWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
+            }
+            WakeSource.POWER_BUTTON -> powerButtonWakeDetector.start().let { true }
+            WakeSource.NOTIFICATION -> notificationWakeDetector.start().let { true }
+            WakeSource.SHAKE -> shakeWakeDetector.start().also { started ->
+                if (!started) shakeWakeDetector.unavailableReason.value?.let { noteUnavailable(it) }
+            }
+            WakeSource.BLUETOOTH -> bluetoothWakeDetector.start().let { true }
+            WakeSource.TILE -> true
+            WakeSource.APP_ICON -> appIconWakeDetector.start().let { true }
+            WakeSource.HOME_LONG_PRESS -> homeLongPressDetector.start().let { true }
+        }
+        if (started) enabledSources.add(source) else enabledSources.remove(source)
+        return started
     }
 
     fun isEnabled(source: WakeSource): Boolean = source in enabledSources
