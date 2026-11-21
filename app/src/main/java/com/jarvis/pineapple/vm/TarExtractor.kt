@@ -79,7 +79,11 @@ object TarExtractor {
                     if (!currentEntry.isSymbolicLink && mode != 0) {
                         outFile.setReadable(true, false)
                         outFile.setWritable(true, true)
-                        if (mode and 0b001_000_000 != 0) outFile.setExecutable(true, false)
+                        if (mode and 0b001_000_000 != 0 &&
+                            (!outFile.setExecutable(true, false) || !outFile.canExecute())
+                        ) {
+                            throw IllegalArgumentException("无法恢复可执行权限: ${outFile.absolutePath}")
+                        }
                     }
                     entry = tar.nextEntry as? TarArchiveEntry
                 }

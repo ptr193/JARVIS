@@ -57,7 +57,10 @@ class TarExtractorTest {
     fun `archive round trip restores regular files`() {
         val source = tmp.newFolder("source")
         File(source, "bin").mkdirs()
-        File(source, "bin/run.sh").writeText("#!/bin/sh\necho ok\n")
+        val script = File(source, "bin/run.sh").apply {
+            writeText("#!/bin/sh\necho ok\n")
+            assertTrue(setExecutable(true, false))
+        }
         File(source, "data.txt").writeText("payload")
         val archive = File(tmp.root, "snapshot.tar.gz")
         val restored = tmp.newFolder("restored")
@@ -67,6 +70,8 @@ class TarExtractorTest {
 
         assertEquals("payload", File(restored, "data.txt").readText())
         assertEquals("#!/bin/sh\necho ok\n", File(restored, "bin/run.sh").readText())
+        assertTrue(script.canExecute())
+        assertTrue(File(restored, "bin/run.sh").canExecute())
         assertTrue(archive.length() > 0)
     }
 
