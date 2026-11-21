@@ -56,6 +56,39 @@ class PluginManagerTest {
         assertTrue(install.contains("finally"))
     }
 
+    @Test
+    fun disableFailsWhenPluginUnloadFails() {
+        val source = readSource("app/src/main/java/com/jarvis/pineapple/plugin/PluginManager.kt")
+        val disable = source.substringAfter("fun disable(pluginId: String)")
+            .substringBefore("/** 执行插件命令")
+        val deactivate = source.substringAfter("private fun deactivate(")
+            .substringBefore("private fun activate(")
+
+        assertTrue(disable.contains("if (!deactivate(loaded)) return false"))
+        assertFalse(disable.contains("runCatching"))
+        assertTrue(deactivate.contains("loaded.instance.onUnload()"))
+        assertTrue(deactivate.contains("catch (e: Throwable)"))
+        assertTrue(deactivate.contains("false"))
+        assertTrue(
+            deactivate.indexOf("loaded.instance.onUnload()") <
+                deactivate.indexOf("loaded.enabled = false")
+        )
+    }
+
+    @Test
+    fun uninstallDeactivatesBeforeDeletionAndRestoresOnDeleteFailure() {
+        val source = readSource("app/src/main/java/com/jarvis/pineapple/plugin/PluginManager.kt")
+        val uninstall = source.substringAfter("fun uninstall(pluginId: String)")
+            .substringBefore("/** 启用插件。")
+        val deleteFailure = uninstall.substringAfter("if (!deleted)")
+
+        assertTrue(uninstall.contains("if (!deactivate(loaded)) return false"))
+        assertTrue(uninstall.indexOf("deactivate(loaded)") < uninstall.indexOf("file.delete()"))
+        assertTrue(deleteFailure.contains("loaded.enabled = activate(loaded)"))
+        assertTrue(deleteFailure.contains("return false"))
+        assertTrue(uninstall.indexOf("if (!deleted)") < uninstall.indexOf("instances.remove(pluginId)"))
+    }
+
     private fun readSource(relativePath: String): String {
         val candidates = listOf(File(relativePath), File("../$relativePath"))
         return candidates.firstOrNull { it.exists() }?.readText()

@@ -128,12 +128,27 @@ class PluginManager(private val context: Context) {
     /** 卸载插件。 */
     fun uninstall(pluginId: String): Boolean {
         val loaded = instances[pluginId] ?: return false
+        val wasEnabled = loaded.enabled
+        if (!deactivate(loaded)) return false
+
         val file = File(loaded.sourcePath)
-        if (file.exists() && !file.delete()) return false
-        if (loaded.enabled) {
-            runCatching { loaded.instance.onUnload() }
-                .onFailure { Log.e(TAG, "插件 onUnload 失败: $pluginId", it) }
+        val deleted = try {
+            !file.exists() || file.delete()
+        } catch (e: SecurityException) {
+            Log.e(TAG, "删除插件文件失败: $pluginId", e)
+            false
         }
+        if (!deleted) {
+            if (wasEnabled) {
+                loaded.enabled = activate(loaded)
+                if (!loaded.enabled) {
+                    persistEnabled(enabledSet().toMutableSet().apply { remove(pluginId) })
+                }
+            }
+            refresh()
+            return false
+        }
+
         instances.remove(pluginId)
         fileMap().apply { remove(pluginId) }.let { persistFiles(it) }
         persistEnabled(enabledSet().toMutableSet().apply { remove(pluginId) })
@@ -157,10 +172,7 @@ class PluginManager(private val context: Context) {
     /** 禁用插件。 */
     fun disable(pluginId: String): Boolean {
         val loaded = instances[pluginId] ?: return false
-        if (loaded.enabled) {
-            runCatching { loaded.instance.onUnload() }
-            loaded.enabled = false
-        }
+        if (!deactivate(loaded)) return false
         persistEnabled(enabledSet().toMutableSet().apply { remove(pluginId) })
         refresh()
         return true
@@ -191,6 +203,18 @@ class PluginManager(private val context: Context) {
         _plugins.value.firstOrNull { it.metadata.id == pluginId }
 
     // ==================== 内部 ====================
+
+    private fun deactivate(loaded: PluginLoader.LoadedPlugin): Boolean {
+        if (!loaded.enabled) return true
+        return try {
+            loaded.instance.onUnload()
+            loaded.enabled = false
+            true
+        } catch (e: Throwable) {
+            Log.e(TAG, "插件 onUnload 失败: ${loaded.metadata.id}", e)
+            false
+        }
+    }
 
     private fun activate(loaded: PluginLoader.LoadedPlugin): Boolean {
         val host = loader.createSandbox(loaded.metadata)
