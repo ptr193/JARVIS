@@ -131,6 +131,16 @@ class ModelDownloadManager(private val context: Context) {
         /** 非空占位、错误页、截断文件及偏大的拼接文件都不能视为完成。 */
         internal fun isExpectedSize(config: ModelConfig, size: Long): Boolean =
             size > 1024 && (config.sizeBytes <= 0 || size == config.sizeBytes)
+
+        internal fun failedDeletions(files: List<File>): List<File> =
+            files.distinctBy { it.absolutePath }.filter { file ->
+                if (!file.exists()) return@filter false
+                try {
+                    !file.delete()
+                } catch (e: SecurityException) {
+                    true
+                }
+            }
     }
 
     init {
@@ -335,14 +345,14 @@ class ModelDownloadManager(private val context: Context) {
      * 删除已下载的模型：删除文件（默认模型按配置文件名、导入模型按 modelId 命名的文件），
      * 并将下载状态重置为「未下载」。
      */
-    fun deleteModel(modelId: String) {
+    fun deleteModel(modelId: String): Boolean {
         val config = getModelConfigs().find { it.id == modelId }
         val candidates = buildList {
             if (config != null) add(File(modelsDir, config.fileName))
             add(File(modelsDir, modelId))
             add(File(modelsDir, "$modelId.litertlm"))
         }
-        candidates.filter { it.exists() }.forEach { it.delete() }
+        if (failedDeletions(candidates).isNotEmpty()) return false
         updateState(modelId, ModelDownloadState(
             modelId = modelId,
             modelName = config?.name ?: modelId,
@@ -351,6 +361,7 @@ class ModelDownloadManager(private val context: Context) {
             downloadedBytes = 0,
             totalBytes = config?.sizeBytes ?: 0L
         ))
+        return true
     }
 
     /**

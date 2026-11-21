@@ -333,7 +333,8 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
                     }
                 },
                 onDelete = {
-                    models.deleteModel(config.id)
+                    val deleted = models.deleteModel(config.id)
+                    showMsg(if (deleted) "模型已删除: ${config.name}" else "模型删除失败: ${config.name}")
                 }
             )
             Spacer(Modifier.height(8.dp))
