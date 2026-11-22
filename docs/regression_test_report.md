@@ -1,8 +1,8 @@
 # JARVIS 回归测试报告
 
 > 最终回归日期：2026-11-22（Asia/Shanghai）
-> 代码基线：`c645d37`（`origin/main`）
-> 文档版本：v4.0
+> 代码基线：`0779db4`（`origin/main`，APK 对应源码提交）
+> 文档版本：v4.1
 
 ## 1. 范围与结论
 
@@ -22,7 +22,7 @@
 |---|---|
 | JDK | 17（`/root/.local/share/mise/installs/java/17.0.20+101`） |
 | Gradle | 8.11.1（项目 Wrapper） |
-| Android SDK | `/opt/android-sdk`，platform 35 / build-tools 35.0.0 |
+| Android SDK | `/workspace/.android-sdk`，platform 35 / build-tools 35.0.0 |
 | 构建类型 | 仅 Debug；未执行 Release |
 | 测试证据 | `app/build/test-results/testDebugUnitTest/TEST-*.xml` |
 | Lint 证据 | `app/build/reports/lint-results-debug.xml` |
@@ -34,10 +34,10 @@
 
 | 检查 | 最终结果 | 证据 |
 |---|---|---|
-| 全量 Debug JVM 测试 | 272/272 通过，48 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 56.980s |
-| 40 轮加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 53.711s；逐轮结果见第 4 节 |
+| 全量 Debug JVM 测试 | 320/320 通过，59 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 58.890s |
+| 40 轮加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 55.608s；逐轮结果见第 4 节 |
 | 递增约束 | 通过 | `weight` 从 23 严格增至 486360；各分项按阶段非递减 |
-| Lint | 0 error / 44 warning / 1 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
+| Lint | 0 error / 43 warning / 1 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
 | Debug 构建 | 通过 | `assembleDebug` BUILD SUCCESSFUL |
 | 占位符扫描 | 0 命中 | `app/src/main` 中 `TODO`、`FIXME`、`UnsupportedOperationException` |
 | 空点击扫描 | 0 命中 | `app/src/main` 中 `onClick = {}` 形式 |
@@ -49,8 +49,8 @@
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `apk/jarvis-debug.apk` | 218,762,591 B | `12dda3e9ef6bba67f65cbe05532d8300f754c271fbea9a2c0c27e38191cc341d` |
-| `apk/jarvis-debug.apk.7z` | 79,937,860 B | `a35002266d76f1e6f650e45978f619827ac784ee4c04011defdf4e6b29afc3bc` |
+| `apk/jarvis-debug.apk` | 219,683,365 B | `48849a6ed511ce8494939fb596bf0946da6394860325f71a5bb6810d0f8ea60e` |
+| `apk/jarvis-debug.apk.7z` | 82,623,610 B | `b2bfa4c4a64eb0a5528aa8e43632594a977a3e348493592fc93bb9e289f9b252` |
 
 ## 4. 40 轮加压逐轮结果
 
@@ -125,6 +125,22 @@
 | 心率传感器注册失败立即回退 PPG | `df23692` | 通过 |
 | PRoot 会话输出兼容 API 24/25 | `f937d6d` | 通过 |
 | 生物识别 Executor 兼容 API 24/25 | `c645d37` | 通过 |
+| 日志/崩溃导出前校验实际写入，杜绝假成功 | `51bf4a0` | 通过 |
+| 崩溃记录写入校验落盘后才算已记录 | `fbcec25` | 通过 |
+| 记忆导出写入校验落盘后才算成功 | `a48185a` | 通过 |
+| 记忆重命名后校验持久化再报告成功 | `6cf3d3e` | 通过 |
+| #50 接听来电补可达入口与前置状态判断 | `24cea8a` | 通过 |
+| #78/#79 振动与手电设备控制 | `c8e0c6a` | 通过 |
+| #73 USB 设备真实探测 | `f28c64d` | 通过 |
+| #46/#42 反入侵与安全事件响应 | `df2f8a7` | 通过 |
+| #67/#68/#71 屏幕采集与分享（远程协助） | `fe29a5b` | 通过 |
+| #36 虹膜扫描诚实预留（不支持绝不伪造） | `9ad7a9d` | 通过 |
+| #72 外接显示探测（区分无设备与探测失败） | `ef79ddd` | 通过 |
+| #97/#114/#115/#116 全息/AR/机器人/手势诚实能力边界，接入 ARCore 真实探测 | `c51454d` | 通过 |
+| answerCall 增加 SDK 守卫，修复 lint NewApi（minSdk 24） | `0779db4` | 通过 |
+
+> `574667a` 同步修正需求追踪矩阵的错误引用与状态；`71bc370` 忽略本地 SDK 安装目录（不影响构建产物）。
+> 本轮新增 ARCore 依赖（`com.google.ar:core:1.43.0`）仅用于**真实探测**设备/ARCore 可用性：不支持时如实返回不支持，绝不伪造 AR、全息或手势能力；#97 手势与 #115 AR 渲染因此保持 PARTIAL。
 
 ## 6. 验证边界与未决验收
 

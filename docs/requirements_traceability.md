@@ -10,7 +10,7 @@
 > - `MISSING` = 无实现。
 >
 > 复核日期：2026-11-22 | 复核版本：v3.0
-> 最终验证：40/40 轮加压通过 + 272/272 项 Debug JVM 测试通过 + `lintDebug` 0 error / 44 warning + `assembleDebug` 成功。
+> 最终验证：40/40 轮加压通过 + 320/320 项 Debug JVM 测试通过 + `lintDebug` 0 error / 43 warning + `assembleDebug` 成功。
 > 边界：`DONE` 表示代码真实且可从 UI/对话触达，不等于对应硬件或外部服务已通过真机验收。
 
 ---
@@ -19,7 +19,7 @@
 
 本轮重点检查失败返回是否被 UI 忽略、异常是否被吞掉、状态是否在失败时被错误清空，以及 API 版本兼容性。已修复会话/日志/模型/插件/发行版持久化，唤醒与传感器启动，PRoot 解压与进程，心率降级和生物识别等问题；逐项提交见 `docs/regression_test_report.md` 第 5 节。
 
-最终 40/40 轮加压和 272/272 项 Debug JVM 测试通过，Lint 为 0 error。静态源码契约测试只证明代码结构与 JVM 行为，不代表硬件、电话、短信、传感器、云服务或 arm64 PRoot 已完成真机验收。
+最终 40/40 轮加压和 320/320 项 Debug JVM 测试通过，Lint 为 0 error。静态源码契约测试只证明代码结构与 JVM 行为，不代表硬件、电话、短信、传感器、云服务或 arm64 PRoot 已完成真机验收。
 
 **矩阵诚实性复核（本轮）**：逐项核对矩阵引用的源码文件与方法名，修正错误引用（`reconstruct2D`→`analyzeImageFeatures`、`checkPermissionUsage`→`checkPermissionGrants`、`remoteLockDevice`→`lockDevice`、`remoteWipeData`→`wipeDeviceData`、#73 文件 `HolographicInterface.kt`→`UsbDeviceManager.kt` 等）；补实 #50 接听电话、#72 外接显示、#67/#68/#71 屏幕共享、#46/#42 反入侵、#78/#79 振动/手电、#73 USB、#36 虹膜扫描预留；为 #97/#114/#115/#116 新增 `HolographicInterface` 诚实能力边界（接入 ARCore 真实探测可用性，不支持绝不伪造）。#97（无手部追踪模型）与 #115（AR 交互渲染未实现）由虚假 DONE 更正为 PARTIAL。
 
@@ -283,12 +283,12 @@
 | 验证项 | 命令 | 结果 |
 |--------|------|------|
 | Debug 编译 | `./gradlew :app:assembleDebug` | BUILD SUCCESSFUL |
-| Debug JVM 测试 | `./gradlew :app:testDebugUnitTest` | 272/272 通过，48 个测试类，0 失败/错误/跳过 |
+| Debug JVM 测试 | `./gradlew :app:testDebugUnitTest` | 320/320 通过，59 个测试类，0 失败/错误/跳过 |
 | 递增加压 | `ProgressiveLoadTest` | 40/40 通过，`weight` 23 → 486360，逐轮证据见回归报告 |
-| Lint | `./gradlew :app:lintDebug` | 0 error / 44 warning / 1 information |
+| Lint | `./gradlew :app:lintDebug` | 0 error / 43 warning / 1 information |
 | 占位符扫描 | `app/src/main` 中 `TODO`/`FIXME`/`UnsupportedOperationException` | 0 命中 |
 | 空点击扫描 | `app/src/main` 中 `onClick = {}` 形式 | 0 命中 |
-| 调用链复核 | DI、UI、对话与失败返回路径 | 已修复本轮确认问题；#50 可达性限制保留为 PARTIAL |
+| 调用链复核 | DI、UI、对话与失败返回路径 | 已修复本轮确认问题；#50 本轮接入 UI 入口更正为 DONE，PARTIAL 仅余 #97/#99/#115（见第九节） |
 
 真机硬件、系统权限、厂商 ROM、云服务和 arm64 PRoot 验收边界详见 `docs/regression_test_report.md` 第 6 节，不能由上述 JVM 测试替代。
 

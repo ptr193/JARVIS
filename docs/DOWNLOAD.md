@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-22 | 版本：v0.0.1（Debug，40 轮加压 + 272 项 JVM 回归）
+> 生成日期：2026-11-22 | 版本：v0.0.1（Debug，40 轮加压 + 320 项 JVM 回归）
 
 ---
 
@@ -28,15 +28,15 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（40 轮加压 + 272 项 JVM 回归）
+版本：   v0.0.1-debug（40 轮加压 + 320 项 JVM 回归）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 79,937,860 字节（76.2 MiB）
-压缩包 SHA256： a35002266d76f1e6f650e45978f619827ac784ee4c04011defdf4e6b29afc3bc
-APK 大小： 218,762,591 字节（208.6 MiB）
-APK SHA256： 12dda3e9ef6bba67f65cbe05532d8300f754c271fbea9a2c0c27e38191cc341d
+压缩包大小： 82,623,610 字节（78.8 MiB）
+压缩包 SHA256： b2bfa4c4a64eb0a5528aa8e43632594a977a3e348493592fc93bb9e289f9b252
+APK 大小： 219,683,365 字节（209.5 MiB）
+APK SHA256： 48849a6ed511ce8494939fb596bf0946da6394860325f71a5bb6810d0f8ea60e
 构建：   2026-11-22
-构建命令：JAVA_HOME=/root/.local/share/mise/installs/java/17.0.20+101 ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk ./gradlew --no-daemon :app:assembleDebug
-代码基线：c645d37；交付物以 origin/main 最新提交为准
+构建命令：JAVA_HOME=/root/.local/share/mise/installs/java/17.0.20+101 ANDROID_HOME=/workspace/.android-sdk ANDROID_SDK_ROOT=/workspace/.android-sdk ./gradlew --no-daemon :app:assembleDebug
+代码基线：0779db4；交付物以 origin/main 最新提交为准
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
 ```
 
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-a35002266d76f1e6f650e45978f619827ac784ee4c04011defdf4e6b29afc3bc
+b2bfa4c4a64eb0a5528aa8e43632594a977a3e348493592fc93bb9e289f9b252
 ```
 
 解压后校验 APK：
 
 ```text
-12dda3e9ef6bba67f65cbe05532d8300f754c271fbea9a2c0c27e38191cc341d
+48849a6ed511ce8494939fb596bf0946da6394860325f71a5bb6810d0f8ea60e
 ```
 
-本包基于最终修复后的代码构建：40/40 轮递增加压、272/272 项 Debug JVM 测试通过，Lint 为 0 error / 44 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
+本包基于最终修复后的代码构建：40/40 轮递增加压、320/320 项 Debug JVM 测试通过，Lint 为 0 error / 43 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
 
 ---
 
@@ -108,4 +108,4 @@ a35002266d76f1e6f650e45978f619827ac784ee4c04011defdf4e6b29afc3bc
 
 ---
 
-*文档版本：v3.4 | 生成日期：2026-11-22*
+*文档版本：v3.5 | 生成日期：2026-11-22*
