@@ -62,10 +62,11 @@ enum class DownloadStatus {
  * 负责 aarch64 Linux rootfs 的目录管理、下载、SHA-256 校验与解压。
  * 所有下载均为真实网络请求，解压使用 [TarExtractor]。
  */
-class VmDistroManager(
-    private val context: Context,
+class VmDistroManager internal constructor(
+    private val cacheDir: File,
     private val prootManager: ProotManager
 ) {
+    constructor(context: Context, manager: ProotManager) : this(context.cacheDir, manager)
 
     private val _distros = MutableStateFlow<List<DistroInfo>>(emptyList())
     val distros: StateFlow<List<DistroInfo>> = _distros.asStateFlow()
@@ -145,7 +146,7 @@ class VmDistroManager(
             var lastError = ""
 
             for (url in urls) {
-                val archive = File(context.cacheDir, "${distroId}_${System.currentTimeMillis()}.archive")
+                val archive = File(cacheDir, "${distroId}_${System.currentTimeMillis()}.archive")
                 try {
                     updateProgress(
                         DownloadProgress(
@@ -261,7 +262,7 @@ class VmDistroManager(
             DownloadMirrors.candidates("$archiveUrl.sha256.txt")
         for (sidecar in sidecarUrls) {
             try {
-                val tmp = File(context.cacheDir, "sha_${System.currentTimeMillis()}.txt")
+                val tmp = File(cacheDir, "sha_${System.currentTimeMillis()}.txt")
                 prootManager.downloadArchive(sidecar, tmp)
                 val parsed = DownloadMirrors.parseSha256Sidecar(tmp.readText())
                 tmp.delete()

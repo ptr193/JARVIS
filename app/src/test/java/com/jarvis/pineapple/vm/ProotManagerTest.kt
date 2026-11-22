@@ -192,6 +192,40 @@ class ProotManagerTest {
     }
 
     @Test
+    fun `rootfs copy preserves symlinks executable files and isolation`() {
+        val source = tmp.newFolder("copy-source")
+        File(source, "bin").mkdirs()
+        val executable = File(source, "bin/tool").apply {
+            writeText("#!/bin/sh\n")
+            setExecutable(true, false)
+        }
+        java.nio.file.Files.createSymbolicLink(
+            File(source, "sh").toPath(),
+            java.nio.file.Paths.get("bin/tool")
+        )
+        val manager = ProotManager(
+            tmp.newFolder("copy-home"),
+            tmp.newFolder("copy-cache"),
+            { arrayOf("arm64-v8a") },
+            { file -> java.nio.file.Files.isSymbolicLink(file.toPath()) },
+            { file -> java.nio.file.Files.readSymbolicLink(file.toPath()).toString() },
+            { target, file ->
+                java.nio.file.Files.createSymbolicLink(file.toPath(), java.nio.file.Paths.get(target))
+            }
+        )
+        val target = File(tmp.root, "copy-target")
+
+        manager.copyRootfs(source, target)
+        File(target, "instance-only").writeText("isolated")
+
+        assertTrue(java.nio.file.Files.isSymbolicLink(File(target, "sh").toPath()))
+        assertEquals("bin/tool", java.nio.file.Files.readSymbolicLink(File(target, "sh").toPath()).toString())
+        assertTrue(File(target, "bin/tool").canExecute())
+        assertFalse(File(source, "instance-only").exists())
+        assertEquals(executable.readText(), File(target, "bin/tool").readText())
+    }
+
+    @Test
     fun `kali minimal rootfs has required sha256`() {
         assertEquals(64, KALI_MINIMAL_ARM64_SHA256.length)
         assertTrue(KALI_MINIMAL_ARM64_SHA256.matches(Regex("[0-9a-f]{64}")))

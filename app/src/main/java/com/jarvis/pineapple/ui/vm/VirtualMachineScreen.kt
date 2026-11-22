@@ -75,8 +75,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.vm.DownloadStatus
 import com.jarvis.pineapple.vm.HavenVmManager
-import com.jarvis.pineapple.vm.PackageInfo
-import com.jarvis.pineapple.vm.PackageOperationResult
 import com.jarvis.pineapple.vm.ProotManager
 import com.jarvis.pineapple.vm.SnapshotResult
 import com.jarvis.pineapple.vm.VmDistroManager
@@ -85,7 +83,6 @@ import com.jarvis.pineapple.vm.VmFile
 import com.jarvis.pineapple.vm.VmFileManager
 import com.jarvis.pineapple.vm.VmImageImporter
 import com.jarvis.pineapple.vm.VmLogManager
-import com.jarvis.pineapple.vm.VmPackageManager
 import com.jarvis.pineapple.vm.VmResourceMonitor
 import com.jarvis.pineapple.vm.VmSnapshotManager
 import com.jarvis.pineapple.vm.VmTerminal
@@ -127,6 +124,7 @@ fun VirtualMachineScreen(
     val distros by distroManager.distros.collectAsState()
     val progressMap by distroManager.downloadProgress.collectAsState()
     val vms by havenVmManager.vms.collectAsState()
+    val vmError by havenVmManager.lastError.collectAsState()
 
     var prootVersion by remember { mutableStateOf("") }
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -177,6 +175,14 @@ fun VirtualMachineScreen(
                 ready = prootReady,
                 version = prootVersion
             )
+            vmError?.let { error ->
+                Text(
+                    error,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, title ->
@@ -335,12 +341,13 @@ fun VirtualMachineScreen(
                 2 -> TerminalTab(
                     vm = vms.firstOrNull { it.id == activeVmId },
                     prootManager = prootManager,
+                    havenVmManager = havenVmManager,
                     showMsg = showMsg,
                     logManager = loggerFor(activeVmId)
                 )
                 3 -> PackageTab(
                     vm = vms.firstOrNull { it.id == activeVmId },
-                    prootManager = prootManager,
+                    havenVmManager = havenVmManager,
                     showMsg = showMsg
                 )
                 4 -> FileTab(
@@ -349,7 +356,7 @@ fun VirtualMachineScreen(
                 )
                 5 -> SnapshotTab(
                     vm = vms.firstOrNull { it.id == activeVmId },
-                    context = context,
+                    havenVmManager = havenVmManager,
                     showMsg = showMsg,
                     logManager = loggerFor(activeVmId)
                 )
@@ -870,6 +877,7 @@ private fun stateText(state: HavenVmManager.HavenVmState): String = when (state)
 private fun TerminalTab(
     vm: HavenVmManager.HavenVm?,
     prootManager: ProotManager,
+    havenVmManager: HavenVmManager,
     showMsg: (String) -> Unit,
     logManager: VmLogManager?
 ) {
@@ -885,7 +893,10 @@ private fun TerminalTab(
             .getBoolean("enable_root", true)
     }
     val terminal = remember(vm.id) {
-        VmTerminal(vm.id, vm.rootfsPath, prootManager, useRoot).also { it.connect() }
+        VmTerminal(vm.id, vm.rootfsPath, prootManager, useRoot) { config, command ->
+            havenVmManager.executeCommandResult(vm.id, command, config.workingDir)
+                ?: ProotManager.CommandResult(command, "Error: 虚拟机不存在", -1, 0)
+        }.also { it.connect() }
     }
     val output by terminal.output.collectAsState()
     var input by remember { mutableStateOf("") }
@@ -923,36 +934,41 @@ private fun TerminalTab(
                         )
                     }
                 }
-            }) { Text("执行") }
+            }, enabled = vm.state == HavenVmManager.HavenVmState.RUNNING) { Text("执行") }
         }
     }
 }
 
 @Composable
-private fun PackageTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager, showMsg: (String) -> Unit) {
+private fun PackageTab(
+    vm: HavenVmManager.HavenVm?,
+    havenVmManager: HavenVmManager,
+    showMsg: (String) -> Unit
+) {
     if (vm == null) {
         EmptyHint("请先在“虚拟机”中选择一个虚拟机")
         return
     }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val useRoot = remember {
-        context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE)
-            .getBoolean("enable_root", true)
-    }
-    val manager = remember(vm.id) {
-        VmPackageManager(vm.id, vm.rootfsPath, prootManager, vm.packageManager, useRoot)
-    }
-    val packages by manager.packages.collectAsState()
-    val isOperating by manager.isOperating.collectAsState()
-    var query by remember { mutableStateOf("") }
+    var operating by remember(vm.id) { mutableStateOf(false) }
+    var query by remember(vm.id) { mutableStateOf("") }
+    val running = vm.state == HavenVmManager.HavenVmState.RUNNING
 
-    LaunchedEffect(vm.id) {
-        manager.refreshPackageList()
+    LaunchedEffect(vm.id, vm.state) {
+        if (running) {
+            operating = true
+            try {
+                val refreshed = havenVmManager.refreshInstalledPackages(vm.id)
+                if (!refreshed) showMsg(havenVmManager.lastError.value ?: "刷新软件包列表失败")
+            } finally {
+                operating = false
+            }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
         Text("包管理器: ${vm.packageManager}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!running) Text("启动虚拟机后才能执行软件包操作", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = query,
@@ -966,38 +982,58 @@ private fun PackageTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager, 
                 val pkg = query
                 if (pkg.isNotBlank()) {
                     scope.launch {
-                        when (val r = manager.installPackage(pkg)) {
-                            is PackageOperationResult.Success -> showMsg(r.message)
-                            is PackageOperationResult.Failure -> showMsg(r.error)
-                            is PackageOperationResult.NeedRoot -> showMsg(r.message)
+                        operating = true
+                        try {
+                            val ok = havenVmManager.installPackage(vm.id, pkg)
+                            showMsg(if (ok) "$pkg 安装成功" else havenVmManager.lastError.value ?: "$pkg 安装失败")
+                        } finally {
+                            operating = false
                         }
                     }
                 }
-            }, enabled = !isOperating) { Text("安装") }
+            }, enabled = !operating && running) { Text("安装") }
         }
         Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 scope.launch {
-                    val refreshed = manager.refreshPackageList()
-                    showMsg(if (refreshed) "已刷新已安装列表" else "刷新失败，请检查虚拟机与包管理器")
+                    operating = true
+                    try {
+                        val refreshed = havenVmManager.refreshInstalledPackages(vm.id)
+                        showMsg(if (refreshed) "已刷新已安装列表" else havenVmManager.lastError.value ?: "刷新失败")
+                    } finally {
+                        operating = false
+                    }
                 }
-            }, enabled = !isOperating) { Text("刷新已安装") }
+            }, enabled = !operating && running) { Text("刷新已安装") }
             OutlinedButton(onClick = {
                 scope.launch {
-                    showMsg("正在更新所有软件包...")
-                    val r = manager.updateAllPackages()
-                    showMsg(if (r is PackageOperationResult.Success) r.message else "更新失败")
+                    operating = true
+                    try {
+                        showMsg("正在更新所有软件包...")
+                        val ok = havenVmManager.updatePackages(vm.id)
+                        showMsg(if (ok) "所有包更新成功" else havenVmManager.lastError.value ?: "批量更新失败")
+                    } finally {
+                        operating = false
+                    }
                 }
-            }, enabled = !isOperating) { Text("全部更新") }
+            }, enabled = !operating && running) { Text("全部更新") }
         }
         Spacer(Modifier.height(6.dp))
         LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            items(packages, key = { it.name }) { pkg ->
-                PackageRow(pkg, isOperating) {
+            items(vm.installedPackages, key = { it }) { packageName ->
+                PackageRow(packageName, !operating && running) {
                     scope.launch {
-                        val r = manager.uninstallPackage(pkg.name)
-                        if (r is PackageOperationResult.Success) showMsg(r.message)
+                        operating = true
+                        try {
+                            val ok = havenVmManager.uninstallPackage(vm.id, packageName)
+                            showMsg(
+                                if (ok) "$packageName 卸载成功"
+                                else havenVmManager.lastError.value ?: "$packageName 卸载失败"
+                            )
+                        } finally {
+                            operating = false
+                        }
                     }
                 }
             }
@@ -1006,15 +1042,13 @@ private fun PackageTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager, 
 }
 
 @Composable
-private fun PackageRow(pkg: PackageInfo, enabled: Boolean, onUninstall: () -> Unit) {
+private fun PackageRow(packageName: String, enabled: Boolean, onUninstall: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(pkg.name, modifier = Modifier.weight(1f), fontSize = 13.sp)
-        if (pkg.installed) {
-            TextButton(onClick = onUninstall, enabled = enabled) { Text("卸载") }
-        }
+        Text(packageName, modifier = Modifier.weight(1f), fontSize = 13.sp)
+        TextButton(onClick = onUninstall, enabled = enabled) { Text("卸载") }
     }
 }
 
@@ -1065,7 +1099,7 @@ private fun FileTab(vm: HavenVmManager.HavenVm?, showMsg: (String) -> Unit) {
 @Composable
 private fun SnapshotTab(
     vm: HavenVmManager.HavenVm?,
-    context: Context,
+    havenVmManager: HavenVmManager,
     showMsg: (String) -> Unit,
     logManager: VmLogManager?
 ) {
@@ -1076,7 +1110,14 @@ private fun SnapshotTab(
     val scope = rememberCoroutineScope()
     val managerResult = remember(vm.id) {
         runCatching {
-            VmSnapshotManager(vm.id, vm.rootfsPath, File(context.filesDir, "vm_snapshots/${vm.id}"))
+            VmSnapshotManager(
+                vmId = vm.id,
+                rootfsPath = vm.rootfsPath,
+                snapshotsDir = havenVmManager.snapshotsDir(vm.id),
+                stateProvider = { havenVmManager.findVm(vm.id)?.state },
+                operationLock = havenVmManager.operationLockFor(vm.id),
+                prepareStopped = { havenVmManager.prepareStoppedVm(vm.id) }
+            )
         }
     }
     val manager = managerResult.getOrNull()
@@ -1086,9 +1127,15 @@ private fun SnapshotTab(
     }
     val snapshots by manager.snapshots.collectAsState()
     val operating by manager.isOperating.collectAsState()
+    val loadError by manager.loadError.collectAsState()
+    val stopped = vm.state == HavenVmManager.HavenVmState.STOPPED
     var name by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        if (!stopped) {
+            Text("创建与回滚快照前必须停止虚拟机", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
+        loadError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = name,
@@ -1099,7 +1146,7 @@ private fun SnapshotTab(
             )
             Spacer(Modifier.width(6.dp))
             Button(
-                enabled = !operating,
+                enabled = !operating && stopped,
                 onClick = {
                     val snapshotName = name.ifBlank { "快照 ${snapshots.size + 1}" }
                     scope.launch {
@@ -1144,7 +1191,7 @@ private fun SnapshotTab(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.End
                             ) {
-                                TextButton(enabled = !operating, onClick = {
+                                TextButton(enabled = !operating && stopped, onClick = {
                                     scope.launch {
                                         when (val r = manager.rollbackToSnapshot(snapshot.id)) {
                                             is SnapshotResult.Success -> {
@@ -1197,19 +1244,30 @@ private fun MonitorTab(vm: HavenVmManager.HavenVm?) {
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        MetricRow("CPU 使用率", "${usage.cpuUsagePercent.toInt()}%", usage.cpuUsagePercent / 100f)
+        Text(
+            "PRoot 与 Android 共享内核；CPU、内存和网络是整机聚合数据，不是该 VM 的独立配额。",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         MetricRow(
-            "内存",
-            "${usage.memoryUsedMb} / ${usage.memoryTotalMb} MB",
+            "宿主共享 CPU",
+            if (usage.cpuAvailable) "${usage.cpuUsagePercent.toInt()}%" else "数据不可用",
+            usage.cpuUsagePercent / 100f
+        )
+        MetricRow(
+            "宿主共享内存",
+            if (usage.memoryAvailable) "${usage.memoryUsedMb} / ${usage.memoryTotalMb} MB" else "数据不可用",
             usage.memoryUsagePercent / 100f
         )
         MetricRow(
-            "磁盘（rootfs）",
-            "%.2f / %.2f GB".format(usage.diskUsedGb, usage.diskTotalGb),
+            "rootfs 已用 / 宿主文件系统总容量",
+            if (usage.diskAvailable) "%.2f / %.2f GB".format(usage.diskUsedGb, usage.diskTotalGb) else "数据不可用",
             usage.diskUsagePercent / 100f
         )
         Text(
-            "网络 入 %.1f / 出 %.1f KB/s".format(usage.networkInKbps, usage.networkOutKbps),
+            if (usage.networkAvailable)
+                "宿主共享网络 入 %.1f / 出 %.1f kbit/s".format(usage.networkInKbps, usage.networkOutKbps)
+            else "宿主共享网络：数据不可用（首次采样需等待下一次差分）",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

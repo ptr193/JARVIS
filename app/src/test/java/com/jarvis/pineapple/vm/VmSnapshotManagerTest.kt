@@ -94,6 +94,57 @@ class VmSnapshotManagerTest {
     }
 
     @Test
+    fun `running state rejects create and rollback before archive access`() = runBlocking {
+        val rootfs = rootfsWith("version", "current")
+        val manager = VmSnapshotManager(
+            "vm",
+            rootfs.absolutePath,
+            tmp.newFolder("running-snapshots"),
+            stateProvider = { HavenVmManager.HavenVmState.RUNNING }
+        )
+
+        assertTrue(manager.createSnapshot("not-allowed") is SnapshotResult.Failure)
+        assertTrue(manager.rollbackToSnapshot("not-allowed") is SnapshotResult.Failure)
+        assertEquals("current", File(rootfs, "version").readText())
+        assertTrue(manager.snapshots.value.isEmpty())
+    }
+
+    @Test
+    fun `corrupt metadata is exposed through load error`() = runBlocking {
+        val rootfs = rootfsWith("version", "one")
+        val snapshotsDir = tmp.newFolder("corrupt-metadata")
+        val manager = VmSnapshotManager("vm", rootfs.absolutePath, snapshotsDir)
+        assertTrue(manager.createSnapshot("Initial") is SnapshotResult.Success)
+        val id = manager.snapshots.value.single().id
+        File(snapshotsDir, "$id.properties").writeText("name=\\uZZZZ\n")
+
+        val reloaded = VmSnapshotManager("vm", rootfs.absolutePath, snapshotsDir)
+
+        assertTrue(reloaded.snapshots.value.isEmpty())
+        assertTrue(reloaded.loadError.value.orEmpty().contains("元数据读取失败"))
+    }
+
+    @Test
+    fun `current marker write failure is reported even after rootfs replacement`() = runBlocking {
+        val rootfs = rootfsWith("version", "one")
+        val snapshotsDir = tmp.newFolder("marker-failure")
+        val manager = VmSnapshotManager("vm", rootfs.absolutePath, snapshotsDir)
+        assertTrue(manager.createSnapshot("Initial") is SnapshotResult.Success)
+        val id = manager.snapshots.value.single().id
+        File(rootfs, "version").writeText("two")
+        val blockedMarker = File(snapshotsDir, ".current")
+        assertTrue(blockedMarker.mkdir())
+        File(blockedMarker, "child").writeText("prevents replacement")
+
+        val result = manager.rollbackToSnapshot(id)
+
+        assertTrue(result is SnapshotResult.Failure)
+        assertTrue((result as SnapshotResult.Failure).error.contains("rootfs 已回滚"))
+        assertEquals("one", File(rootfs, "version").readText())
+        assertTrue(manager.loadError.value.orEmpty().contains("当前快照标记保存失败"))
+    }
+
+    @Test
     fun `snapshot directory inside rootfs is rejected`() {
         val rootfs = rootfsWith("version", "one")
         try {

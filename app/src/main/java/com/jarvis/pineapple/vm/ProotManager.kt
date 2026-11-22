@@ -31,6 +31,12 @@ class ProotManager internal constructor(
     private val abiProvider: () -> Array<String> = { Build.SUPPORTED_ABIS },
     private val symbolicLinkChecker: (File) -> Boolean = { file ->
         android.system.OsConstants.S_ISLNK(android.system.Os.lstat(file.absolutePath).st_mode)
+    },
+    private val symbolicLinkReader: (File) -> String = { file ->
+        android.system.Os.readlink(file.absolutePath)
+    },
+    private val symbolicLinkCreator: (String, File) -> Unit = { target, file ->
+        android.system.Os.symlink(target, file.absolutePath)
     }
 ) {
 
@@ -376,6 +382,17 @@ class ProotManager internal constructor(
             }
         } ?: return@withContext true
 
+        // 对 SIGSTOP 的会话先发送 SIGCONT，否则部分平台上的 SIGTERM 会一直保持挂起。
+        sessionPid(process, config.rootfsPath)?.let { pid ->
+            try {
+                val resume = ProcessBuilder("kill", "-CONT", pid.toString()).start()
+                resume.inputStream.use { it.readBytes() }
+                resume.errorStream.use { it.readBytes() }
+                resume.waitFor()
+            } catch (_: Exception) {
+                // 最终是否停止仍由真实进程存活状态判定。
+            }
+        }
         process.destroy()
         val deadline = System.nanoTime() + 3_000_000_000L
         while (isProcessAlive(process) && System.nanoTime() < deadline) {
@@ -637,6 +654,37 @@ class ProotManager internal constructor(
 
     /** rootfs 存储根目录。 */
     fun rootfsRoot(): File = rootfsDir
+
+    /** 复制独立实例 rootfs，保留符号链接与可执行权限；失败时清理未完成副本。 */
+    fun copyRootfs(source: File, target: File) {
+        if (!source.isDirectory) throw java.io.IOException("源 rootfs 不存在: ${source.absolutePath}")
+        if (target.exists()) throw java.io.IOException("目标 rootfs 已存在: ${target.absolutePath}")
+        try {
+            copyRootfsDirectory(source, target)
+        } catch (e: Exception) {
+            if (target.exists() && !target.deleteRecursively()) {
+                e.addSuppressed(java.io.IOException("未完成 rootfs 副本清理失败: ${target.absolutePath}"))
+            }
+            throw e
+        }
+    }
+
+    private fun copyRootfsDirectory(source: File, target: File) {
+        if (!target.mkdirs()) throw java.io.IOException("无法创建 rootfs 目录: ${target.absolutePath}")
+        val children = source.listFiles() ?: throw java.io.IOException("无法读取 rootfs 目录: ${source.absolutePath}")
+        children.forEach { child ->
+            val destination = File(target, child.name)
+            when {
+                symbolicLinkChecker(child) -> symbolicLinkCreator(symbolicLinkReader(child), destination)
+                child.isDirectory -> copyRootfsDirectory(child, destination)
+                child.isFile -> {
+                    child.copyTo(destination, overwrite = false)
+                    destination.setExecutable(child.canExecute(), false)
+                }
+                else -> throw java.io.IOException("rootfs 包含不支持的文件类型: ${child.absolutePath}")
+            }
+        }
+    }
 
     /**
      * 下载任意文件到目标路径（公开封装，供发行版/镜像下载复用）。

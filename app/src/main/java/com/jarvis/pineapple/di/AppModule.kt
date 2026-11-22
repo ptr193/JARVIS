@@ -186,7 +186,7 @@ val appModule = module {
 
     // Virtual machine
     single { ProotManager(get()) }
-    single { VmDistroManager(get(), get()) }
+    single { VmDistroManager(get<android.content.Context>(), get<ProotManager>()) }
     single {
         val context = get<android.content.Context>()
         HavenVmManager(get(), get()) {

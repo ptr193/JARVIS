@@ -18,6 +18,10 @@ data class VmResourceUsage(
     val diskTotalGb: Float = 0f,
     val networkInKbps: Float = 0f,
     val networkOutKbps: Float = 0f,
+    val cpuAvailable: Boolean = false,
+    val memoryAvailable: Boolean = false,
+    val diskAvailable: Boolean = false,
+    val networkAvailable: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 ) {
     val memoryUsagePercent: Float
@@ -76,33 +80,48 @@ class VmResourceMonitor(
     fun refresh() {
         val now = System.currentTimeMillis()
         val cpu = readCpuPercent()
-        val (memTotalKb, memAvailKb) = readMemInfo()
-        val (rxBytes, txBytes) = readNetBytes()
+        val memory = readMemInfo()
+        val network = readNetBytes()
 
         val elapsedSec = if (lastSampleTime > 0) (now - lastSampleTime) / 1000.0 else 0.0
-        val inKbps = if (elapsedSec > 0 && rxBytes >= lastNetRx)
-            ((rxBytes - lastNetRx) * 8.0 / 1000.0 / elapsedSec).toFloat() else 0f
-        val outKbps = if (elapsedSec > 0 && txBytes >= lastNetTx)
-            ((txBytes - lastNetTx) * 8.0 / 1000.0 / elapsedSec).toFloat() else 0f
+        val rxBytes = network?.first
+        val txBytes = network?.second
+        val networkAvailable = network != null && elapsedSec > 0 &&
+            rxBytes!! >= lastNetRx && txBytes!! >= lastNetTx
+        val inKbps = if (networkAvailable)
+            ((rxBytes!! - lastNetRx) * 8.0 / 1000.0 / elapsedSec).toFloat() else 0f
+        val outKbps = if (networkAvailable)
+            ((txBytes!! - lastNetTx) * 8.0 / 1000.0 / elapsedSec).toFloat() else 0f
 
-        lastNetRx = rxBytes
-        lastNetTx = txBytes
-        lastSampleTime = now
+        if (network != null) {
+            lastNetRx = rxBytes!!
+            lastNetTx = txBytes!!
+            lastSampleTime = now
+        }
 
         val rootfs = File(rootfsPath)
-        val diskUsedBytes = if (rootfs.exists()) dirSize(rootfs) else 0L
-        val stat = try { StatFs(rootfsPath.ifEmpty { "/" }) } catch (e: Exception) { StatFs("/") }
-        val diskTotalBytes = stat.blockCountLong * stat.blockSizeLong
+        val disk = try {
+            if (!rootfs.isDirectory) null else {
+                val stat = StatFs(rootfsPath)
+                dirSize(rootfs) to (stat.blockCountLong * stat.blockSizeLong)
+            }
+        } catch (e: Exception) {
+            null
+        }
 
         val newUsage = VmResourceUsage(
             vmId = vmId,
-            cpuUsagePercent = cpu,
-            memoryUsedMb = ((memTotalKb - memAvailKb) / 1024).coerceAtLeast(0),
-            memoryTotalMb = memTotalKb / 1024,
-            diskUsedGb = diskUsedBytes / (1024f * 1024 * 1024),
-            diskTotalGb = diskTotalBytes / (1024f * 1024 * 1024),
+            cpuUsagePercent = cpu ?: 0f,
+            memoryUsedMb = memory?.let { ((it.first - it.second) / 1024).coerceAtLeast(0) } ?: 0,
+            memoryTotalMb = memory?.let { it.first / 1024 } ?: 0,
+            diskUsedGb = (disk?.first ?: 0L) / (1024f * 1024 * 1024),
+            diskTotalGb = (disk?.second ?: 0L) / (1024f * 1024 * 1024),
             networkInKbps = inKbps,
             networkOutKbps = outKbps,
+            cpuAvailable = cpu != null,
+            memoryAvailable = memory != null,
+            diskAvailable = disk != null,
+            networkAvailable = networkAvailable,
             timestamp = now
         )
         _usage.value = newUsage
@@ -111,41 +130,45 @@ class VmResourceMonitor(
         checkAlerts(newUsage)
     }
 
-    private fun readCpuPercent(): Float {
+    private fun readCpuPercent(): Float? {
         return try {
-            val line = File("/proc/stat").readLines().firstOrNull { it.startsWith("cpu ") } ?: return 0f
+            val line = File("/proc/stat").readLines().firstOrNull { it.startsWith("cpu ") } ?: return null
             val parts = line.split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
-            if (parts.size < 4) return 0f
+            if (parts.size < 4) return null
             val idle = parts[3] + (parts.getOrElse(4) { 0L }) // idle + iowait
             val total = parts.sum()
             val deltaTotal = total - lastCpuTotal
             val deltaIdle = idle - lastCpuIdle
             lastCpuTotal = total
             lastCpuIdle = idle
-            if (deltaTotal <= 0) 0f
+            if (deltaTotal <= 0) null
             else (((deltaTotal - deltaIdle).toFloat() / deltaTotal) * 100f).coerceIn(0f, 100f)
         } catch (e: Exception) {
-            0f
+            null
         }
     }
 
-    private fun readMemInfo(): Pair<Long, Long> {
+    private fun readMemInfo(): Pair<Long, Long>? {
         return try {
             var total = 0L
             var avail = 0L
+            var availableSeen = false
             File("/proc/meminfo").forEachLine { line ->
                 when {
                     line.startsWith("MemTotal:") -> total = line.filter { it.isDigit() }.toLongOrNull() ?: 0L
-                    line.startsWith("MemAvailable:") -> avail = line.filter { it.isDigit() }.toLongOrNull() ?: 0L
+                    line.startsWith("MemAvailable:") -> {
+                        avail = line.filter { it.isDigit() }.toLongOrNull() ?: 0L
+                        availableSeen = true
+                    }
                 }
             }
-            total to avail
+            if (total > 0 && availableSeen) total to avail else null
         } catch (e: Exception) {
-            0L to 0L
+            null
         }
     }
 
-    private fun readNetBytes(): Pair<Long, Long> {
+    private fun readNetBytes(): Pair<Long, Long>? {
         return try {
             var rx = 0L
             var tx = 0L
@@ -160,7 +183,7 @@ class VmResourceMonitor(
             }
             rx to tx
         } catch (e: Exception) {
-            0L to 0L
+            null
         }
     }
 

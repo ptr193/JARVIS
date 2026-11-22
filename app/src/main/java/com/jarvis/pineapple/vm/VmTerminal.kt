@@ -36,7 +36,9 @@ class VmTerminal(
     private val vmId: String,
     private val rootfsPath: String,
     private val prootManager: ProotManager,
-    private val useRoot: Boolean = true
+    private val useRoot: Boolean = true,
+    private val executor: suspend (ProotManager.ProotConfig, String) -> ProotManager.CommandResult =
+        { config, command -> prootManager.executeCommand(config, command) }
 ) {
     private val _session = MutableStateFlow(
         TerminalSession(
@@ -118,7 +120,7 @@ class VmTerminal(
                     workingDir = _session.value.currentDirectory,
                     asRoot = useRoot
                 )
-                val r = prootManager.executeCommand(config, trimmed)
+                val r = executor(config, trimmed)
                 CommandResult(trimmed, r.output, r.exitCode, r.executionTimeMs)
             }
         }

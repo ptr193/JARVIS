@@ -64,7 +64,7 @@ class VmDesktopManager(
                 )
                 append("exec x11vnc -display :$display -forever -shared -nopw -rfbport $port -localhost -quiet")
             }
-            val ok = prootManager.launchBackground(vmManager.configFor(vm), key(vmId), command)
+            val ok = vmManager.launchBackground(vmId, key(vmId), command)
             if (!ok) {
                 DesktopStatus(false, error = "桌面进程启动失败，请查看 /tmp/xvfb-$display.log")
             } else {
@@ -75,7 +75,7 @@ class VmDesktopManager(
 
     suspend fun stop(vmId: String): Boolean = withContext(Dispatchers.IO) {
         ports.remove(vmId)
-        prootManager.stopBackground(key(vmId))
+        vmManager.stopDesktop(vmId)
     }
 
     fun isRunning(vmId: String): Boolean = prootManager.isBackgroundRunning(key(vmId))
@@ -96,7 +96,7 @@ class VmDesktopManager(
             append("command -v \$b >/dev/null 2>&1 && exec \$b; done; ")
             append("echo 'no browser installed' >&2; exit 127")
         }
-        prootManager.launchBackground(vmManager.configFor(vm), "${key(vmId)}-browser", command)
+        vmManager.launchBackground(vmId, "${key(vmId)}-browser", command)
     }
 
     private fun key(vmId: String): String = "desktop-$vmId"
