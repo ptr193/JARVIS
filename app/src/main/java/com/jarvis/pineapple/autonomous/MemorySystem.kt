@@ -232,10 +232,18 @@ class MemorySystem internal constructor(
     private fun writeAtomically(file: File, content: String) {
         val parent = file.parentFile ?: throw IOException("存储路径没有父目录")
         if (!parent.isDirectory && !parent.mkdirs()) throw IOException("无法创建存储目录：$parent")
+        val expected = content.toByteArray(Charsets.UTF_8).size.toLong()
         val temp = File(parent, "${file.name}.tmp")
         try {
-            temp.writeText(content)
+            temp.writeText(content, Charsets.UTF_8)
             if (!temp.renameTo(file)) throw IOException("无法写入文件：${file.name}")
+            // 必须校验落盘结果，杜绝 renameTo 未真正生效却报告成功的假成功。
+            // 任何不匹配都抛出，由 saveMemories/archiveOldMemories 捕获并返回 false。
+            if (!file.exists() || file.length() != expected) {
+                throw IOException(
+                    "文件写入校验失败：${file.name}（期望 $expected 字节，实际 ${file.length()} 字节）"
+                )
+            }
         } finally {
             if (temp.exists()) temp.delete()
         }
