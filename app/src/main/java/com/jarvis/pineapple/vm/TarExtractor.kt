@@ -107,8 +107,13 @@ object TarExtractor {
     }
 
     /** 计算文件 SHA-256（小写十六进制）。 */
-    fun sha256(file: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
+    fun sha256(file: File): String = digest(file, "SHA-256")
+
+    /** 计算文件 MD5（小写十六进制），仅用于上游只发布 MD5 的镜像完整性校验。 */
+    fun md5(file: File): String = digest(file, "MD5")
+
+    private fun digest(file: File, algorithm: String): String {
+        val md = MessageDigest.getInstance(algorithm)
         file.inputStream().use { input ->
             val buffer = ByteArray(1 shl 16)
             while (true) {

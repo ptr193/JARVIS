@@ -58,4 +58,9 @@ object DownloadMirrors {
         val match = Regex("[0-9a-fA-F]{64}").find(text.trim()) ?: return null
         return match.value.lowercase()
     }
+
+    fun parseMd5Sidecar(text: String): String? {
+        val match = Regex("(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])").find(text.trim()) ?: return null
+        return match.value.lowercase()
+    }
 }

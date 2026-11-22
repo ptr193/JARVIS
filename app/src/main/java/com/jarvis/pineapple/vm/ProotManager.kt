@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -731,7 +732,13 @@ class ProotManager internal constructor(
         connection.setRequestProperty("User-Agent", "JARVIS/1.0")
         connection.connect()
 
+        val code = connection.responseCode
+        if (code !in 200..299) {
+            connection.disconnect()
+            throw IOException("HTTP $code：$url")
+        }
         val total = connection.contentLengthLong
+        var lastPercent = -1
         connection.inputStream.use { input ->
             target.outputStream().use { output ->
                 val buffer = ByteArray(1 shl 16)
@@ -742,9 +749,14 @@ class ProotManager internal constructor(
                     if (read <= 0) break
                     output.write(buffer, 0, read)
                     totalRead += read
-                    val p = if (total > 0) totalRead.toFloat() / total else 0f
-                    _downloadProgress.value = p
-                    onProgress(p)
+                    val p = if (total > 0) (totalRead.toFloat() / total).coerceIn(0f, 1f) else 0f
+                    // 仅在百分比变化时上报，避免每个 64KB 分块都触发 UI 重组。
+                    val percent = (p * 100).toInt()
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        _downloadProgress.value = p
+                        onProgress(p)
+                    }
                 }
             }
         }

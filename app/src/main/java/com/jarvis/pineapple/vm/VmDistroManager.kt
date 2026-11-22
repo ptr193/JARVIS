@@ -39,6 +39,8 @@ enum class DistroCategory {
 
 const val KALI_MINIMAL_ARM64_SHA256 = "96aeced81a857a987715a14417af05c2934e3e19052d6151c398a1c215448b60"
 
+private data class ExpectedChecksum(val algorithm: String, val value: String)
+
 /**
  * 下载进度
  */
@@ -141,6 +143,15 @@ class VmDistroManager internal constructor(
                 fail(distroId, "没有可用的下载地址")
                 return@withContext false
             }
+            val expectedChecksum = if (distro.checksumSha256.isNotBlank()) {
+                ExpectedChecksum("SHA-256", distro.checksumSha256)
+            } else {
+                resolveSidecarChecksum(urls)
+            }
+            if (expectedChecksum == null) {
+                fail(distroId, "该发行版未发布可用校验和，已停止下载")
+                return@withContext false
+            }
 
             var success = false
             var lastError = ""
@@ -162,20 +173,14 @@ class VmDistroManager internal constructor(
                             DownloadProgress(
                                 distroId = distroId,
                                 progress = p,
-                                downloadedBytes = (archive.length()).coerceAtLeast(0),
-                                totalBytes = if (distro.sizeBytes > 0) distro.sizeBytes else archive.length(),
+                                downloadedBytes = (p * distro.sizeBytes).toLong().coerceAtLeast(0),
+                                totalBytes = distro.sizeBytes,
                                 status = DownloadStatus.DOWNLOADING,
                                 currentUrl = url
                             )
                         )
                     }
 
-                    val expectedSha = distro.checksumSha256.ifBlank { fetchSidecarSha256(url) }.orEmpty()
-                    if (expectedSha.isBlank()) {
-                        lastError = "发行版缺少 SHA-256 校验和，拒绝安装"
-                        archive.delete()
-                        continue
-                    }
                     updateProgress(
                         DownloadProgress(
                             distroId = distroId,
@@ -183,12 +188,17 @@ class VmDistroManager internal constructor(
                             status = DownloadStatus.VERIFYING,
                             totalBytes = archive.length(),
                             downloadedBytes = archive.length(),
-                            currentUrl = url
+                            currentUrl = url,
+                            errorMessage = if (expectedChecksum.algorithm == "MD5") "上游仅提供 MD5 校验" else ""
                         )
                     )
-                    val actual = TarExtractor.sha256(archive)
-                    if (!actual.equals(expectedSha, ignoreCase = true)) {
-                        lastError = "SHA-256 校验失败（期望 $expectedSha, 实际 $actual）"
+                    val actual = if (expectedChecksum.algorithm == "MD5") {
+                        TarExtractor.md5(archive)
+                    } else {
+                        TarExtractor.sha256(archive)
+                    }
+                    if (!actual.equals(expectedChecksum.value, ignoreCase = true)) {
+                        lastError = "${expectedChecksum.algorithm} 校验失败（期望 ${expectedChecksum.value}, 实际 $actual）"
                         archive.delete()
                         continue
                     }
@@ -210,11 +220,7 @@ class VmDistroManager internal constructor(
                     success = true
                     break
                 } catch (e: Exception) {
-                    lastError = if (url != urls.first()) {
-                        "${DownloadMirrors.SWITCHING}；${e.message ?: e.toString()}"
-                    } else {
-                        e.message ?: e.toString()
-                    }
+                    lastError = e.message ?: e.toString()
                     if (archive.exists()) archive.delete()
                 }
             }
@@ -232,7 +238,9 @@ class VmDistroManager internal constructor(
                 )
                 true
             } else {
-                fail(distroId, lastError.ifBlank { "下载失败" })
+                val detail = lastError.ifBlank { "下载失败" }
+                val suffix = if (urls.size > 1) "（已尝试 ${urls.size} 个地址）" else ""
+                fail(distroId, detail + suffix)
                 false
             }
         } catch (e: Exception) {
@@ -257,17 +265,30 @@ class VmDistroManager internal constructor(
         _downloadProgress.value = _downloadProgress.value + (progress.distroId to progress)
     }
 
-    private suspend fun fetchSidecarSha256(archiveUrl: String): String? {
-        val sidecarUrls = DownloadMirrors.candidates("$archiveUrl.sha256") +
-            DownloadMirrors.candidates("$archiveUrl.sha256.txt")
-        for (sidecar in sidecarUrls) {
-            try {
-                val tmp = File(cacheDir, "sha_${System.currentTimeMillis()}.txt")
-                prootManager.downloadArchive(sidecar, tmp)
-                val parsed = DownloadMirrors.parseSha256Sidecar(tmp.readText())
-                tmp.delete()
-                if (!parsed.isNullOrBlank()) return parsed
-            } catch (_: Exception) {
+    private suspend fun resolveSidecarChecksum(archiveUrls: List<String>): ExpectedChecksum? {
+        val patterns = listOf(
+            ".sha256" to "SHA-256",
+            ".sha256.txt" to "SHA-256",
+            ".sha256sum" to "SHA-256",
+            ".md5" to "MD5"
+        )
+        for (archiveUrl in archiveUrls) {
+            for ((suffix, algorithm) in patterns) {
+                for (sidecar in DownloadMirrors.candidates(archiveUrl + suffix)) {
+                    try {
+                        val tmp = File(cacheDir, "sha_${System.currentTimeMillis()}.txt")
+                        prootManager.downloadArchive(sidecar, tmp)
+                        val text = tmp.readText()
+                        tmp.delete()
+                        val parsed = if (algorithm == "MD5") {
+                            DownloadMirrors.parseMd5Sidecar(text)
+                        } else {
+                            DownloadMirrors.parseSha256Sidecar(text)
+                        }
+                        if (!parsed.isNullOrBlank()) return ExpectedChecksum(algorithm, parsed)
+                    } catch (_: Exception) {
+                    }
+                }
             }
         }
         return null
@@ -301,8 +322,9 @@ class VmDistroManager internal constructor(
                     name = "Debian",
                     version = "12",
                     architecture = "aarch64",
-                    downloadUrl = "https://github.com/termux/proot-distro/releases/download/v4.27.0/debian-bookworm-aarch64-pd-v4.27.0.tar.xz",
-                    sizeBytes = 95_000_000L,
+                    downloadUrl = "https://github.com/termux/proot-distro/releases/download/v4.7.0/debian-bookworm-aarch64-pd-v4.7.0.tar.xz",
+                    sizeBytes = 42_894_344L,
+                    checksumSha256 = "4baa32280cc70b67e2c650777c1d974349f0cdf23afaabc305ad3bc6182b8df8",
                     category = DistroCategory.SERVER,
                     description = "Debian 12 bookworm，稳定服务器发行版",
                     packageManager = "apt",
@@ -319,7 +341,8 @@ class VmDistroManager internal constructor(
                     mirrorUrls = listOf(
                         "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.21/releases/aarch64/alpine-minirootfs-3.21.3-aarch64.tar.gz"
                     ),
-                    sizeBytes = 4_200_000L,
+                    sizeBytes = 3_850_365L,
+                    checksumSha256 = "ead8a4b37867bd19e7417dd078748e2312c0aea364403d96758d63ea8ff261ea",
                     category = DistroCategory.LIGHTWEIGHT,
                     description = "Alpine 3.21 极轻量 rootfs",
                     packageManager = "apk",
@@ -332,8 +355,9 @@ class VmDistroManager internal constructor(
                     name = "Debian",
                     version = "13",
                     architecture = "aarch64",
-                    downloadUrl = "https://github.com/termux/proot-distro/releases/download/v4.27.0/debian-trixie-aarch64-pd-v4.27.0.tar.xz",
-                    sizeBytes = 98_000_000L,
+                    downloadUrl = "https://github.com/termux/proot-distro/releases/download/v4.26.0/debian-trixie-aarch64-pd-v4.26.0.tar.xz",
+                    sizeBytes = 35_407_044L,
+                    checksumSha256 = "cda75346f2c9e09e8a802665745b5a7e2bd6d8584dbf1c86c8c57ef54c4e2d3c",
                     category = DistroCategory.SERVER,
                     description = "Debian 13 trixie",
                     packageManager = "apt",
@@ -385,7 +409,8 @@ class VmDistroManager internal constructor(
                     mirrorUrls = listOf(
                         "https://mirrors.tuna.tsinghua.edu.cn/voidlinux/live/current/void-aarch64-ROOTFS-20250202.tar.xz"
                     ),
-                    sizeBytes = 2_424_076L,
+                    sizeBytes = 45_789_416L,
+                    checksumSha256 = "01a30f17ae06d4d5b322cd579ca971bc479e02cc284ec1e5a4255bea6bac3ce6",
                     category = DistroCategory.LIGHTWEIGHT,
                     description = "Void Linux aarch64",
                     packageManager = "xbps",
@@ -398,11 +423,8 @@ class VmDistroManager internal constructor(
                     name = "Kali Linux",
                     version = "NetHunter minimal",
                     architecture = "aarch64",
-                    downloadUrl = "https://kali.download/nethunter-images/current/rootfs/kalifs-arm64-minimal.tar.xz",
-                    mirrorUrls = listOf(
-                        "https://mirrors.ustc.edu.cn/kali-images/nethunter-images/current/rootfs/kalifs-arm64-minimal.tar.xz"
-                    ),
-                    sizeBytes = 180_000_000L,
+                    downloadUrl = "https://kali.download/nethunter-images/current/rootfs/kali-nethunter-rootfs-minimal-arm64.tar.xz",
+                    sizeBytes = 125_846_088L,
                     checksumSha256 = KALI_MINIMAL_ARM64_SHA256,
                     category = DistroCategory.SECURITY,
                     description = "Kali Linux NetHunter minimal，Haven 式 PRoot rootfs",

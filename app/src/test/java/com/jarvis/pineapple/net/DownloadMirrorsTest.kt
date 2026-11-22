@@ -53,6 +53,13 @@ class DownloadMirrorsTest {
     }
 
     @Test
+    fun md5SidecarParserAcceptsArchFormat() {
+        val text = "d41d8cd98f00b204e9800998ecf8427e  ArchLinuxARM-aarch64-latest.tar.gz\n"
+        assertEquals("d41d8cd98f00b204e9800998ecf8427e", DownloadMirrors.parseMd5Sidecar(text))
+        assertNull(DownloadMirrors.parseMd5Sidecar("no checksum here"))
+    }
+
+    @Test
     fun timeoutClassifierCoversSocketAndConnect() {
         assertTrue(DownloadMirrors.isTimeoutOrUnreachable(java.net.SocketTimeoutException("Read timed out")))
         assertTrue(DownloadMirrors.isTimeoutOrUnreachable(java.net.ConnectException("failed to connect")))
