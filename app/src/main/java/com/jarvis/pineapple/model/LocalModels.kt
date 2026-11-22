@@ -57,6 +57,8 @@ abstract class LocalModel(
             conversation = engine?.createConversation(convConfig)
             state = ModelState.READY
         } catch (e: Exception) {
+            runCatching { conversation?.close() }
+            runCatching { engine?.close() }
             state = ModelState.ERROR
             engine = null
             conversation = null

@@ -1,6 +1,21 @@
 package com.jarvis.pineapple.model
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.headersOf
 import java.io.File
+import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -69,10 +84,90 @@ class ModelDownloadManagerTest {
         val source = listOf(File(path), File("../$path")).firstOrNull { it.exists() }?.readText()
             ?: error("无法定位源文件: $path")
         val delete = source.substringAfter("fun deleteModel(modelId: String): Boolean")
-            .substringBefore("    /**\n     * 导入本地模型文件")
+            .substringBefore("    /**\n     * 获取下载进度")
 
         assertTrue(delete.contains("if (failedDeletions(candidates).isNotEmpty()) return false"))
         assertTrue(delete.indexOf("return false") < delete.indexOf("updateState("))
         assertTrue(delete.contains("return true"))
     }
+
+    @Test
+    fun sameModelConcurrentDownloadsSerializeAndReuseVerifiedFile() = runBlocking {
+        val payload = ByteArray(2048) { (it % 31).toByte() }
+        val requests = AtomicInteger()
+        val engine = MockEngine {
+            requests.incrementAndGet()
+            delay(50)
+            respond(payload, headers = headersOf(HttpHeaders.ContentLength, payload.size.toString()))
+        }
+        val manager = ModelDownloadManager(
+            temp.newFolder("concurrent-models"),
+            HttpClient(engine),
+            listOf(testConfig(payload))
+        )
+
+        val results = listOf(
+            async { manager.downloadModel("tiny") },
+            async { manager.downloadModel("tiny") }
+        ).awaitAll()
+
+        assertTrue(results.all { it })
+        assertEquals(1, requests.get())
+        assertEquals(DownloadStatus.COMPLETED, manager.getDownloadProgress("tiny")?.status)
+        assertFalse(manager.isDownloading.value)
+    }
+
+    @Test
+    fun cancellationIsVisibleAndReleasesGlobalDownloadingState() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val engine = MockEngine {
+            started.complete(Unit)
+            awaitCancellation()
+        }
+        val payload = ByteArray(2048) { 1 }
+        val manager = ModelDownloadManager(
+            temp.newFolder("cancel-models"),
+            HttpClient(engine),
+            listOf(testConfig(payload))
+        )
+        val download = async { manager.downloadModel("tiny") }
+        withTimeout(5_000) { started.await() }
+
+        assertTrue(manager.cancelDownload("tiny"))
+        assertTrue(runCatching { download.await() }.exceptionOrNull() is CancellationException)
+        assertEquals(DownloadStatus.CANCELLED, manager.getDownloadProgress("tiny")?.status)
+        assertFalse(manager.isDownloading.value)
+        assertFalse(manager.cancelDownload("tiny"))
+    }
+
+    @Test
+    fun restoredFileWithMatchingSizeButWrongHashIsNotCompleted() = runBlocking {
+        val payload = ByteArray(2048) { 2 }
+        val directory = temp.newFolder("restored-models")
+        File(directory, "tiny.litertlm").writeBytes(payload)
+        val wrongHash = sha256(ByteArray(2048) { 3 })
+        val manager = ModelDownloadManager(
+            directory,
+            HttpClient(MockEngine { respond(ByteArray(0)) }),
+            listOf(testConfig(payload).copy(sha256 = wrongHash))
+        )
+
+        withTimeout(5_000) {
+            while (manager.getDownloadProgress("tiny")?.status == DownloadStatus.VERIFYING) delay(10)
+        }
+        assertEquals(DownloadStatus.FAILED, manager.getDownloadProgress("tiny")?.status)
+        assertEquals(null, manager.getModelFilePath("tiny"))
+    }
+
+    private fun testConfig(payload: ByteArray) = ModelDownloadManager.ModelConfig(
+        id = "tiny",
+        name = "Tiny test model",
+        fileName = "tiny.litertlm",
+        downloadUrl = "https://models.test/tiny",
+        sha256 = sha256(payload),
+        sizeBytes = payload.size.toLong()
+    )
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 }

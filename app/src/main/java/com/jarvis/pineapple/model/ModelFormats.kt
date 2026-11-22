@@ -4,6 +4,13 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.zip.ZipFile
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 模型文件格式（REQ-04：覆盖主流开放格式并保持扩展能力）。
@@ -64,22 +71,24 @@ object ModelFormatDetector {
             return probeGguf(file)
         }
 
-        // PyTorch ZIP 容器（torch >= 1.6 默认 zip 格式）
+        // PyTorch ZIP 必须包含 torch.save 的 data.pkl，不能把任意 ZIP 当作模型。
         if (header.size >= 4 && header[0] == 'P'.code.toByte() && header[1] == 'K'.code.toByte() &&
             header[2].toInt() == 3 && header[3].toInt() == 4
         ) {
-            return FormatProbe.Detected(
-                ModelFormat.PYTORCH,
-                "PyTorch ZIP 存档（torch.save 默认格式），大小 ${file.length() / (1024 * 1024)} MB"
-            )
+            return probePyTorchZip(file)
         }
 
-        // PyTorch pickle 魔数: 0x80 0x02 / 0x03 / 0x04
-        if (header.size >= 2 && header[0] == 0x80.toByte() && header[1] in 2..4) {
-            return FormatProbe.Detected(
-                ModelFormat.PYTORCH,
-                "PyTorch pickle 序列化（PROTO v${header[1]}），大小 ${file.length() / (1024 * 1024)} MB"
-            )
+        // PyTorch pickle 必须同时具有协议头和 STOP 操作码。
+        if (header.size >= 2 && header[0] == 0x80.toByte() && header[1] in 2..5) {
+            val stop = readBytes(file, file.length() - 1, 1)
+            return if (file.length() >= 4 && stop.singleOrNull() == '.'.code.toByte()) {
+                FormatProbe.Detected(
+                    ModelFormat.PYTORCH,
+                    "PyTorch pickle 序列化（PROTO v${header[1]}），大小 ${file.length() / (1024 * 1024)} MB"
+                )
+            } else {
+                FormatProbe.Rejected("PyTorch pickle 缺少有效 STOP 操作码")
+            }
         }
 
         // ONNX: protobuf。field 1 (ir_version) varint tag = 0x08，或 field 7 (graph) 长度分隔 tag = 0x3a
@@ -93,29 +102,77 @@ object ModelFormatDetector {
             }
         }
 
-        // Safetensors: 前 8 字节为 JSON 头的 little-endian 长度
+        // Safetensors: 完整解析 JSON 头并核对每个张量的数据区间。
         if (file.length() > 8) {
             val headLen = ByteBuffer.wrap(header, 0, 8).order(ByteOrder.LITTLE_ENDIAN).long
             if (headLen in 2L..(100L * 1024 * 1024) && headLen + 8 <= file.length()) {
-                val jsonHead = readBytes(file, 8, headLen.toInt().coerceAtMost(256))
-                val asText = String(jsonHead, Charsets.US_ASCII)
-                if (asText.trimStart().startsWith("{")) {
-                    return FormatProbe.Detected(
-                        ModelFormat.SAFETENSORS,
-                        "Safetensors 张量容器（JSON 头 ${headLen} 字节），大小 ${file.length() / (1024 * 1024)} MB"
-                    )
-                }
+                return probeSafetensors(file, headLen)
             }
         }
 
-        // TensorFlow SavedModel 常以 protobuf "field 1 bytes" 开头，无稳定魔数，回退后缀判断
-        val byExt = ModelFormat.fromExtension(file.extension)
-        if (byExt != ModelFormat.UNKNOWN) {
-            return FormatProbe.Detected(byExt, "按扩展名识别为 ${byExt.label}（未发现已知二进制魔数）")
+        // LiteRT-LM 没有在这里臆测私有容器结构；导入后必须由真实引擎加载并推理。
+        if (ModelFormat.fromExtension(file.extension) == ModelFormat.LITERTLM) {
+            return FormatProbe.Detected(
+                ModelFormat.LITERTLM,
+                "LiteRT-LM 候选文件，私有容器结构待真实引擎加载与推理复核"
+            )
         }
         return FormatProbe.Rejected(
-            "无法识别的模型格式。支持：GGUF / ONNX / Safetensors / PyTorch(.bin/.pt/.pth) / TensorFlow(.pb) / LiteRT-LM(.litertlm)"
+            "无法通过二进制结构校验；扩展名不能作为模型有效性的证明。" +
+                "支持 GGUF / ONNX / Safetensors / PyTorch，LiteRT-LM 需引擎复核"
         )
+    }
+
+    private fun probePyTorchZip(file: File): FormatProbe = try {
+        ZipFile(file).use { archive ->
+            val hasPickle = archive.entries().asSequence().any {
+                !it.isDirectory && (it.name == "data.pkl" || it.name.endsWith("/data.pkl"))
+            }
+            if (!hasPickle) return FormatProbe.Rejected("ZIP 中缺少 PyTorch data.pkl")
+            FormatProbe.Detected(
+                ModelFormat.PYTORCH,
+                "PyTorch ZIP 存档（含 data.pkl），大小 ${file.length() / (1024 * 1024)} MB"
+            )
+        }
+    } catch (e: Exception) {
+        FormatProbe.Rejected("PyTorch ZIP 解析失败：${e.message}")
+    }
+
+    private fun probeSafetensors(file: File, headLen: Long): FormatProbe = try {
+        val jsonHead = readBytes(file, 8, headLen.toInt())
+        if (jsonHead.size.toLong() != headLen) return FormatProbe.Rejected("Safetensors JSON 头被截断")
+        val root = Json.parseToJsonElement(String(jsonHead, Charsets.UTF_8)).jsonObject
+        val tensors = root.filterKeys { it != "__metadata__" }
+        if (tensors.isEmpty()) return FormatProbe.Rejected("Safetensors 不含任何张量")
+        val dataBytes = file.length() - 8 - headLen
+        tensors.forEach { (name, value) ->
+            val tensor = value as? JsonObject
+                ?: return FormatProbe.Rejected("Safetensors 张量 $name 元数据无效")
+            val dtype = tensor["dtype"]?.jsonPrimitive?.content.orEmpty()
+            if (!dtype.matches(Regex("[A-Z][A-Z0-9_]*"))) {
+                return FormatProbe.Rejected("Safetensors 张量 $name 缺少有效 dtype")
+            }
+            tensor["shape"]?.jsonArray?.forEach {
+                if (it.jsonPrimitive.long < 0) {
+                    return FormatProbe.Rejected("Safetensors 张量 $name shape 无效")
+                }
+            } ?: return FormatProbe.Rejected("Safetensors 张量 $name 缺少 shape")
+            val offsets = tensor["data_offsets"]?.jsonArray
+                ?: return FormatProbe.Rejected("Safetensors 张量 $name 缺少 data_offsets")
+            if (offsets.size != 2) return FormatProbe.Rejected("Safetensors 张量 $name 数据区间无效")
+            val start = offsets[0].jsonPrimitive.long
+            val end = offsets[1].jsonPrimitive.long
+            if (start < 0 || end < start || end > dataBytes) {
+                return FormatProbe.Rejected("Safetensors 张量 $name 数据区间越界")
+            }
+        }
+        FormatProbe.Detected(
+            ModelFormat.SAFETENSORS,
+            "Safetensors 张量容器（${tensors.size} 个张量，JSON 头 $headLen 字节）",
+            tensorCount = tensors.size.toLong()
+        )
+    } catch (e: Exception) {
+        FormatProbe.Rejected("Safetensors 结构解析失败：${e.message}")
     }
 
     /** 解析 GGUF 头（真实的二进制结构解析）。 */
@@ -135,7 +192,9 @@ object ModelFormatDetector {
                 }
                 val tensorCount = buf.long
                 val metadataCount = buf.long
-                if (tensorCount < 0 || metadataCount < 0 || tensorCount > 1_000_000) {
+                if (tensorCount < 0 || metadataCount < 0 ||
+                    tensorCount > 1_000_000 || metadataCount > 1_000_000
+                ) {
                     return FormatProbe.Rejected("GGUF 头字段异常（tensor=$tensorCount meta=$metadataCount）")
                 }
                 FormatProbe.Detected(

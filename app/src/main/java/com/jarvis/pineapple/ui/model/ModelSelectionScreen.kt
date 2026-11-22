@@ -38,11 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.jarvis.pineapple.model.ModelDownloadManager
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.io.File
-import java.io.FileOutputStream
 import org.koin.androidx.compose.get
 
 /**
@@ -62,7 +58,6 @@ fun ModelSelectionScreen(
     onModelSelected: (String) -> Unit
 ) {
     var selectedModelId by remember { mutableStateOf(currentModelId) }
-    val modelDownloadManager = get<ModelDownloadManager>()
     val modelImportManager = get<com.jarvis.pineapple.model.ModelImportManager>()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
@@ -70,47 +65,6 @@ fun ModelSelectionScreen(
 
     fun showMsg(msg: String) {
         scope.launch { snackbarHostState.showSnackbar(msg) }
-    }
-
-    /**
-     * 将 SAF Uri 的内容复制到应用私有目录
-     */
-    fun copyUriToLocalFile(uri: android.net.Uri): File? {
-        return try {
-            val contentResolver = context.contentResolver
-            val inputStream = contentResolver.openInputStream(uri) ?: return null
-
-            val displayName = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                    if (nameIndex >= 0) cursor.getString(nameIndex) else null
-                } else null
-            } ?: "imported_model"
-
-            val localFile = File(context.filesDir, "models/${System.currentTimeMillis()}_$displayName")
-            localFile.parentFile?.mkdirs()
-
-            val outputStream = FileOutputStream(localFile)
-            inputStream.use { input ->
-                outputStream.use { output ->
-                    input.copyTo(output)
-                }
-            }
-            localFile
-        } catch (e: Exception) {
-            android.util.Log.e("ModelSelectionScreen", "copyUriToLocalFile failed", e)
-            null
-        }
-    }
-
-    /**
-     * 导入本地模型文件到模型管理器
-     */
-    fun importLocalModel(file: File): Boolean {
-        // 从文件名生成 modelId
-        val modelId = file.nameWithoutExtension.lowercase().replace(" ", "_")
-        val modelName = file.nameWithoutExtension
-        return modelDownloadManager.importLocalModel(file, modelId, modelName)
     }
 
     // SAF 文件选择器：导入本地模型文件（多格式：GGUF/ONNX/Safetensors/PyTorch/LiteRT-LM）

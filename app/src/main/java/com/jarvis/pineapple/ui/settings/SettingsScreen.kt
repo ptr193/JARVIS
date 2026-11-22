@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
@@ -336,7 +337,8 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
                 onDelete = {
                     val deleted = models.deleteModel(config.id)
                     showMsg(if (deleted) "模型已删除: ${config.name}" else "模型删除失败: ${config.name}")
-                }
+                },
+                onCancel = { models.cancelDownload(config.id) }
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -347,7 +349,8 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
 private fun ModelDownloadItem(
     state: ModelDownloadState,
     onDownload: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCancel: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -370,15 +373,23 @@ private fun ModelDownloadItem(
                             DownloadStatus.COMPLETED -> "已下载"
                             DownloadStatus.FAILED -> "下载失败: ${state.errorMessage}"
                             DownloadStatus.VERIFYING -> "校验中..."
+                            DownloadStatus.CANCELLED -> "已取消: ${state.errorMessage}"
                         },
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Row {
-                    if (state.status == DownloadStatus.NOT_DOWNLOADED || state.status == DownloadStatus.FAILED) {
+                    if (state.status == DownloadStatus.NOT_DOWNLOADED ||
+                        state.status == DownloadStatus.FAILED || state.status == DownloadStatus.CANCELLED
+                    ) {
                         IconButton(onClick = onDownload) {
                             Icon(Icons.Filled.Download, contentDescription = "下载")
+                        }
+                    }
+                    if (state.status == DownloadStatus.DOWNLOADING || state.status == DownloadStatus.VERIFYING) {
+                        IconButton(onClick = onCancel) {
+                            Icon(Icons.Filled.Close, contentDescription = "取消下载")
                         }
                     }
                     if (state.status == DownloadStatus.COMPLETED) {

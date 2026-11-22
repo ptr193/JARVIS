@@ -1,11 +1,20 @@
 package com.jarvis.pineapple.model
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -21,6 +30,8 @@ import kotlinx.serialization.json.Json
 import com.jarvis.pineapple.net.DownloadMirrors
 import java.io.File
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 模型下载状态
@@ -40,7 +51,8 @@ enum class DownloadStatus {
     DOWNLOADING,
     COMPLETED,
     FAILED,
-    VERIFYING
+    VERIFYING,
+    CANCELLED
 }
 
 /**
@@ -58,27 +70,38 @@ enum class DownloadStatus {
  * 3. LFM2.5 1.2B Instruct: https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm
  * 4. Qwen 3 0.6B: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm
  */
-class ModelDownloadManager(private val context: Context) {
-
-    private val modelsDir = File(context.filesDir, "models")
-
-    private val httpClient = HttpClient(Android) {
-        // 错误页/拒绝响应不能进入模型文件写入流程。
-        expectSuccess = true
-        engine {
-            connectTimeout = 15_000
-            socketTimeout = 30_000
-        }
-        install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
-        }
-    }
+class ModelDownloadManager internal constructor(
+    private val modelsDir: File,
+    private val httpClient: HttpClient,
+    private val configs: List<ModelConfig>
+) {
+    constructor(context: Context) : this(
+        File(context.filesDir, "models"),
+        HttpClient(Android) {
+            // 错误页/拒绝响应不能进入模型文件写入流程。
+            expectSuccess = true
+            engine {
+                connectTimeout = 15_000
+                socketTimeout = 30_000
+            }
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        },
+        DEFAULT_MODELS
+    )
 
     private val _downloadStates = MutableStateFlow<Map<String, ModelDownloadState>>(emptyMap())
     val downloadStates: StateFlow<Map<String, ModelDownloadState>> = _downloadStates.asStateFlow()
 
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    private val downloadLocks = ConcurrentHashMap<String, Mutex>()
+    private val downloadJobs = ConcurrentHashMap<String, Job>()
+    private val activeDownloads = AtomicInteger()
+    private val stateLock = Any()
+    private val verificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // 模型配置信息
     data class ModelConfig(
@@ -152,23 +175,46 @@ class ModelDownloadManager(private val context: Context) {
      * 初始化下载状态
      */
     private fun initializeDownloadStates() {
-        val states = DEFAULT_MODELS.associate { config ->
+        val states = configs.associate { config ->
             val file = File(modelsDir, config.fileName)
-            val status = if (isExpectedSize(config, if (file.exists()) file.length() else 0L)) {
-                DownloadStatus.COMPLETED
-            } else {
-                DownloadStatus.NOT_DOWNLOADED
-            }
+            val hasCandidate = isExpectedSize(config, if (file.exists()) file.length() else 0L)
             config.id to ModelDownloadState(
                 modelId = config.id,
                 modelName = config.name,
-                status = status,
-                progress = if (status == DownloadStatus.COMPLETED) 1f else 0f,
+                status = if (hasCandidate) DownloadStatus.VERIFYING else DownloadStatus.NOT_DOWNLOADED,
+                progress = if (hasCandidate) 1f else 0f,
                 downloadedBytes = if (file.exists()) file.length() else 0,
                 totalBytes = config.sizeBytes
             )
         }
         _downloadStates.value = states
+
+        // 大小相同也不能证明内容完整；后台复核 SHA-256，避免阻塞主线程。
+        verificationScope.launch {
+            configs.forEach { config ->
+                val file = File(modelsDir, config.fileName)
+                if (!isExpectedSize(config, if (file.exists()) file.length() else 0L)) return@forEach
+                downloadLocks.computeIfAbsent(config.id) { Mutex() }.withLock {
+                    if (_downloadStates.value[config.id]?.status != DownloadStatus.VERIFYING) {
+                        return@withLock
+                    }
+                    val verified = try {
+                        config.sha256.isBlank() || calculateSha256(file).equals(config.sha256, ignoreCase = true)
+                    } catch (e: Exception) {
+                        false
+                    }
+                    updateState(config.id, ModelDownloadState(
+                        modelId = config.id,
+                        modelName = config.name,
+                        status = if (verified) DownloadStatus.COMPLETED else DownloadStatus.FAILED,
+                        progress = if (verified) 1f else 0f,
+                        downloadedBytes = file.length(),
+                        totalBytes = config.sizeBytes,
+                        errorMessage = if (verified) "" else "已有模型文件 SHA-256 校验失败，请重新下载"
+                    ))
+                }
+            }
+        }
     }
 
     /**
@@ -182,21 +228,59 @@ class ModelDownloadManager(private val context: Context) {
      * 获取已下载的模型文件路径
      */
     fun getModelFilePath(modelId: String): String? {
-        val config = DEFAULT_MODELS.find { it.id == modelId } ?: return null
+        val config = configs.find { it.id == modelId } ?: return null
         val file = File(modelsDir, config.fileName)
-        return if (isExpectedSize(config, if (file.exists()) file.length() else 0L)) file.absolutePath else null
+        return if (_downloadStates.value[modelId]?.status == DownloadStatus.COMPLETED &&
+            isExpectedSize(config, if (file.exists()) file.length() else 0L)
+        ) file.absolutePath else null
     }
 
     /**
      * 下载指定模型（流式写入磁盘，支持断点续传与 SHA-256 校验）。
      */
     suspend fun downloadModel(modelId: String): Boolean {
-        val config = DEFAULT_MODELS.find { it.id == modelId } ?: return false
+        val config = configs.find { it.id == modelId } ?: return false
+        val lock = downloadLocks.computeIfAbsent(modelId) { Mutex() }
+        return lock.withLock {
+            val job = currentCoroutineContext()[Job]
+            if (job != null) downloadJobs[modelId] = job
+            activeDownloads.incrementAndGet()
+            _isDownloading.value = true
+            try {
+                downloadModelLocked(config, job)
+            } catch (e: CancellationException) {
+                val partFile = File(modelsDir, "${config.fileName}.part")
+                updateState(modelId, ModelDownloadState(
+                    modelId = modelId,
+                    modelName = config.name,
+                    status = DownloadStatus.CANCELLED,
+                    downloadedBytes = if (partFile.exists()) partFile.length() else 0,
+                    totalBytes = config.sizeBytes,
+                    errorMessage = e.message ?: "下载已取消"
+                ))
+                throw e
+            } finally {
+                if (job != null) downloadJobs.remove(modelId, job)
+                _isDownloading.value = activeDownloads.decrementAndGet() > 0
+            }
+        }
+    }
+
+    /** 取消当前模型的活动下载；等待同模型锁的任务尚未开始，不会被误取消。 */
+    fun cancelDownload(modelId: String): Boolean {
+        val job = downloadJobs[modelId] ?: return false
+        job.cancel(CancellationException("用户取消模型下载"))
+        return true
+    }
+
+    private suspend fun downloadModelLocked(config: ModelConfig, job: Job?): Boolean {
+        val modelId = config.id
         val file = File(modelsDir, config.fileName)
 
         // 已有文件必须通过大小与 SHA-256 复核；占位/截断文件继续重新下载。
         if (file.exists() && isExpectedSize(config, file.length()) &&
-            (config.sha256.isBlank() || calculateSha256(file).equals(config.sha256, ignoreCase = true))
+            (config.sha256.isBlank() ||
+                calculateSha256(file) { job?.ensureActive() }.equals(config.sha256, ignoreCase = true))
         ) {
             updateState(modelId, ModelDownloadState(
                 modelId = modelId,
@@ -211,8 +295,6 @@ class ModelDownloadManager(private val context: Context) {
 
         val partFile = File(modelsDir, "${config.fileName}.part")
         var resumeFrom = if (partFile.exists()) partFile.length() else 0L
-
-        _isDownloading.value = true
         val urls = DownloadMirrors.candidates(config.downloadUrl, config.mirrorUrls)
         var lastError = ""
         for ((index, url) in urls.withIndex()) {
@@ -227,15 +309,13 @@ class ModelDownloadManager(private val context: Context) {
                 errorMessage = if (switching) DownloadMirrors.SWITCHING else ""
             ))
             try {
-                downloadFromUrl(config, file, partFile, resumeFrom, url)
-                _isDownloading.value = false
+                downloadFromUrl(config, file, partFile, resumeFrom, url, job)
                 return true
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 lastError = e.message ?: "下载失败"
                 resumeFrom = if (partFile.exists()) partFile.length() else 0L
-                if (index < urls.lastIndex && DownloadMirrors.isTimeoutOrUnreachable(e)) {
-                    continue
-                }
                 if (index < urls.lastIndex) continue
             }
         }
@@ -247,7 +327,6 @@ class ModelDownloadManager(private val context: Context) {
             totalBytes = config.sizeBytes,
             errorMessage = if (urls.size > 1) "${DownloadMirrors.ALL_FAILED}：$lastError" else lastError.ifBlank { "下载失败" }
         ))
-        _isDownloading.value = false
         return false
     }
 
@@ -256,7 +335,8 @@ class ModelDownloadManager(private val context: Context) {
         file: File,
         partFile: File,
         resumeFrom: Long,
-        url: String
+        url: String,
+        job: Job?
     ) {
         httpClient.prepareGet(url) {
             if (resumeFrom > 0) header(HttpHeaders.Range, "bytes=$resumeFrom-")
@@ -291,7 +371,8 @@ class ModelDownloadManager(private val context: Context) {
             }
         }
 
-        if (file.exists()) file.delete()
+        job?.ensureActive()
+        if (file.exists() && !file.delete()) throw IllegalStateException("无法替换旧模型文件")
         if (!partFile.renameTo(file)) {
             partFile.copyTo(file, overwrite = true)
             partFile.delete()
@@ -312,7 +393,7 @@ class ModelDownloadManager(private val context: Context) {
             throw IllegalStateException("模型大小校验失败：期望 ${config.sizeBytes}，实际 $actualSize")
         }
 
-        val actualSha256 = calculateSha256(file)
+        val actualSha256 = calculateSha256(file) { job?.ensureActive() }
         val expectedSha256 = config.sha256.trim().lowercase()
         if (expectedSha256.isNotEmpty() && actualSha256 != expectedSha256) {
             file.delete()
@@ -334,7 +415,7 @@ class ModelDownloadManager(private val context: Context) {
      */
     suspend fun downloadAllModels(): Boolean {
         var allSuccess = true
-        for (config in DEFAULT_MODELS) {
+        for (config in configs) {
             val success = downloadModel(config.id)
             if (!success) allSuccess = false
         }
@@ -365,49 +446,6 @@ class ModelDownloadManager(private val context: Context) {
     }
 
     /**
-     * 导入本地模型文件
-     * 将用户选择的模型文件复制到模型目录并注册
-     */
-    fun importLocalModel(sourceFile: File, modelId: String, modelName: String): Boolean {
-        return try {
-            val fileName = sourceFile.name
-            val targetFile = File(modelsDir, fileName)
-            modelsDir.mkdirs()
-
-            // 复制文件到模型目录
-            sourceFile.copyTo(targetFile, overwrite = true)
-
-            // 验证文件
-            if (!targetFile.exists() || targetFile.length() == 0L) {
-                targetFile.delete()
-                return false
-            }
-
-            // 计算 SHA-256（可选，用于验证）
-            val sha256 = calculateSha256(targetFile)
-
-            // 注册到下载状态
-            val state = ModelDownloadState(
-                modelId = modelId,
-                modelName = modelName,
-                status = DownloadStatus.COMPLETED,
-                progress = 1f,
-                downloadedBytes = targetFile.length(),
-                totalBytes = targetFile.length()
-            )
-            updateState(modelId, state)
-
-            // 如果不在默认配置中，添加到配置列表（可选）
-            // 注意：DEFAULT_MODELS 是 val，不可变，这里仅更新内存状态
-
-            true
-        } catch (e: Exception) {
-            android.util.Log.e("ModelDownloadManager", "importLocalModel failed", e)
-            false
-        }
-    }
-
-    /**
      * 获取下载进度
      */
     fun getDownloadProgress(modelId: String): ModelDownloadState? {
@@ -417,9 +455,9 @@ class ModelDownloadManager(private val context: Context) {
     /**
      * 获取所有模型配置
      */
-    fun getModelConfigs(): List<ModelConfig> = DEFAULT_MODELS
+    fun getModelConfigs(): List<ModelConfig> = configs
 
-    private fun updateState(modelId: String, state: ModelDownloadState) {
+    private fun updateState(modelId: String, state: ModelDownloadState) = synchronized(stateLock) {
         val current = _downloadStates.value.toMutableMap()
         current[modelId] = state
         _downloadStates.value = current
@@ -428,12 +466,13 @@ class ModelDownloadManager(private val context: Context) {
     /**
      * 计算 SHA-256 校验和
      */
-    private fun calculateSha256(file: File): String {
+    private fun calculateSha256(file: File, checkpoint: () -> Unit = {}): String {
         val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
             val buffer = ByteArray(8192)
             var read: Int
             while (input.read(buffer).also { read = it } > 0) {
+                checkpoint()
                 digest.update(buffer, 0, read)
             }
         }

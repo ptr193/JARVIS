@@ -86,86 +86,117 @@ class ModelImportManager(private val context: Context) {
                 .replace(Regex("[^a-z0-9_]"), "_").take(40) +
                 "_" + (System.currentTimeMillis() % 100000)
 
-        // 3. 落库（按格式归置目录）
+        // 3. 先计算源文件摘要，再复制到临时目标并复核；不一致的副本绝不注册。
+        val sourceSha256 = sha256Of(file)
+        if (sourceSha256.isBlank()) return@withContext fail("源文件 SHA-256 计算失败")
         val targetDir = when (detected.format) {
             ModelFormat.ONNX -> File(modelsDir, "onnx/$modelId")
             else -> File(modelsDir, "imported/$modelId")
         }
-        targetDir.mkdirs()
-        val targetFile = File(targetDir, file.name)
-        file.copyTo(targetFile, overwrite = true)
-
-        // 4. SHA-256 完整性校验（落库后复核）
-        val sha256 = sha256Of(targetFile)
-        if (sha256.isBlank()) {
-            targetDir.deleteRecursively()
-            return@withContext fail("SHA-256 校验计算失败")
+        if (!targetDir.mkdirs() && !targetDir.isDirectory) {
+            return@withContext fail("无法创建模型目录")
         }
-
-        // 5. 注册到调度器
-        val scheduler = ModelRegistry.scheduler
-        if (scheduler == null) {
-            targetDir.deleteRecursively()
-            return@withContext fail("模型调度器未初始化")
-        }
-
-        val info = ModelInfo(
-            id = modelId,
-            name = file.nameWithoutExtension,
-            source = ModelSource.LOCAL_USER,
-            description = "${detected.detail}\nSHA-256: ${sha256.take(16)}…",
-            priority = 90,
-            maxTokens = 2048
-        )
-
-        when (detected.format) {
-            ModelFormat.LITERTLM -> {
-                // LiteRT 引擎可直接加载，注册为可对话模型
-                scheduler.addImportedLocalModel(ImportedLiteRtModel(context, info, targetFile))
+        try {
+            val targetFile = File(targetDir, if (detected.format == ModelFormat.ONNX) "model.onnx" else file.name)
+            val stagedTarget = File(targetDir, "${targetFile.name}.importing")
+            file.copyTo(stagedTarget, overwrite = true)
+            val targetSha256 = sha256Of(stagedTarget)
+            if (targetSha256.isBlank() || targetSha256 != sourceSha256) {
+                return@withContext failImport(targetDir, "源文件与目标副本 SHA-256 不一致")
             }
-            ModelFormat.ONNX -> {
-                val model = OnnxLocalModel(info, targetDir)
-                scheduler.addImportedLocalModel(model)
-                // 6. 连通性测试：加载 + 一次推理
-                model.load()
-                if (model.state == ModelState.ERROR) {
-                    targetDir.deleteRecursively()
-                    return@withContext fail(
-                        "ONNX 模型加载失败。请确认 model.onnx 可被 ONNX Runtime 加载，" +
-                                "且同目录存在 tokenizer.json"
+            if (!stagedTarget.renameTo(targetFile)) {
+                return@withContext failImport(targetDir, "模型副本原子落库失败")
+            }
+            if (detected.format == ModelFormat.ONNX) {
+                val tokenizer = File(file.parentFile, "tokenizer.json")
+                if (tokenizer.isFile) tokenizer.copyTo(File(targetDir, "tokenizer.json"), overwrite = true)
+            }
+
+            // 4. 可推理格式必须先通过真实引擎加载与一次推理，再注册到调度器。
+            val scheduler = ModelRegistry.scheduler
+                ?: return@withContext failImport(targetDir, "模型调度器未初始化")
+            val sha256 = targetSha256
+            val info = ModelInfo(
+                id = modelId,
+                name = file.nameWithoutExtension,
+                source = ModelSource.LOCAL_USER,
+                description = "${detected.detail}\nSHA-256: $sha256",
+                priority = 90,
+                maxTokens = 2048
+            )
+
+            when (detected.format) {
+                ModelFormat.LITERTLM -> {
+                    val validationModel = ImportedLiteRtModel(
+                        context,
+                        info.copy(maxTokens = 32),
+                        targetFile
                     )
+                    validateInference(validationModel)?.let { error ->
+                        return@withContext failImport(targetDir, "LiteRT-LM 验证失败：$error")
+                    }
+                    scheduler.addImportedLocalModel(ImportedLiteRtModel(context, info, targetFile))
                 }
-                model.unload()
-            }
-            else -> {
-                // 引擎受限格式：完成导入与注册，但如实告知推理限制（不伪造可用性）
-                scheduler.addImportedLocalModel(
-                    UnsupportedEngineModel(context, info, detected.format, targetFile)
-                )
-                return@withContext ImportResult(
-                    success = true,
-                    modelId = modelId,
-                    message = buildString {
-                        append("已导入并注册 ${detected.format.label} 模型（${file.name}）。\n")
-                        append(detected.detail + "\n")
-                        append("SHA-256: ${sha256.take(16)}…\n")
-                        append(
-                            "注意：${detected.format.label} 的推理需要外部原生引擎" +
-                                    "（llama.cpp / vLLM / TensorFlow Serving），" +
-                                    "当前设备内置引擎为 LiteRT-LM 与 ONNX Runtime。" +
-                                    "如需在手机上对话，建议将模型转换为 ONNX 或 .litertlm 格式。"
+                ModelFormat.ONNX -> {
+                    val validationModel = OnnxLocalModel(info.copy(maxTokens = 32), targetDir)
+                    validateInference(validationModel)?.let { error ->
+                        return@withContext failImport(
+                            targetDir,
+                            "ONNX 验证失败：$error（需要有效 model.onnx、tokenizer.json 和自回归语言模型结构）"
                         )
                     }
-                )
+                    scheduler.addImportedLocalModel(OnnxLocalModel(info, targetDir))
+                }
+                else -> {
+                    scheduler.addImportedLocalModel(
+                        UnsupportedEngineModel(context, info, detected.format, targetFile)
+                    )
+                    return@withContext ImportResult(
+                        success = true,
+                        modelId = modelId,
+                        message = "已导入并注册 ${detected.format.label} 文件，但未执行推理验收。\n" +
+                            "${detected.detail}\nSHA-256: $sha256\n" +
+                            "当前设备没有该格式的推理引擎；文件导入成功不等于模型可对话。"
+                    ).also { _importState.value = it }
+                }
             }
-        }
 
-        ImportResult(
-            success = true,
-            modelId = modelId,
-            message = "已导入并注册 ${detected.format.label} 模型：${file.name}\n" +
-                    detected.detail + "\nSHA-256: ${sha256.take(16)}…"
-        )
+            ImportResult(
+                success = true,
+                modelId = modelId,
+                message = "已导入并注册 ${detected.format.label} 模型：${file.name}\n" +
+                    "${detected.detail}\nSHA-256: $sha256\n真实引擎加载及一次推理已通过。"
+            ).also { _importState.value = it }
+        } catch (e: Exception) {
+            targetDir.deleteRecursively()
+            fail("导入失败：${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+
+    private fun failImport(targetDir: File, message: String): ImportResult {
+        val cleaned = targetDir.deleteRecursively()
+        return fail(if (cleaned) message else "$message；失败副本清理不完整：${targetDir.absolutePath}")
+    }
+
+    /** 仅真实引擎实现会进入这里；测试替身不能作为设备推理验收证据。 */
+    private suspend fun validateInference(model: AiModel): String? {
+        model.load()
+        if (model.state != ModelState.READY) {
+            model.unload()
+            return "真实引擎加载失败"
+        }
+        return try {
+            val output = model.generate("Reply with OK.", null)
+            if (output.isBlank() || output.startsWith("[本地模型") || output.startsWith("[ONNX")) {
+                "一次真实推理未产生有效输出：${output.ifBlank { "空输出" }.take(300)}"
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            "一次真实推理异常：${e.message ?: e.javaClass.simpleName}"
+        } finally {
+            model.unload()
+        }
     }
 
     private fun fail(message: String): ImportResult {
@@ -174,16 +205,18 @@ class ModelImportManager(private val context: Context) {
         return r
     }
 
-    private fun sha256Of(file: File): String = try {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buf = ByteArray(8192)
-            var n: Int
-            while (input.read(buf).also { n = it } > 0) digest.update(buf, 0, n)
+    companion object {
+        internal fun sha256Of(file: File): String = try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buf = ByteArray(8192)
+                var n: Int
+                while (input.read(buf).also { n = it } > 0) digest.update(buf, 0, n)
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            ""
         }
-        digest.digest().joinToString("") { "%02x".format(it) }
-    } catch (e: Exception) {
-        ""
     }
 }
 
