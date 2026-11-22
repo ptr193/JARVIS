@@ -16,9 +16,10 @@ JARVIS/
 │       │   ├── AndroidManifest.xml
 │       │   ├── java/com/jarvis/pineapple/   # Kotlin 源码（见第 2 节）
 │       │   └── res/           # 资源文件（布局、图标、主题、字符串）
-│       └── test/              # 单元测试 + 集成测试（34 个测试类，190 个用例）
-├── apk/                       # 可交付 APK
-│   └── jarvis-debug.apk       # 调试版（唯一有效交付，含 SHA256）
+│       └── test/              # JVM 单元/集成/压力测试（72 个测试类，431 个用例）
+├── apk/                       # Debug 交付目录
+│   ├── jarvis-debug.apk       # 本地构建/解压产物（*.apk 不入 Git）
+│   └── jarvis-debug.apk.7z    # 唯一提交的安装包，含 SHA-256
 ├── configs/
 │   └── models/                # 4 个本地模型的 LiteRT-LM 配置
 │       ├── gemma4_e2b_2.5b.yaml
@@ -94,7 +95,7 @@ context.filesDir/models/
 └── qwen3_0_6b.litertlm        # ~586 MB
 ```
 
-仓库 `configs/models/files/` 提供下载好的模型文件，实机测试时需手动拷贝到设备上的应用私有目录。
+`configs/models/files/` 中的配置、分片或 Git LFS 指针不等于权重已完整入库，也不证明可加载推理。默认模型应在应用内下载并通过大小与 SHA-256 校验；四个默认模型的真机下载和冒烟推理仍为 NOT_RUN。
 
 ---
 
@@ -108,4 +109,4 @@ app/build/outputs/apk/
 
 ---
 
-*文档版本：v2.0 | 更新日期：2026-10-20 | 上一版本：v1.0（2026-10-09）*
+*文档版本：v2.1 | 更新日期：2026-11-22 | 上一版本：v2.0（2026-10-20）*

@@ -169,7 +169,7 @@
 | SUP-REQ-01 | JARVIS 要可以操作虚拟机。 | `vm/ProotManager.kt`、`chat/VmCommandBridge.kt`、`vm/HavenVmCommandBridge.kt`；VM UI/对话 | `integration/VmSubsystemIntegrationTest.kt`、`vm/ProotManagerTest.kt` | PARTIAL | BLOCKED | 实际为 Android+PRoot，不是 Hypervisor/QEMU/SSH 闭环；S4～S6 等子项不完整。 |
 | SUP-REQ-02 | 虚拟机安装提供列表给用户选择版本，支持 Kali Linux。 | `vm/VmDistroManager.kt`；VM 安装列表 | `vm/VmDistroCatalogTest.kt` | PARTIAL | BLOCKED | 缺动态官方元数据、对话双入口及与官方源 SHA-256 摘要比对。 |
 | SUP-REQ-03 | 用户自己可以导入虚拟机镜像。 | `vm/VmImageImporter.kt`；文件导入 | `vm/TarExtractorTest.kt` | PARTIAL | BLOCKED | 仅导入 tar/tar.gz/tar.xz；OVA/OVF/QCOW2/VMDK/VHD/VHDX/RAW/ISO 仅识别并拒绝，不能注册为可启动 VM。 |
-| SUP-REQ-04 | 用户也可以自己导入本地模型进行私人本地部署，支持所有格式的模型。 | `model/ModelFormats.kt`、`ModelDownloadManager.kt`、LiteRT-LM/ONNX；模型设置 | `model/ModelFormatDetectorTest.kt`、`ModelDownloadManagerTest.kt` | PARTIAL | BLOCKED | GGUF/Safetensors/PyTorch/TensorFlow 仅注册格式，无推理引擎；仓库模型为 Git LFS 指针，phi4_1_5b 文件缺失。 |
+| SUP-REQ-04 | 用户也可以自己导入本地模型进行私人本地部署，支持所有格式的模型。 | `model/ModelFormats.kt`、`ModelDownloadManager.kt`、LiteRT-LM/ONNX；模型设置 | `model/ModelFormatDetectorTest.kt`、`ModelDownloadManagerTest.kt` | PARTIAL | BLOCKED | LiteRT-LM/ONNX 有引擎验证链；GGUF/Safetensors/PyTorch 可结构探测、复制校验并注册为不可推理；TensorFlow/SavedModel/CoreML 未实现导入；仓库模型为 Git LFS 指针，phi4_1_5b 文件缺失。 |
 | SUP-REQ-05 | 所有功能能实现的就实现，留下接口的意思是接上对应设备就可以直接使用，而不是留一个功能占位符。 | 各功能模块 | 无单一直接测试 | PARTIAL | BLOCKED | 主矩阵大量无入口/外部适配项，不能以“接口存在”视为即插即用。 |
 | SUP-REQ-06 | 虚拟机支持 root 权限。 | PRoot `-0` 身份、`chat/RootCommandBridge.kt` | `chat/RootCommandParserTest.kt`、`vm/ProotManagerTest.kt` | PARTIAL | BLOCKED | PRoot 模拟身份不是完整 Hypervisor VM root/凭据体系，未做真机 PRoot 验收。 |
 | SUP-REQ-07 | JARVIS 可以高级用户的身份使用虚拟机。 | `chat/VmCommandBridge.kt`、PRoot 高级身份命令 | `chat/VmCommandParserTest.kt`、`chat/RootCommandParserTest.kt` | PARTIAL | BLOCKED | 仅限 PRoot 命令身份，不是 SSH/Guest Agent 指定用户登录体系。 |
@@ -223,7 +223,7 @@ RESERVED 清单：P-114、P-116、P-123、P-126、P-127、P-131、P-135、P-137�
 Release blockers：
 
 1. **VM 架构与规格不符**：当前为 PRoot 用户态环境，不是 Hypervisor；资源调整、隔离监控、虚拟网络及六类镜像可启动导入未闭环。
-2. **本地模型不可验收**：多格式只有注册无引擎，仓库模型为 LFS 指针且 phi4_1_5b 缺失，下载 SHA-256 未与官方源摘要比对。
+2. **本地模型不可验收**：GGUF/Safetensors/PyTorch 无推理引擎，TensorFlow/SavedModel/CoreML 未实现导入；仓库模型为 LFS 指针且 phi4_1_5b 缺失。默认模型已配置官方大小与 SHA-256 并接入下载校验，但真机下载、加载和推理仍未验收。
 3. **云与多设备阻断**：`CLOUD_SYNC_BASE_URL=""`，无双设备同步、离线队列、远程配置、会话迁移或云端分布式备份。
 4. **安全与身份缺口**：虹膜始终 Unsupported；人脸比对不是特征向量身份认证；远程擦除、加密通信+证书锁定、分散加密备份未实现。
 5. **大量生产入口缺失**：通讯转发/召集、地图路线、健康测量、智能家居组/场景、监控感知、自主决策与应急链不能仅凭方法存在判 DONE。
