@@ -39,7 +39,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -62,12 +62,18 @@ import com.jarvis.pineapple.vm.HavenVmManager
 import com.jarvis.pineapple.vm.PackageInfo
 import com.jarvis.pineapple.vm.PackageOperationResult
 import com.jarvis.pineapple.vm.ProotManager
+import com.jarvis.pineapple.vm.SnapshotResult
 import com.jarvis.pineapple.vm.VmDistroManager
 import com.jarvis.pineapple.vm.VmFile
 import com.jarvis.pineapple.vm.VmFileManager
 import com.jarvis.pineapple.vm.VmImageImporter
+import com.jarvis.pineapple.vm.VmLogManager
 import com.jarvis.pineapple.vm.VmPackageManager
+import com.jarvis.pineapple.vm.VmResourceMonitor
+import com.jarvis.pineapple.vm.VmSnapshotManager
 import com.jarvis.pineapple.vm.VmTerminal
+import com.jarvis.pineapple.vm.LogLevel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.koin.androidx.compose.get
 import java.io.File
@@ -106,11 +112,17 @@ fun VirtualMachineScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     var activeVmId by remember { mutableStateOf<String?>(null) }
 
+    // 每个虚拟机一份日志管理器，供终端/快照/生命周期操作统一记录。
+    val logManagers = remember { mutableMapOf<String, VmLogManager>() }
+    val loggerFor: (String?) -> VmLogManager? = { id ->
+        id?.let { logManagers.getOrPut(it) { VmLogManager(it) } }
+    }
+
     LaunchedEffect(prootReady) {
         if (prootReady) prootVersion = prootManager.getProotVersion()
     }
 
-    val tabs = listOf("发行版", "虚拟机", "终端", "软件包", "文件")
+    val tabs = listOf("发行版", "虚拟机", "终端", "软件包", "文件", "快照", "监控", "日志")
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { selectedUri ->
@@ -146,7 +158,7 @@ fun VirtualMachineScreen(
                 version = prootVersion
             )
 
-            TabRow(selectedTabIndex = selectedTab) {
+            ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 0.dp) {
                 tabs.forEachIndexed { i, title ->
                     Tab(
                         selected = selectedTab == i,
@@ -178,6 +190,7 @@ fun VirtualMachineScreen(
                             if (vm != null) {
                                 activeVmId = vm.id
                                 selectedTab = 2
+                                loggerFor(vm.id)?.addLog(LogLevel.INFO, "已创建虚拟机 '${vm.name}'", "lifecycle")
                                 showMsg("虚拟机 '${vm.name}' 已创建")
                             } else {
                                 showMsg(result.error ?: "创建虚拟机失败")
@@ -194,27 +207,55 @@ fun VirtualMachineScreen(
                         scope.launch {
                             showMsg("正在启动虚拟机...")
                             val ok = havenVmManager.startVm(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "虚拟机启动成功" else "虚拟机启动失败",
+                                "lifecycle"
+                            )
                             showMsg(if (ok) "虚拟机已启动" else "虚拟机启动失败")
                         }
                     },
                     onStop = { id ->
                         scope.launch {
                             val ok = havenVmManager.stopVm(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "虚拟机停止成功" else "虚拟机停止失败",
+                                "lifecycle"
+                            )
                             showMsg(if (ok) "虚拟机已停止" else "虚拟机停止失败")
                         }
                     },
                     onDelete = { id ->
                         scope.launch {
                             val ok = havenVmManager.deleteVm(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "虚拟机已删除" else "虚拟机删除失败",
+                                "lifecycle"
+                            )
                             if (ok && activeVmId == id) activeVmId = null
                             showMsg(if (ok) "虚拟机已删除" else "虚拟机删除失败")
+                        }
+                    },
+                    onInstallDesktop = { id ->
+                        scope.launch {
+                            showMsg("正在安装桌面环境（体积较大，请耐心等待）...")
+                            val ok = havenVmManager.installDesktopEnvironment(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "桌面环境安装成功" else "桌面环境安装失败",
+                                "desktop"
+                            )
+                            showMsg(if (ok) "桌面环境已安装" else "桌面环境安装失败")
                         }
                     }
                 )
                 2 -> TerminalTab(
                     vm = vms.firstOrNull { it.id == activeVmId },
                     prootManager = prootManager,
-                    showMsg = showMsg
+                    showMsg = showMsg,
+                    logManager = loggerFor(activeVmId)
                 )
                 3 -> PackageTab(
                     vm = vms.firstOrNull { it.id == activeVmId },
@@ -225,6 +266,14 @@ fun VirtualMachineScreen(
                     vm = vms.firstOrNull { it.id == activeVmId },
                     showMsg = showMsg
                 )
+                5 -> SnapshotTab(
+                    vm = vms.firstOrNull { it.id == activeVmId },
+                    context = context,
+                    showMsg = showMsg,
+                    logManager = loggerFor(activeVmId)
+                )
+                6 -> MonitorTab(vm = vms.firstOrNull { it.id == activeVmId })
+                7 -> LogTab(logManager = loggerFor(activeVmId))
             }
         }
     }
@@ -366,7 +415,8 @@ private fun VmTab(
     onSelect: (String) -> Unit,
     onStart: (String) -> Unit,
     onStop: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onInstallDesktop: (String) -> Unit
 ) {
     if (vms.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -379,32 +429,45 @@ private fun VmTab(
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    RadioButton(selected = activeVmId == vm.id, onClick = { onSelect(vm.id) })
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(vm.name, style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "${vm.distroName} · ${stateText(vm.state)}",
-                            fontSize = 12.sp,
-                            color = if (vm.state == HavenVmManager.HavenVmState.RUNNING)
-                                MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (vm.state == HavenVmManager.HavenVmState.RUNNING) {
-                        IconButton(onClick = { onStop(vm.id) }) {
-                            Icon(Icons.Filled.Stop, contentDescription = "停止")
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = activeVmId == vm.id, onClick = { onSelect(vm.id) })
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(vm.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${vm.distroName} · ${stateText(vm.state)}",
+                                fontSize = 12.sp,
+                                color = if (vm.state == HavenVmManager.HavenVmState.RUNNING)
+                                    MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    } else {
-                        IconButton(onClick = { onStart(vm.id) }) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = "启动")
+                        if (vm.state == HavenVmManager.HavenVmState.RUNNING) {
+                            IconButton(onClick = { onStop(vm.id) }) {
+                                Icon(Icons.Filled.Stop, contentDescription = "停止")
+                            }
+                        } else {
+                            IconButton(onClick = { onStart(vm.id) }) {
+                                Icon(Icons.Filled.PlayArrow, contentDescription = "启动")
+                            }
+                        }
+                        IconButton(onClick = { onDelete(vm.id) }) {
+                            Icon(Icons.Filled.Delete, contentDescription = "删除")
                         }
                     }
-                    IconButton(onClick = { onDelete(vm.id) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "删除")
+                    if (activeVmId == vm.id) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 8.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = { onInstallDesktop(vm.id) },
+                                enabled = vm.state == HavenVmManager.HavenVmState.RUNNING
+                            ) { Text("安装桌面环境", fontSize = 12.sp) }
+                        }
                     }
                 }
             }
@@ -421,7 +484,12 @@ private fun stateText(state: HavenVmManager.HavenVmState): String = when (state)
 }
 
 @Composable
-private fun TerminalTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager, showMsg: (String) -> Unit) {
+private fun TerminalTab(
+    vm: HavenVmManager.HavenVm?,
+    prootManager: ProotManager,
+    showMsg: (String) -> Unit,
+    logManager: VmLogManager?
+) {
     if (vm == null) {
         EmptyHint("请先在“虚拟机”中选择一个虚拟机")
         return
@@ -463,7 +531,14 @@ private fun TerminalTab(vm: HavenVmManager.HavenVm?, prootManager: ProotManager,
                 val command = input
                 input = ""
                 if (command.isNotBlank()) {
-                    scope.launch { terminal.executeCommand(command) }
+                    scope.launch {
+                        val result = terminal.executeCommand(command)
+                        logManager?.addLog(
+                            if (result.exitCode == 0) LogLevel.INFO else LogLevel.ERROR,
+                            "命令 [$command] 退出码 ${result.exitCode}",
+                            "terminal"
+                        )
+                    }
                 }
             }) { Text("执行") }
         }
@@ -605,11 +680,224 @@ private fun FileTab(vm: HavenVmManager.HavenVm?, showMsg: (String) -> Unit) {
 }
 
 @Composable
+private fun SnapshotTab(
+    vm: HavenVmManager.HavenVm?,
+    context: Context,
+    showMsg: (String) -> Unit,
+    logManager: VmLogManager?
+) {
+    if (vm == null) {
+        EmptyHint("请先在“虚拟机”中选择一个虚拟机")
+        return
+    }
+    val scope = rememberCoroutineScope()
+    val managerResult = remember(vm.id) {
+        runCatching {
+            VmSnapshotManager(vm.id, vm.rootfsPath, File(context.filesDir, "vm_snapshots/${vm.id}"))
+        }
+    }
+    val manager = managerResult.getOrNull()
+    if (manager == null) {
+        EmptyHint("快照功能不可用：${managerResult.exceptionOrNull()?.message ?: "初始化失败"}")
+        return
+    }
+    val snapshots by manager.snapshots.collectAsState()
+    val operating by manager.isOperating.collectAsState()
+    var name by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("快照名称（可选）") },
+                singleLine = true
+            )
+            Spacer(Modifier.width(6.dp))
+            Button(
+                enabled = !operating,
+                onClick = {
+                    val snapshotName = name.ifBlank { "快照 ${snapshots.size + 1}" }
+                    scope.launch {
+                        when (val r = manager.createSnapshot(snapshotName)) {
+                            is SnapshotResult.Success -> {
+                                showMsg(r.message)
+                                logManager?.addLog(LogLevel.INFO, r.message, "snapshot")
+                            }
+                            is SnapshotResult.Failure -> {
+                                showMsg(r.error)
+                                logManager?.addLog(LogLevel.ERROR, r.error, "snapshot")
+                            }
+                        }
+                        name = ""
+                    }
+                }
+            ) { Text(if (operating) "处理中..." else "创建快照") }
+        }
+        Spacer(Modifier.height(8.dp))
+        if (snapshots.isEmpty()) {
+            EmptyHint("暂无快照")
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                items(snapshots, key = { it.id }) { snapshot ->
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(snapshot.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                buildString {
+                                    append(formatTime(snapshot.createdAt))
+                                    append(" · ")
+                                    append(formatSize(snapshot.sizeBytes))
+                                    if (snapshot.isCurrent) append(" · 当前")
+                                },
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (snapshot.description.isNotBlank()) {
+                                Text(snapshot.description, fontSize = 11.sp)
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(enabled = !operating, onClick = {
+                                    scope.launch {
+                                        when (val r = manager.rollbackToSnapshot(snapshot.id)) {
+                                            is SnapshotResult.Success -> {
+                                                showMsg(r.message)
+                                                logManager?.addLog(LogLevel.INFO, r.message, "snapshot")
+                                            }
+                                            is SnapshotResult.Failure -> {
+                                                showMsg(r.error)
+                                                logManager?.addLog(LogLevel.ERROR, r.error, "snapshot")
+                                            }
+                                        }
+                                    }
+                                }) { Text("回滚") }
+                                TextButton(enabled = !operating, onClick = {
+                                    when (val r = manager.deleteSnapshot(snapshot.id)) {
+                                        is SnapshotResult.Success -> {
+                                            showMsg(r.message)
+                                            logManager?.addLog(LogLevel.INFO, r.message, "snapshot")
+                                        }
+                                        is SnapshotResult.Failure -> {
+                                            showMsg(r.error)
+                                            logManager?.addLog(LogLevel.ERROR, r.error, "snapshot")
+                                        }
+                                    }
+                                }) { Text("删除") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MonitorTab(vm: HavenVmManager.HavenVm?) {
+    if (vm == null) {
+        EmptyHint("请先在“虚拟机”中选择一个虚拟机")
+        return
+    }
+    val monitor = remember(vm.id) { VmResourceMonitor(vm.id, vm.rootfsPath) }
+    val usage by monitor.usage.collectAsState()
+    val alerts by monitor.alerts.collectAsState()
+
+    LaunchedEffect(vm.id) {
+        while (true) {
+            monitor.refresh()
+            delay(2000)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        MetricRow("CPU 使用率", "${usage.cpuUsagePercent.toInt()}%", usage.cpuUsagePercent / 100f)
+        MetricRow(
+            "内存",
+            "${usage.memoryUsedMb} / ${usage.memoryTotalMb} MB",
+            usage.memoryUsagePercent / 100f
+        )
+        MetricRow(
+            "磁盘（rootfs）",
+            "%.2f / %.2f GB".format(usage.diskUsedGb, usage.diskTotalGb),
+            usage.diskUsagePercent / 100f
+        )
+        Text(
+            "网络 入 %.1f / 出 %.1f KB/s".format(usage.networkInKbps, usage.networkOutKbps),
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
+        if (alerts.isEmpty()) {
+            Text("无资源告警", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("资源告警", style = MaterialTheme.typography.titleSmall)
+            alerts.forEach { alert ->
+                Text("· ${alert.message}", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricRow(label: String, value: String, progress: Float) {
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Text(label, modifier = Modifier.weight(1f), fontSize = 13.sp)
+            Text(value, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+        )
+    }
+}
+
+@Composable
+private fun LogTab(logManager: VmLogManager?) {
+    if (logManager == null) {
+        EmptyHint("请先在“虚拟机”中选择一个虚拟机")
+        return
+    }
+    val logs by logManager.logs.collectAsState()
+    Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("日志（${logs.size} 条）", modifier = Modifier.weight(1f), fontSize = 13.sp)
+            TextButton(onClick = { logManager.clearLogs() }) { Text("清空") }
+        }
+        if (logs.isEmpty()) {
+            EmptyHint("暂无日志，操作虚拟机后会在此记录")
+        } else {
+            LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                items(logs.asReversed(), key = { it.id }) { entry ->
+                    Text(
+                        "${formatTime(entry.timestamp)} [${entry.level}] ${entry.source}: ${entry.message}",
+                        fontSize = 11.sp,
+                        color = when (entry.level) {
+                            LogLevel.ERROR, LogLevel.CRITICAL -> MaterialTheme.colorScheme.error
+                            LogLevel.WARNING -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun EmptyHint(text: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(text, fontSize = 13.sp)
     }
 }
+
+private fun formatTime(timestamp: Long): String =
+    java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        .format(java.util.Date(timestamp))
 
 private fun formatSize(bytes: Long): String = when {
     bytes >= 1024L * 1024 * 1024 -> "%.2f GB".format(bytes / (1024.0 * 1024 * 1024))
