@@ -141,14 +141,6 @@ object CrashRecorder {
         files.drop(MAX_FILES).forEach { runCatching { it.delete() } }
     }
 
-    internal fun writeVerifiedText(file: File, text: String): Boolean = try {
-        file.parentFile?.let { parent ->
-            if (!parent.exists() && !parent.mkdirs()) return false
-        }
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        file.writeText(text, Charsets.UTF_8)
-        file.exists() && file.length() == bytes.size.toLong()
-    } catch (_: IOException) {
-        false
-    }
+    internal fun writeVerifiedText(file: File, text: String): Boolean =
+        FileVerifier.writeVerifiedText(file, text)
 }

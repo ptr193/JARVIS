@@ -973,7 +973,10 @@ private fun LogTab(
             runCatching {
                 val json = memorySystem.exportMemories()
                 val memFile = java.io.File(context.filesDir, "memory_export_${System.currentTimeMillis()}.json")
-                memFile.writeText(json)
+                if (!com.jarvis.pineapple.util.FileVerifier.writeVerifiedText(memFile, json)) {
+                    if (memFile.exists()) memFile.delete()
+                    throw java.io.IOException("记忆导出文件写入校验失败")
+                }
                 showMsg("记忆已导出: ${memFile.absolutePath} (${json.length} 字符)")
             }.onFailure {
                 showMsg("记忆导出失败: ${it.message ?: it.javaClass.simpleName}")
