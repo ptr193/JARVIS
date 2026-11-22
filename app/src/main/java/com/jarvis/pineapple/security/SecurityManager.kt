@@ -766,6 +766,47 @@ class SecurityManager(private val context: Context) {
         }.getOrDefault(false)
     }
 
+    // ==================== 安全事件响应（#42） ====================
+
+    data class SecurityResponse(
+        val actionTaken: String,
+        val success: Boolean,
+        val message: String
+    )
+    enum class ResponseAction { NONE, LOCK, LOCKDOWN, WIPE }
+
+    private fun toRiskLevel(severity: SecurityEvent.Severity): RiskLevel = when (severity) {
+        SecurityEvent.Severity.LOW -> RiskLevel.LOW
+        SecurityEvent.Severity.MEDIUM -> RiskLevel.MEDIUM
+        SecurityEvent.Severity.HIGH -> RiskLevel.HIGH
+        SecurityEvent.Severity.CRITICAL -> RiskLevel.CRITICAL
+    }
+
+    /**
+     * 响应安全事件：根据严重级别执行锁定 / 锁定协议；高危擦除需用户在“擦除数据”处二次确认，
+     * 此处拒绝自动擦除并返回失败，绝不伪装成功。
+     */
+    fun respondToSecurityEvent(event: SecurityEvent): SecurityResponse {
+        return when (decideResponse(toRiskLevel(event.severity))) {
+            ResponseAction.NONE -> SecurityResponse(
+                actionTaken = "无操作", success = true,
+                message = "事件级别较低，未触发自动响应"
+            )
+            ResponseAction.LOCK -> {
+                val ok = lockDevice("安全响应：${event.description}")
+                SecurityResponse("锁定设备", ok, if (ok) "设备已锁定" else ADMIN_INACTIVE)
+            }
+            ResponseAction.LOCKDOWN -> {
+                val ok = executeSecurityProtocol(SecurityProtocol.LOCKDOWN)
+                SecurityResponse("锁定协议", ok, if (ok) "已执行锁定协议" else ADMIN_INACTIVE)
+            }
+            ResponseAction.WIPE -> SecurityResponse(
+                actionTaken = "擦除数据", success = false,
+                message = "数据擦除需用户二次确认，请使用“擦除数据”入口"
+            )
+        }
+    }
+
     enum class SecurityProtocol {
         LOCKDOWN, DATA_WIPE
     }
@@ -777,6 +818,14 @@ class SecurityManager(private val context: Context) {
         fun lockResult(adminActive: Boolean): Boolean = adminActive
 
         fun wipeResult(adminActive: Boolean): Boolean = adminActive
+
+        /** 纯逻辑：根据事件严重级别决定响应动作，便于单测。 */
+        fun decideResponse(severity: RiskLevel): ResponseAction = when (severity) {
+            RiskLevel.LOW -> ResponseAction.NONE
+            RiskLevel.MEDIUM -> ResponseAction.LOCK
+            RiskLevel.HIGH -> ResponseAction.LOCKDOWN
+            RiskLevel.CRITICAL -> ResponseAction.WIPE
+        }
 
         fun adminActivationIntent(): android.content.Intent {
             return android.content.Intent(ADMIN_ACTIVATION_ACTION)

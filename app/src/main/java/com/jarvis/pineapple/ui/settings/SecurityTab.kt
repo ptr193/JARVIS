@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.security.BiometricAuthActivity
+import com.jarvis.pineapple.security.IntrusionDetector
 import com.jarvis.pineapple.security.SecurityManager
 import com.jarvis.pineapple.ui.camera.CameraCaptureSection
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,7 @@ fun SecurityTab(showMsg: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val security = remember { GlobalContext.get().get<SecurityManager>() }
+    val intrusion = remember { GlobalContext.get().get<IntrusionDetector>() }
     val antiTheft = remember { com.jarvis.pineapple.security.AntiTheftManager(context) }
 
     var securityRisk by remember { mutableStateOf("点击下方按钮评估") }
@@ -56,6 +58,8 @@ fun SecurityTab(showMsg: (String) -> Unit) {
     var defenseInfo by remember { mutableStateOf("尚未部署") }
     var biometricInfo by remember { mutableStateOf("尚未验证") }
     var showWipeConfirm by remember { mutableStateOf(false) }
+    var intrusionInfo by remember { mutableStateOf("点击下方按钮检测") }
+    var intrusionCompromised by remember { mutableStateOf(false) }
 
     val biometricLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -175,6 +179,41 @@ fun SecurityTab(showMsg: (String) -> Unit) {
                 showMsg(if (r.isSuccessful) "防御策略部署完成" else r.message)
             }
         }) { Text("部署防御") }
+    }
+
+    SectionCard("反入侵检测 (#46 / #42)") {
+        Text(intrusionInfo, fontSize = 12.sp)
+        Row {
+            Button(onClick = {
+                scope.launch {
+                    val report = withContext(Dispatchers.IO) { intrusion.detectIntrusion() }
+                    intrusionCompromised = report.isCompromised
+                    intrusionInfo = report.summary + "\n" +
+                        report.findings.joinToString("\n") {
+                            "· [${it.severity}] ${it.type}：${it.description}"
+                        }
+                    showMsg(report.summary)
+                }
+            }) { Text("检测入侵风险") }
+            Spacer(Modifier.width(8.dp))
+            OutlinedButton(onClick = {
+                val severity = if (intrusionCompromised) {
+                    SecurityManager.SecurityEvent.Severity.HIGH
+                } else {
+                    SecurityManager.SecurityEvent.Severity.MEDIUM
+                }
+                val resp = security.respondToSecurityEvent(
+                    SecurityManager.SecurityEvent(
+                        SecurityManager.SecurityEvent.Type.SUSPICIOUS_ACTIVITY,
+                        "入侵检测",
+                        severity = severity
+                    )
+                )
+                intrusionInfo += "\n→ 响应：${resp.actionTaken}（" +
+                    "${if (resp.success) "成功" else "未执行"}）${if (!resp.success) "：" + resp.message else ""}"
+                showMsg("${resp.actionTaken}：${resp.message}")
+            }) { Text("响应安全事件") }
+        }
     }
 
     SectionCard("本机锁定与擦除 (#39 / #41)") {
