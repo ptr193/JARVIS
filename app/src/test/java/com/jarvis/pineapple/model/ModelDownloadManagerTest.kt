@@ -141,6 +141,28 @@ class ModelDownloadManagerTest {
     }
 
     @Test
+    fun storageFailureReturnsWithoutStartingHttpRequest() = runBlocking {
+        val payload = ByteArray(2048) { 4 }
+        val requests = AtomicInteger()
+        val blockedDirectory = temp.newFile("blocked-models")
+        HttpClient(MockEngine {
+            requests.incrementAndGet()
+            respond(payload)
+        }).use { client ->
+            val manager = ModelDownloadManager(
+                blockedDirectory,
+                client,
+                listOf(testConfig(payload))
+            )
+
+            assertFalse(withTimeout(5_000) { manager.downloadModel("tiny") })
+            assertEquals(0, requests.get())
+            assertEquals(DownloadStatus.FAILED, manager.getDownloadProgress("tiny")?.status)
+            assertFalse(manager.isDownloading.value)
+        }
+    }
+
+    @Test
     fun restoredFileWithMatchingSizeButWrongHashIsNotCompleted() = runBlocking {
         val payload = ByteArray(2048) { 2 }
         val directory = temp.newFolder("restored-models")

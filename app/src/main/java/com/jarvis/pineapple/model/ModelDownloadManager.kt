@@ -338,6 +338,9 @@ class ModelDownloadManager internal constructor(
         url: String,
         job: Job?
     ) {
+        if (!modelsDir.isDirectory && !modelsDir.mkdirs()) {
+            throw IllegalStateException("模型目录不可用：${modelsDir.absolutePath}")
+        }
         httpClient.prepareGet(url) {
             if (resumeFrom > 0) header(HttpHeaders.Range, "bytes=$resumeFrom-")
         }.execute { response ->

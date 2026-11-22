@@ -355,7 +355,7 @@ internal class LoadSubsystemStress(private val root: File, private val round: In
         Unit
     }
 
-    private fun runModels(profile: LoadProfile) = runBlocking {
+    private fun runModels(profile: LoadProfile) = runBlocking { withTimeout(20_000) {
         println("LOAD_STAGE round=$round stage=models.formats")
         val formatDir = directory("formats")
         val gguf = File(formatDir, "valid.gguf").apply { writeBytes(ggufBytes()) }
@@ -454,7 +454,8 @@ internal class LoadSubsystemStress(private val root: File, private val round: In
             assertEquals(DownloadStatus.FAILED, manager.getDownloadProgress("tiny")?.status)
             assertFalse(manager.isDownloading.value)
         }
-    }
+        println("LOAD_STAGE round=$round stage=models.complete")
+    } }
 
     private fun runCloud(profile: LoadProfile) = runBlocking {
         val store = StressSessionStore()
