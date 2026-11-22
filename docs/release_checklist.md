@@ -24,7 +24,7 @@
 - [ ] **补充需求全部形成真实闭环**
   SUP-REQ-01～13 当前 DONE 1 / PARTIAL 12；REQ-01 子项仍有 S6 虚拟网络管理 `MISSING`。
 - [ ] **模型格式与推理能力满足规格**
-  LiteRT-LM/ONNX 有真实引擎验证链；GGUF/Safetensors/PyTorch 仅可导入并注册为不可推理；TensorFlow/SavedModel/CoreML 未实现结构探测与导入。
+  LiteRT-LM/ONNX 有真实引擎验证链；GGUF/Safetensors/PyTorch 仅可导入并注册为不可推理；TensorFlow/SavedModel/CoreML 未实现结构探测与导入。外接 OpenAI 兼容 API 与个人服务器直连已实现并有 JVM 协议测试，但真实网络连通性未验收。
 - [ ] **云服务与双设备链路可用**
   云服务未配置，无双设备同步、离线队列、冲突处理和远程配置验收。
 - [ ] **VM 架构及镜像能力满足规格**
