@@ -600,27 +600,20 @@ private fun StatusItem(label: String, value: String) {
 // ⑦ 连接设备
 @Composable
 private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val cloud = remember {
         runCatching { org.koin.core.context.GlobalContext.get().get<com.jarvis.pineapple.cloud.CloudSyncManager>() }
             .getOrNull()
     }
-    val prefs = remember { context.getSharedPreferences("jarvis_devices", Context.MODE_PRIVATE) }
 
-    var account by remember { mutableStateOf(prefs.getString("account", "") ?: "") }
+    var account by remember { mutableStateOf(cloud?.accountName?.value.orEmpty()) }
     var password by remember { mutableStateOf("") }
     var loggedIn by remember { mutableStateOf(cloud?.isLoggedIn() == true) }
     var pairingCode by remember { mutableStateOf("") }
     val devices = remember { mutableStateListOf<com.jarvis.pineapple.cloud.ConnectedDevice>() }
+    val cloudError = cloud?.lastError?.collectAsState()?.value
 
     LaunchedEffect(Unit) {
-        val savedToken = prefs.getString("token", null)
-        val savedAccount = prefs.getString("account", null)
-        if (cloud != null && savedToken != null && savedAccount != null) {
-            cloud.restoreSession(savedAccount, savedToken)
-            loggedIn = true
-        }
         while (true) {
             val c = cloud
             if (c != null && c.isCloudAvailable() && c.isLoggedIn()) {
@@ -641,6 +634,10 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
         fontSize = 12.sp,
         color = MaterialTheme.colorScheme.onSurfaceVariant
     )
+    if (!cloudError.isNullOrBlank()) {
+        Spacer(Modifier.height(6.dp))
+        Text(cloudError, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+    }
     Spacer(Modifier.height(8.dp))
 
     // 账号接入（#134）
@@ -671,16 +668,14 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                     val ok = c.login(account.trim(), password)
                     if (ok) {
                         loggedIn = true
-                        val token = c.accountToken.value
-                        prefs.edit().putString("account", account.trim()).putString("token", token).apply()
                         password = ""
                         c.discoverDevices()?.let { discovered ->
                             devices.clear()
                             devices.addAll(discovered)
                         }
-                        showMsg("登录成功，已接入多设备")
+                        showMsg("登录成功，登录态已加密保存")
                     } else {
-                        showMsg(if (c.isCloudAvailable()) "登录失败，请检查账号密码" else "云端未配置，无法登录")
+                        showMsg(c.lastError.value ?: "登录失败")
                     }
                 }
             }) { Text("登录") }
@@ -692,12 +687,10 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                     val ok = c.register(account.trim(), password, android.os.Build.MODEL)
                     if (ok) {
                         loggedIn = true
-                        val token = c.accountToken.value
-                        prefs.edit().putString("account", account.trim()).putString("token", token).apply()
                         password = ""
-                        showMsg("注册成功并已绑定当前设备")
+                        showMsg("注册成功，登录态已加密保存")
                     } else {
-                        showMsg(if (c.isCloudAvailable()) "注册失败" else "云端未配置，无法注册")
+                        showMsg(c.lastError.value ?: "注册失败")
                     }
                 }
             }) { Text("注册并绑定") }
@@ -710,9 +703,8 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                 cloud?.logout()
                 loggedIn = false
                 password = ""
-                prefs.edit().remove("token").apply()
                 devices.clear()
-                showMsg("已退出登录")
+                showMsg(cloud?.lastError?.value ?: "已退出登录")
             }) { Text("退出") }
         }
     }
@@ -727,7 +719,7 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
                 showMsg("正在扫描设备...")
                 val discovered = c.discoverDevices()
                 if (discovered == null) {
-                    showMsg("设备扫描失败，请检查网络、登录状态与服务响应")
+                    showMsg(c.lastError.value ?: "设备扫描失败")
                 } else {
                     devices.clear()
                     devices.addAll(discovered)
@@ -742,7 +734,7 @@ private fun ConnectedDevicesTab(showMsg: (String) -> Unit) {
             if (!c.isCloudAvailable()) { showMsg("云端未配置，无法配对"); return@OutlinedButton }
             scope.launch {
                 val ok = c.pairDevice(pairingCode.trim(), android.os.Build.MODEL)
-                showMsg(if (ok) "配对成功" else "配对失败，请检查配对码")
+                showMsg(if (ok) "配对成功" else c.lastError.value ?: "配对失败")
                 if (ok) {
                     c.discoverDevices()?.let { discovered ->
                         devices.clear()

@@ -228,7 +228,11 @@ val appModule = module {
     single { VoiceWakeManager(get()) }
 
     // Cloud
-    single { CloudSyncManager() }
+    single {
+        CloudSyncManager(
+            sessionStore = com.jarvis.pineapple.cloud.SecureCloudSessionStore(get(), get())
+        )
+    }
 
     // Plugins (#139)
     single { PluginManager(get()) }
