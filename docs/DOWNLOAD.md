@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-22 | 版本：v0.0.1（Debug，40 轮加压 + 431 项 JVM 回归）
+> 生成日期：2026-11-23 | 版本：v0.0.1（Debug，40 轮加压 + 437 项 JVM 回归）
 
 ---
 
@@ -28,15 +28,15 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（40 轮加压 + 431 项 JVM 回归）
+版本：   v0.0.1-debug（40 轮加压 + 437 项 JVM 回归）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 80,412,741 字节（76.7 MiB）
-压缩包 SHA256： d074163bf11176d9a1483b219c82351d7c7f54ade29a19a7b2aeb8c78416d704
-APK 大小： 220,157,916 字节（210.0 MiB）
-APK SHA256： 11d4a3c9850b2eed72918484ace46d9f702a7960e6f8b156c549ae456551e62b
-构建：   2026-11-22
+压缩包大小： 80,444,493 字节（76.7 MiB）
+压缩包 SHA256： 2ed004367eebbb45d7f520c4e295067fa4b6e96bce7c600f3852bd45065e8e96
+APK 大小： 219,961,953 字节（209.8 MiB）
+APK SHA256： 8667ed07a9643ce836bb85bdd89c15277193d50a9e760a963e330026e927de2f
+构建：   2026-11-23
 构建命令：JAVA_HOME=/root/.local/share/mise/installs/java/17.0.20+101 ANDROID_HOME=/workspace/.android-sdk ANDROID_SDK_ROOT=/workspace/.android-sdk ./gradlew --no-daemon :app:assembleDebug
-代码基线：a9162e6；交付物以 origin/main 最新提交为准
+代码基线：46b9f00；交付物以 origin/main 最新提交为准
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
 ```
 
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-d074163bf11176d9a1483b219c82351d7c7f54ade29a19a7b2aeb8c78416d704
+2ed004367eebbb45d7f520c4e295067fa4b6e96bce7c600f3852bd45065e8e96
 ```
 
 解压后校验 APK：
 
 ```text
-11d4a3c9850b2eed72918484ace46d9f702a7960e6f8b156c549ae456551e62b
+8667ed07a9643ce836bb85bdd89c15277193d50a9e760a963e330026e927de2f
 ```
 
-本包基于最终修复后的代码构建：40/40 轮递增加压、431/431 项 Debug JVM 测试通过，Lint 为 0 error / 43 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
+本包基于最终修复后的代码构建：40/40 轮递增加压、437/437 项 Debug JVM 测试通过，Lint 为 0 error / 43 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
 
 ---
 
@@ -104,9 +104,10 @@ d074163bf11176d9a1483b219c82351d7c7f54ade29a19a7b2aeb8c78416d704
 1. 将 `apk/jarvis-debug.apk` 安装到 Android 7.0+ 设备。
 2. 首次启动授予所需权限（电话/短信/定位/麦克风/通知/无障碍）。
 3. 在 **设置 → 服务** 触发模型下载，或使用 **设置 → 工具** 导入本地模型。
-4. 也可在 **设置 → 服务** 配置外接 OpenAI 兼容 API（Key/基础地址/模型名）或个人服务器地址，直接使用远程模型；配置会持久化并在下次启动时恢复。
-5. 按 `docs/release_checklist.md` 第 3～4 节执行实机与外部验收清单并反馈。
+4. 也可在 **设置 → 服务** 配置外接 OpenAI 兼容 API（Key/基础地址/模型名）或个人服务器地址，直接使用远程模型；配置会持久化并在下次启动时恢复。图片附件会以真实 base64 发送给支持视觉的 API 模型，不支持的模型会明确提示。
+5. 长按对话消息可复制、引用、删除或重新生成回复。
+6. 按 `docs/release_checklist.md` 第 3～4 节执行实机与外部验收清单并反馈。
 
 ---
 
-*文档版本：v3.9 | 生成日期：2026-11-22*
+*文档版本：v4.0 | 生成日期：2026-11-23*

@@ -1,17 +1,17 @@
 # JARVIS Release 打包前置检查清单
 
-> 更新日期：2026-11-22（Asia/Shanghai）｜版本：v3.0
+> 更新日期：2026-11-23（Asia/Shanghai）｜版本：v3.1
 > 当前只交付 Debug；本清单不授权构建或发布 Release。
 
 ## 1. 自动化门槛
 
 | 检查 | 状态 | 最终证据 |
 |---|---|---|
-| 全量 Debug JVM 测试 | 通过 | **431/431**，72 个测试类，0 失败、0 错误、0 跳过 |
+| 全量 Debug JVM 测试 | 通过 | **437/437**，72 个测试类，0 失败、0 错误、0 跳过 |
 | 40 轮递增加压 | 通过 | 40/40，`weight` 31→487382；另有 `LoadEscalationTest` 1/1 |
 | Lint | 通过 | **0 error / 43 warning / 3 information** |
 | Debug 构建 | 通过 | `assembleDebug` BUILD SUCCESSFUL |
-| 生产占位符扫描 | 通过 | `TODO` / `FIXME` / `UnsupportedOperationException` / 空 `onClick` 均 0 命中 |
+| 生产占位符扫描 | 通过 | `TODO` / `FIXME` / `UnsupportedOperationException` 均 0 命中；仅消息气泡为长按菜单保留空 `onClick`（设计行为） |
 | APK 压缩与完整性 | 通过 | `7z t` 成功；包内 APK 与构建 APK 的 SHA-256 一致 |
 | Release 构建 | 未执行 | 实机与外部验收门槛未满足 |
 
@@ -38,6 +38,7 @@
 
 - [ ] Debug 包已在目标真机完成启动、权限、后台与主要 UI 测试。
 - [ ] 实机发现的问题已全部修复并重新回归。
+  2026-11-23 已修复下载校验、首启权限、图片视觉输入、长按操作与卡顿问题（`8eef87a`、`46b9f00`），但修复后的真机复测尚未完成，故未勾选。
 - [ ] 四个默认模型均完成真实下载、SHA-256 校验、加载和至少一次推理。
 - [ ] 麦克风、系统 ASR、TTS、唤醒词和音频权限流程通过。
 - [ ] 电话、短信、蓝牙、传感器、PPG、摄像头、生物识别与设备管理员操作通过。
