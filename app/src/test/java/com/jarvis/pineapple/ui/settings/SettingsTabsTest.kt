@@ -56,6 +56,18 @@ class SettingsTabsTest {
         )
     }
 
+    @Test
+    fun logAndCrashExportsUseVerifiedApis() {
+        val src = readSource("app/src/main/java/com/jarvis/pineapple/ui/settings/SettingsScreen.kt")
+        val logTab = src.substringAfter("private fun LogTab(")
+
+        assertTrue(logTab.contains("CrashRecorder.export(context)"))
+        assertTrue(logTab.contains("DownloadLogger.exportLogs(context)"))
+        assertTrue(logTab.contains("DownloadLogger.clearAppLogs(context)"))
+        assertFalse(logTab.contains("crashFile.writeText"))
+        assertFalse(logTab.contains("logFile.writeText"))
+    }
+
     private fun readSource(relativePath: String): String {
         val candidates = listOf(File(relativePath), File("../$relativePath"))
         val file = candidates.firstOrNull { it.exists() }

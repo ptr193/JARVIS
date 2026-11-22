@@ -922,18 +922,13 @@ private fun LogTab(
     Spacer(Modifier.height(4.dp))
     Row {
         Button(onClick = {
-            runCatching {
-                val text = com.jarvis.pineapple.util.CrashRecorder.readAll(context)
-                if (text == "（无崩溃记录）") {
-                    showMsg("无崩溃记录")
-                } else {
-                    val crashFile = java.io.File(context.filesDir, "crash_export_${System.currentTimeMillis()}.txt")
-                    crashFile.writeText(text)
-                    showMsg("崩溃记录已导出: ${crashFile.absolutePath}")
+            runCatching { com.jarvis.pineapple.util.CrashRecorder.export(context) }
+                .onSuccess { file ->
+                    showMsg(file?.let { "崩溃记录已导出: ${it.absolutePath}" } ?: "无崩溃记录")
                 }
-            }.onFailure {
-                showMsg("崩溃记录导出失败: ${it.message ?: it.javaClass.simpleName}")
-            }
+                .onFailure {
+                    showMsg("崩溃记录导出失败: ${it.message ?: it.javaClass.simpleName}")
+                }
         }) { Text("导出崩溃记录") }
         Spacer(Modifier.width(8.dp))
         Button(onClick = {
@@ -945,57 +940,23 @@ private fun LogTab(
 
     Row {
         Button(onClick = {
-            runCatching {
-                val logDir = java.io.File(context.filesDir, "logs")
-                val logFiles = if (logDir.exists()) {
-                    logDir.listFiles { f -> f.isFile }
-                        ?: throw java.io.IOException("无法读取日志目录")
-                } else {
-                    emptyArray()
+            runCatching { com.jarvis.pineapple.util.DownloadLogger.exportLogs(context) }
+                .onSuccess { file ->
+                    showMsg(file?.let { "日志已导出: ${it.absolutePath}" } ?: "暂无日志文件")
                 }
-                val latest = logFiles.maxByOrNull { it.lastModified() }
-                val crashText = com.jarvis.pineapple.util.CrashRecorder.readAll(context)
-                if (latest == null && crashText == "（无崩溃记录）") {
-                    showMsg("暂无日志文件")
-                } else {
-                    val logFile = java.io.File(logDir, "jarvis_log_${System.currentTimeMillis()}.txt")
-                    val header = "JARVIS 日志导出\n时间: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())}\n"
-                    val body = buildString {
-                        append(header)
-                        if (latest != null) {
-                            append("\n########## ${latest.name} ##########\n")
-                            append(latest.readText())
-                        }
-                        if (crashText != "（无崩溃记录）") {
-                            append("\n\n")
-                            append(crashText)
-                        }
-                    }
-                    logFile.writeText(body)
-                    showMsg("日志已导出: ${logFile.absolutePath}")
+                .onFailure {
+                    showMsg("日志导出失败: ${it.message ?: it.javaClass.simpleName}")
                 }
-            }.onFailure {
-                showMsg("日志导出失败: ${it.message ?: it.javaClass.simpleName}")
-            }
         }) { Text("导出日志") }
         Spacer(Modifier.width(8.dp))
         Button(onClick = {
-            runCatching {
-                val logDir = java.io.File(context.filesDir, "logs")
-                val files = if (logDir.exists()) {
-                    logDir.listFiles { f -> f.isFile }?.toList()
-                        ?: throw java.io.IOException("无法读取日志目录")
-                } else {
-                    emptyList()
+            runCatching { com.jarvis.pineapple.util.DownloadLogger.clearAppLogs(context) }
+                .onSuccess {
+                    showMsg(if (it == 0) "暂无日志文件" else "日志已清空（$it 个文件）")
                 }
-                val failed = files.filter { it.exists() && !it.delete() }
-                if (failed.isNotEmpty()) throw java.io.IOException("${failed.size} 个日志文件删除失败")
-                files.size
-            }.onSuccess {
-                showMsg(if (it == 0) "暂无日志文件" else "日志已清空（$it 个文件）")
-            }.onFailure {
-                showMsg("日志清空失败: ${it.message ?: it.javaClass.simpleName}")
-            }
+                .onFailure {
+                    showMsg("日志清空失败: ${it.message ?: it.javaClass.simpleName}")
+                }
         }) { Text("清空日志") }
     }
 

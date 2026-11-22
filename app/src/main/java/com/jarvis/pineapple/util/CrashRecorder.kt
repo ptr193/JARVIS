@@ -66,8 +66,32 @@ object CrashRecorder {
             .sortedByDescending { it.name }
     }
 
+    fun hasRecords(context: Context): Boolean = list(context).isNotEmpty()
+
     /** 读取全部崩溃记录合并为文本；任何文件不可读都使导出失败。 */
     fun readAll(context: Context): String = readRecords(list(context))
+
+    /** 导出崩溃记录到 filesDir；无记录返回 null，写入或校验失败抛出异常。 */
+    fun export(context: Context): File? {
+        val records = list(context)
+        if (records.isEmpty()) return null
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val output = File(context.filesDir, "crash_export_$stamp.txt")
+        return exportToFile(records, output)
+    }
+
+    internal fun exportToFile(records: List<File>, output: File): File {
+        val body = readRecords(records)
+        if (!writeVerifiedText(output, body)) {
+            throw IOException("崩溃记录导出文件写入失败: ${output.absolutePath}")
+        }
+        val written = output.readText()
+        if (!output.exists() || output.length() == 0L || written != body) {
+            output.delete()
+            throw IOException("崩溃记录导出文件校验失败: ${output.absolutePath}")
+        }
+        return output
+    }
 
     internal fun readRecords(files: List<File>): String {
         if (files.isEmpty()) return "（无崩溃记录）"
@@ -76,8 +100,14 @@ object CrashRecorder {
         }
     }
 
-    /** 清空崩溃记录并返回删除数量；部分删除失败时不得报告成功。 */
-    fun clear(context: Context): Int = clearRecords(list(context))
+    /** 清空崩溃记录并返回删除数量；部分删除失败或仍有残留时不得报告成功。 */
+    fun clear(context: Context): Int {
+        val deleted = clearRecords(list(context))
+        if (list(context).isNotEmpty()) {
+            throw IOException("崩溃记录未完全清空")
+        }
+        return deleted
+    }
 
     internal fun clearRecords(files: List<File>): Int {
         val failed = files.filter { it.exists() && !it.delete() }
@@ -93,5 +123,16 @@ object CrashRecorder {
             .filter { it.isFile && it.name.startsWith("crash_") }
             .sortedByDescending { it.name }
         files.drop(MAX_FILES).forEach { runCatching { it.delete() } }
+    }
+
+    internal fun writeVerifiedText(file: File, text: String): Boolean = try {
+        file.parentFile?.let { parent ->
+            if (!parent.exists() && !parent.mkdirs()) return false
+        }
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        file.writeText(text, Charsets.UTF_8)
+        file.exists() && file.length() == bytes.size.toLong()
+    } catch (_: IOException) {
+        false
     }
 }

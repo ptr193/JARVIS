@@ -4,6 +4,7 @@ import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -58,5 +59,23 @@ class CrashRecorderTest {
 
         assertEquals(2, CrashRecorder.clearRecords(files))
         assertTrue(files.none { it.exists() })
+    }
+
+    @Test
+    fun exportToFileVerifiesExactExportedContents() {
+        val record = temp.newFile("crash_1.txt").apply { writeText("stacktrace") }
+        val output = File(temp.root, "crash_export.txt")
+
+        val result = CrashRecorder.exportToFile(listOf(record), output)
+
+        assertTrue(result.exists())
+        assertEquals(CrashRecorder.readRecords(listOf(record)), result.readText())
+    }
+
+    @Test
+    fun writeVerifiedTextRejectsLengthMismatch() {
+        val directory = temp.newFolder("blocked.txt")
+
+        assertFalse(CrashRecorder.writeVerifiedText(directory, "cannot overwrite directory"))
     }
 }
