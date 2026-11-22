@@ -39,6 +39,7 @@ import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.UsbDeviceManager
 import com.jarvis.pineapple.system.SecondaryDisplayManager
 import com.jarvis.pineapple.system.RemoteAssistanceManager
+import com.jarvis.pineapple.perception.HolographicInterface
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
 import com.jarvis.pineapple.system.PhoneController
@@ -74,6 +75,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val usb = remember { GlobalContext.get().get<UsbDeviceManager>() }
     val displays = remember { GlobalContext.get().get<SecondaryDisplayManager>() }
     val remote = remember { GlobalContext.get().get<RemoteAssistanceManager>() }
+    val holographic = remember { GlobalContext.get().get<HolographicInterface>() }
     val context = LocalContext.current
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
@@ -434,6 +436,21 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
                 else captureLauncher.launch(remote.createScreenCaptureIntent())
             }) { Text("捕获并分享屏幕") }
         }
+    }
+
+    SectionCard("全息 / AR / 机械臂 / 手势 边界 (#97 / #114 / #115 / #116)") {
+        var holoInfo by remember { mutableStateOf("尚未探测") }
+        Text("如实探测硬件/SDK 能力，不支持不会伪装为可用", fontSize = 11.sp)
+        Row {
+            Button(onClick = {
+                scope.launch {
+                    val report = withContext(Dispatchers.IO) { holographic.probeAll() }
+                    holoInfo = HolographicInterface.summarize(report)
+                    showMsg("能力探测完成（可用 ${report.availableCount}/4）")
+                }
+            }) { Text("探测能力边界") }
+        }
+        Text(holoInfo, fontSize = 12.sp)
     }
 
 }

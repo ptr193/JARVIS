@@ -141,6 +141,8 @@ dependencies {
 
     // ML Kit
     implementation("com.google.mlkit:face-detection:16.1.6")
+    // ARCore（#115 AR 界面，可选：设备不支持时如实报告不可用）
+    implementation("com.google.ar:core:1.43.0")
     implementation("com.google.mlkit:object-detection:17.0.1")
     implementation("com.google.mlkit:vision-common:17.3.0")
 

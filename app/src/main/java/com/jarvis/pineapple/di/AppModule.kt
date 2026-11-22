@@ -32,6 +32,7 @@ import com.jarvis.pineapple.perception.MLKitFaceDetector
 import com.jarvis.pineapple.perception.MLKitObjectDetector
 import com.jarvis.pineapple.perception.ObjectDetector
 import com.jarvis.pineapple.perception.PerceptionManager
+import com.jarvis.pineapple.perception.HolographicInterface
 import com.jarvis.pineapple.personality.PersonalityRepository
 import com.jarvis.pineapple.security.CryptoManager
 import com.jarvis.pineapple.security.IntrusionDetector
@@ -196,6 +197,7 @@ val appModule = module {
     single { EnvironmentPerception(get()) }
     single { ObjectDetector(get()) }
     single { PerceptionManager(get()) }
+    single { HolographicInterface(get()) }
     single { BehaviorPredictor() }
     single { MLKitFaceDetector(get()) }
     single { MLKitObjectDetector(get()) }
