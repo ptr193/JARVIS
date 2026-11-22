@@ -38,14 +38,21 @@ class ProgressiveLoadTest(private val round: Int) {
         val profile = LoadProfile.forRound(round)
         val started = System.nanoTime()
         runCore(profile)
-        if (!profile.coreOnly) runFull(profile)
+        val subsystems = LoadSubsystemStress(tmp.root, round)
+        subsystems.runChat(profile)
+        if (!profile.coreOnly) {
+            runFull(profile)
+            subsystems.runBoundaries(profile)
+        }
         val elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
         println(
             "LOAD_ROUND round=$round weight=${profile.weight()} " +
                 "conversations=${profile.conversations} messages=${profile.messagesPerConversation} " +
                 "payloadChars=${profile.payloadChars} commandRepeats=${profile.commandRepeats} " +
                 "memories=${profile.memories} workers=${profile.workers} " +
-                "createsPerWorker=${profile.createsPerWorker} elapsedMs=$elapsed"
+                "createsPerWorker=${profile.createsPerWorker} chatTurns=${profile.chatTurns} " +
+                "vmCommands=${profile.vmCommandRepeats * 3} vncRects=${profile.vncRects} " +
+                "modelBytes=${profile.modelPayloadBytes} auditEntries=${profile.auditEntries} elapsedMs=$elapsed"
         )
         assertTrue(
             "第 $round 轮耗时 ${elapsed}ms，超过预算 ${profile.maxMillis}ms",

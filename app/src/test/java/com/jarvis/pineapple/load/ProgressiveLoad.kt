@@ -20,6 +20,11 @@ data class LoadProfile(
     val createsPerWorker: Int,
     val screenNodes: Int,
     val suggestions: Int,
+    val chatTurns: Int,
+    val vmCommandRepeats: Int,
+    val vncRects: Int,
+    val modelPayloadBytes: Int,
+    val auditEntries: Int,
     val maxMillis: Long
 ) {
     init {
@@ -56,7 +61,12 @@ data class LoadProfile(
                     createsPerWorker = 0,
                     screenNodes = 0,
                     suggestions = 0,
-                    maxMillis = 2_000
+                    chatTurns = 1,
+                    vmCommandRepeats = 0,
+                    vncRects = 0,
+                    modelPayloadBytes = 0,
+                    auditEntries = 0,
+                    maxMillis = 10_000
                 )
                 2 -> LoadProfile(
                     round = 2,
@@ -72,7 +82,12 @@ data class LoadProfile(
                     createsPerWorker = 0,
                     screenNodes = 4,
                     suggestions = 2,
-                    maxMillis = 3_000
+                    chatTurns = 2,
+                    vmCommandRepeats = 2,
+                    vncRects = 2,
+                    modelPayloadBytes = 2_048,
+                    auditEntries = 502,
+                    maxMillis = 30_000
                 )
                 else -> {
                     val linear = round - 2
@@ -92,10 +107,15 @@ data class LoadProfile(
                         createsPerWorker = if (concurrent) (round - 10).coerceAtLeast(1) else 0,
                         screenNodes = 4 * round,
                         suggestions = round,
+                        chatTurns = round,
+                        vmCommandRepeats = round,
+                        vncRects = round,
+                        modelPayloadBytes = 2_048 + round * 1_024,
+                        auditEntries = 500 + round,
                         maxMillis = when {
-                            peak -> 30_000
-                            concurrent -> 15_000
-                            else -> 8_000
+                            peak -> 120_000
+                            concurrent -> 90_000
+                            else -> 60_000
                         }
                     )
                 }
@@ -117,5 +137,6 @@ data class LoadProfile(
     fun weight(): Int =
         overlayChars + overlayChunks + conversations * messagesPerConversation * (payloadChars / 8 + 1) +
             commandRepeats * COMMANDS.size + memories + workers * createsPerWorker * 4 +
-            screenNodes + suggestions
+            screenNodes + suggestions + chatTurns * 8 + vmCommandRepeats * 2 + vncRects +
+            modelPayloadBytes / 1_024 + auditEntries
 }
