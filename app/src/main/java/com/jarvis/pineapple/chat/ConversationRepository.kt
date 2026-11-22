@@ -133,12 +133,34 @@ class ConversationRepository(
         return json.encodeToString(dtos)
     }
 
+    /** 导出单个对话为 JSON；不存在时返回 null。 */
+    fun exportConversation(conversationId: String): String? {
+        val conversation = _conversations.value.firstOrNull { it.id == conversationId } ?: return null
+        return json.encodeToString(ConversationDto.fromConversation(conversation))
+    }
+
+    /** 归档/取消归档；持久化成功后才更新内存状态。 */
+    fun setArchived(conversationId: String, archived: Boolean): Boolean = synchronized(lock) {
+        val current = _conversations.value.firstOrNull { it.id == conversationId } ?: return false
+        val updated = current.copy(archived = archived)
+        if (!saveConversation(updated)) return false
+        _conversations.value = _conversations.value.map {
+            if (it.id == conversationId) updated else it
+        }
+        true
+    }
+
     fun importFromJson(jsonStr: String): Boolean = synchronized(lock) {
+        // 兼容两种导出格式：全部对话（数组）与单个对话（对象）。
         val conversations = try {
             json.decodeFromString<List<ConversationDto>>(jsonStr).map { it.toConversation() }
-        } catch (e: Exception) {
-            _lastError.value = "对话导入失败：${e.message ?: e.javaClass.simpleName}"
-            return false
+        } catch (listError: Exception) {
+            try {
+                listOf(json.decodeFromString<ConversationDto>(jsonStr).toConversation())
+            } catch (e: Exception) {
+                _lastError.value = "对话导入失败：${e.message ?: e.javaClass.simpleName}"
+                return false
+            }
         }
         if (conversations.any { !saveConversation(it) }) return false
         loadConversations()
@@ -163,13 +185,15 @@ data class ConversationDto(
     val id: String,
     val title: String,
     val messages: List<MessageDto>,
-    val createdAt: Long
+    val createdAt: Long,
+    val archived: Boolean = false
 ) {
     fun toConversation(): Conversation = Conversation(
         id = id,
         title = title,
         messages = messages.map { it.toChatMessage() }.toMutableList(),
-        createdAt = createdAt
+        createdAt = createdAt,
+        archived = archived
     )
 
     companion object {
@@ -177,7 +201,8 @@ data class ConversationDto(
             id = conv.id,
             title = conv.title,
             messages = conv.messages.map { MessageDto.fromChatMessage(it) },
-            createdAt = conv.createdAt
+            createdAt = conv.createdAt,
+            archived = conv.archived
         )
     }
 }

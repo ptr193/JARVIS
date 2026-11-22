@@ -114,6 +114,39 @@ class ChatViewModel(
         chatEngine.deleteConversation(conversationId)
     }
 
+    fun archiveConversation(conversationId: String, archived: Boolean): Boolean =
+        chatEngine.archiveConversation(conversationId, archived)
+
+    /** 将全部对话导出到用户选择的文件（SAF Uri）；返回是否真实写入成功。 */
+    suspend fun exportAllTo(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val json = chatEngine.exportAllConversations()
+            val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false
+            stream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+            true
+        }.getOrDefault(false)
+    }
+
+    /** 将单个对话导出到用户选择的文件（SAF Uri）。 */
+    suspend fun exportConversationTo(uri: Uri, conversationId: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val json = chatEngine.exportConversation(conversationId) ?: return@runCatching false
+            val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false
+            stream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+            true
+        }.getOrDefault(false)
+    }
+
+    /** 从用户选择的文件导入对话；返回是否导入成功。 */
+    suspend fun importFrom(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val text = context.contentResolver.openInputStream(uri)
+                ?.use { it.readBytes().toString(Charsets.UTF_8) }
+                ?: return@runCatching false
+            chatEngine.importConversations(text)
+        }.getOrDefault(false)
+    }
+
     fun clearConversation() {
         chatEngine.clearConversation()
     }

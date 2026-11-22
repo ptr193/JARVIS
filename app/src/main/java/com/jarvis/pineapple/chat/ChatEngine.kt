@@ -39,7 +39,8 @@ class ChatEngine(
     private val capabilityScheduler: ModelCapabilityScheduler,
     private val conversationEnhancer: ConversationEnhancer,
     private val infoProcessor: InfoProcessor,
-    private val commandExecutor: SimpleCommandExecutor? = null
+    private val commandExecutor: SimpleCommandExecutor? = null,
+    private val vmCommandBridge: VmCommandBridge? = null
 ) {
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -93,6 +94,12 @@ class ChatEngine(
             val result = conversationEnhancer.translate(text, targetLang = target)
             val reply = if (result.isSuccess) result.translatedText else "翻译失败：${result.errorMessage}"
             return finishDirectReply(content, reply, "翻译请求：${content.take(50)}")
+        }
+
+        // ===== 虚拟机操控：命中“虚拟机/终端执行”指令时转发到真实 PRoot =====
+        VmCommandParser.parse(content)?.let { execution ->
+            val reply = executeVmCommand(execution)
+            return finishDirectReply(content, reply, "虚拟机指令：${content.take(50)}")
         }
 
         if (AssistantCommandParser.isDirectCommand(content)) {
@@ -264,6 +271,85 @@ class ChatEngine(
         }
     }
 
+    // ==================== 对话导出 / 导入 / 归档 ====================
+
+    /** 导出全部对话为 JSON 字符串。 */
+    fun exportAllConversations(): String = conversationRepository.exportAll()
+
+    /** 导出单个对话为 JSON 字符串；不存在返回 null。 */
+    fun exportConversation(conversationId: String): String? =
+        conversationRepository.exportConversation(conversationId)
+
+    /** 导入对话（兼容全部/单个导出格式）；成功后同步当前会话消息。 */
+    fun importConversations(json: String): Boolean {
+        val ok = conversationRepository.importFromJson(json)
+        if (ok) {
+            val conv = conversationRepository.getCurrentConversation()
+            if (conv != null) {
+                conversation = conv
+                _messages.value = conv.messages.toList()
+            }
+        }
+        return ok
+    }
+
+    /** 归档或恢复对话；持久化失败返回 false。 */
+    fun archiveConversation(conversationId: String, archived: Boolean): Boolean =
+        conversationRepository.setArchived(conversationId, archived)
+
+    // ==================== 虚拟机操控 ====================
+
+    /**
+     * 在真实虚拟机上执行命令并返回可读结果。
+     * 找不到虚拟机、启动失败或执行异常时如实说明，绝不伪造成功输出。
+     */
+    private suspend fun executeVmCommand(execution: VmExecution): String {
+        val bridge = vmCommandBridge ?: return "虚拟机能力不可用，无法执行该指令。"
+        val vms = try {
+            bridge.listVms()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "读取虚拟机列表失败：${e.message ?: e.javaClass.simpleName}"
+        }
+        if (vms.isEmpty()) {
+            return "当前没有已创建的虚拟机，请先在虚拟机页面下载发行版并创建虚拟机。"
+        }
+        val vm = resolveVm(vms, execution.vmName)
+            ?: return "未找到名为「${execution.vmName}」的虚拟机。可用：${vms.joinToString { it.name }}"
+
+        if (!vm.running) {
+            val started = try {
+                bridge.start(vm.id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            if (!started) return "虚拟机「${vm.name}」启动失败，未执行命令。"
+        }
+
+        val result = try {
+            bridge.run(vm.id, execution.command)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "虚拟机「${vm.name}」执行失败：${e.message ?: e.javaClass.simpleName}"
+        }
+
+        return buildString {
+            appendLine("虚拟机：${vm.name}")
+            appendLine("命令：${execution.command}")
+            appendLine("退出码：${result.exitCode}")
+            if (result.output.isBlank()) {
+                appendLine("输出：（无）")
+            } else {
+                appendLine("输出：")
+                appendLine(result.output.trimEnd())
+            }
+        }.trimEnd()
+    }
+
     private fun buildContextPrompt(): String {
         val recent = conversation.messages.takeLast(20)
         return recent.joinToString("\n") { msg ->
@@ -357,6 +443,19 @@ class ChatEngine(
             throw e
         } catch (e: Exception) {
             "【实时检索失败】\n查询：$query\n原因：${e.message ?: e.javaClass.simpleName}\n请明确告知用户检索失败，不得编造实时结果。"
+        }
+    }
+
+    companion object {
+        /**
+         * 按名称选择虚拟机（纯函数，可单测）。
+         * 未指定名称时优先运行中的虚拟机，否则取第一个；指定名称时先精确匹配再包含匹配。
+         */
+        internal fun resolveVm(vms: List<VmSummary>, name: String?): VmSummary? {
+            if (vms.isEmpty()) return null
+            if (name.isNullOrBlank()) return vms.firstOrNull { it.running } ?: vms.first()
+            return vms.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                ?: vms.firstOrNull { it.name.contains(name, ignoreCase = true) }
         }
     }
 }

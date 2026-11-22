@@ -11,6 +11,7 @@ import com.jarvis.pineapple.chat.ConversationEnhancer
 import com.jarvis.pineapple.chat.ConversationRepository
 import com.jarvis.pineapple.chat.SimpleCommandExecutor
 import com.jarvis.pineapple.chat.TranslationEngine
+import com.jarvis.pineapple.chat.VmCommandBridge
 import com.jarvis.pineapple.cloud.CloudSyncManager
 import com.jarvis.pineapple.db.DatabaseFactory
 import com.jarvis.pineapple.health.HealthMonitor
@@ -65,6 +66,7 @@ import com.jarvis.pineapple.system.SmsController
 import com.jarvis.pineapple.system.SystemSettingsController
 import com.jarvis.pineapple.ui.chat.ChatViewModel
 import com.jarvis.pineapple.vm.HavenVmManager
+import com.jarvis.pineapple.vm.HavenVmCommandBridge
 import com.jarvis.pineapple.vm.ProotManager
 import com.jarvis.pineapple.wake.AppIconWakeDetector
 import com.jarvis.pineapple.wake.BluetoothWakeDetector
@@ -175,7 +177,7 @@ val appModule = module {
     single { PermissionManager }
     single { MediaController(get()) }
     single { SimpleCommandExecutor(get(), get(), get(), get(), get(), get()) }
-    single { ChatEngine(get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { ChatEngine(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     // Virtual machine
     single { ProotManager(get()) }
@@ -188,6 +190,7 @@ val appModule = module {
         }
     }
     single { VmImageImporter(get(), get()) }
+    single<VmCommandBridge> { HavenVmCommandBridge(get()) }
 
     // Smart home
     single { SmartHomeAdapter() }

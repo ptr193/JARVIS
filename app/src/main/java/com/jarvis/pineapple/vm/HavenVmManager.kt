@@ -191,6 +191,12 @@ class HavenVmManager(
         return prootManager.executeCommand(config, command).output
     }
 
+    /** 在虚拟机上执行命令并返回完整结果（含退出码）；虚拟机不存在返回 null。 */
+    suspend fun executeCommandResult(vmId: String, command: String): ProotManager.CommandResult? {
+        val vm = findVm(vmId) ?: return null
+        return prootManager.executeCommand(configFor(vm), command)
+    }
+
     /**
      * 安装软件包。
      */

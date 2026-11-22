@@ -135,4 +135,46 @@ class ConversationRepositoryTest {
         assertTrue(repo.conversations.value.isEmpty())
         assertTrue(repo.lastError.value?.contains("读取失败") == true)
     }
+
+    @Test
+    fun archivePersistsAndSurvivesExportImportRoundTrip() {
+        val dir = tmp.newFolder("archive")
+        val repo = ConversationRepository(conversationsDirOverride = dir)
+        val conv = repo.createConversation("归档会话")
+        conv.messages.add(ChatMessage(role = Role.USER, content = "hi"))
+        repo.updateMessages(conv.messages.toList())
+
+        assertTrue(repo.setArchived(conv.id, true))
+        val reloaded = ConversationRepository(conversationsDirOverride = dir)
+        assertTrue(reloaded.conversations.value.first { it.id == conv.id }.archived)
+
+        val exported = repo.exportAll()
+        val targetRepo = ConversationRepository(conversationsDirOverride = tmp.newFolder("archive-import"))
+        assertTrue(targetRepo.importFromJson(exported))
+        val imported = targetRepo.conversations.value.first { it.id == conv.id }
+        assertTrue(imported.archived)
+        assertEquals("hi", imported.messages.first().content)
+
+        assertTrue(repo.setArchived(conv.id, false))
+        assertFalse(repo.conversations.value.first { it.id == conv.id }.archived)
+    }
+
+    @Test
+    fun importAcceptsSingleConversationExport() {
+        val source = ConversationRepository(conversationsDirOverride = tmp.newFolder("single-src"))
+        val conv = source.createConversation("单会话")
+        val singleJson = source.exportConversation(conv.id)
+        assertTrue(singleJson != null)
+
+        val target = ConversationRepository(conversationsDirOverride = tmp.newFolder("single-dst"))
+        assertTrue(target.importFromJson(singleJson!!))
+        assertEquals("单会话", target.conversations.value.single().title)
+    }
+
+    @Test
+    fun malformedImportFailsHonestly() {
+        val repo = ConversationRepository(conversationsDirOverride = tmp.newFolder("bad-import"))
+        assertFalse(repo.importFromJson("{oops"))
+        assertTrue(repo.lastError.value?.contains("导入失败") == true)
+    }
 }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
@@ -101,6 +102,7 @@ fun ChatScreen(
     val wakeUnavailable by wakeEngine.unavailableReasons.collectAsState()
     var input by remember { mutableStateOf("") }
     var voiceNotice by remember { mutableStateOf<String?>(null) }
+    var ioNotice by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
@@ -109,6 +111,30 @@ fun ChatScreen(
         onGranted = onNavigateToVoiceChat,
         onDenied = { voiceNotice = it }
     )
+
+    // 导出对话（全部 / 当前）：由系统文件选择器指定保存位置。
+    var pendingExportId by remember { mutableStateOf<String?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val id = pendingExportId
+                val ok = if (id == null) viewModel.exportAllTo(uri) else viewModel.exportConversationTo(uri, id)
+                ioNotice = if (ok) "对话已导出" else "对话导出失败"
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = viewModel.importFrom(uri)
+                ioNotice = if (ok) "对话已导入" else "对话导入失败：请检查文件格式"
+            }
+        }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
@@ -128,7 +154,21 @@ fun ChatScreen(
                     viewModel.switchConversation(id)
                     scope.launch { drawerState.close() }
                 },
-                onDelete = { id -> viewModel.deleteConversation(id) }
+                onDelete = { id -> viewModel.deleteConversation(id) },
+                onArchive = { id, archived ->
+                    if (!viewModel.archiveConversation(id, archived)) {
+                        ioNotice = "归档操作失败：请检查存储状态"
+                    }
+                },
+                onExportAll = {
+                    pendingExportId = null
+                    exportLauncher.launch("jarvis_conversations.json")
+                },
+                onExportCurrent = { id ->
+                    pendingExportId = id
+                    exportLauncher.launch("jarvis_conversation_$id.json")
+                },
+                onImport = { importLauncher.launch(arrayOf("application/json", "text/plain")) }
             )
         }
     ) {
@@ -209,6 +249,21 @@ fun ChatScreen(
                     modifier = Modifier.padding(12.dp),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
+
+        ioNotice?.let { notice ->
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = notice,
+                    modifier = Modifier.padding(12.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
                 )
             }
         }
@@ -346,9 +401,16 @@ private fun ConversationHistoryDrawer(
     currentId: String?,
     onNew: () -> Unit,
     onSelect: (String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onArchive: (String, Boolean) -> Unit,
+    onExportAll: () -> Unit,
+    onExportCurrent: (String) -> Unit,
+    onImport: () -> Unit
 ) {
-    ModalDrawerSheet(modifier = Modifier.width(280.dp).fillMaxHeight()) {
+    val active = conversations.filterNot { it.archived }
+    val archived = conversations.filter { it.archived }
+
+    ModalDrawerSheet(modifier = Modifier.width(300.dp).fillMaxHeight()) {
         Text(
             "聊天历史",
             style = MaterialTheme.typography.titleMedium,
@@ -360,40 +422,94 @@ private fun ConversationHistoryDrawer(
             Text("新建对话")
         }
         HorizontalDivider()
-        if (conversations.isEmpty()) {
-            Text(
-                "暂无已保存对话",
-                modifier = Modifier.padding(16.dp),
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else {
-            LazyColumn {
-                items(conversations, key = { it.id }) { conv ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(conv.id) }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                conv.title,
-                                fontWeight = if (conv.id == currentId) FontWeight.Bold else FontWeight.Normal
-                            )
-                            Text(
-                                "${conv.messages.size} 条消息",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { onDelete(conv.id) }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "删除对话")
-                        }
-                    }
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            if (active.isEmpty()) {
+                item {
+                    Text(
+                        "暂无已保存对话",
+                        modifier = Modifier.padding(16.dp),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
+            items(active, key = { it.id }) { conv ->
+                ConversationRow(
+                    conv = conv,
+                    isCurrent = conv.id == currentId,
+                    actionLabel = "归档",
+                    onSelect = { onSelect(conv.id) },
+                    onAction = { onArchive(conv.id, true) },
+                    onDelete = { onDelete(conv.id) }
+                )
+            }
+            if (archived.isNotEmpty()) {
+                item {
+                    HorizontalDivider()
+                    Text(
+                        "已归档（${archived.size}）",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(archived, key = { it.id }) { conv ->
+                    ConversationRow(
+                        conv = conv,
+                        isCurrent = conv.id == currentId,
+                        actionLabel = "恢复",
+                        onSelect = { onSelect(conv.id) },
+                        onAction = { onArchive(conv.id, false) },
+                        onDelete = { onDelete(conv.id) }
+                    )
+                }
+            }
+        }
+        HorizontalDivider()
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(
+                onClick = { currentId?.let(onExportCurrent) },
+                enabled = currentId != null
+            ) { Text("导出当前", fontSize = 12.sp) }
+            TextButton(onClick = onExportAll) { Text("导出全部", fontSize = 12.sp) }
+            TextButton(onClick = onImport) { Text("导入", fontSize = 12.sp) }
+        }
+    }
+}
+
+@Composable
+private fun ConversationRow(
+    conv: Conversation,
+    isCurrent: Boolean,
+    actionLabel: String,
+    onSelect: () -> Unit,
+    onAction: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onSelect)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                conv.title,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
+            )
+            Text(
+                "${conv.messages.size} 条消息",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        TextButton(onClick = onAction) { Text(actionLabel, fontSize = 11.sp) }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, contentDescription = "删除对话")
         }
     }
 }
@@ -440,12 +556,15 @@ private fun MessageBubble(msg: com.jarvis.pineapple.chat.ChatMessage) {
             ),
             modifier = Modifier.widthIn(max = 300.dp)
         ) {
-            Text(
-                text = msg.content.ifEmpty { if (msg.isStreaming) "..." else "" },
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 15.sp
-            )
+            // 支持长按选中并复制消息内容（SelectionContainer 提供系统复制/全选菜单）
+            SelectionContainer {
+                Text(
+                    text = msg.content.ifEmpty { if (msg.isStreaming) "..." else "" },
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 15.sp
+                )
+            }
         }
 
         if (isUser) {
