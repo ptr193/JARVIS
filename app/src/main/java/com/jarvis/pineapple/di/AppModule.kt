@@ -195,7 +195,7 @@ val appModule = module {
         }
     }
     single { VmImageImporter(get(), get()) }
-    single { VmAuditLog(get()) }
+    single { VmAuditLog(get<android.content.Context>()) }
     single<VmCommandBridge> { HavenVmCommandBridge(get(), get(), get()) }
     single { VmDesktopManager(get(), get()) }
     single { HostRootManager(get()) }

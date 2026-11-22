@@ -29,13 +29,21 @@ class HavenVmCommandBridge(
         val result = manager.executeCommandResult(vmId, command)
             ?: return VmRunResult("Error: 虚拟机不存在", -1)
         // 特权审计：身份由全局 root 开关决定，关闭后以普通用户身份执行。
-        auditLog.record(
+        val recorded = auditLog.record(
             vmName = manager.findVm(vmId)?.name ?: vmId,
             identity = if (manager.isRootEnabled()) "root" else "user",
             command = command,
             exitCode = result.exitCode
         )
-        return VmRunResult(result.output, result.exitCode)
+        val output = if (recorded) {
+            result.output
+        } else {
+            listOf(
+                result.output,
+                "警告：命令已执行，但${auditLog.lastError ?: "审计日志写入失败"}"
+            ).filter { it.isNotBlank() }.joinToString("\n")
+        }
+        return VmRunResult(output, result.exitCode)
     }
 
     override suspend fun openDesktop(vmId: String): VmDesktopActionResult {
