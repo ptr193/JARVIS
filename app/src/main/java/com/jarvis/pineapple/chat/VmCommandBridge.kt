@@ -14,7 +14,18 @@ interface VmCommandBridge {
 
     /** 在指定虚拟机内执行命令；返回真实输出与退出码。 */
     suspend fun run(vmId: String, command: String): VmRunResult
+
+    /** 启动并连接虚拟机图形桌面（VNC）；返回真实结果。 */
+    suspend fun openDesktop(vmId: String): VmDesktopActionResult
+
+    /** 在虚拟机桌面中打开浏览器；桌面未启动时先启动桌面。 */
+    suspend fun openBrowser(vmId: String): VmDesktopActionResult
 }
+
+data class VmDesktopActionResult(
+    val ok: Boolean,
+    val message: String
+)
 
 data class VmSummary(
     val id: String,
@@ -82,3 +93,48 @@ data class VmExecution(
     val vmName: String?,
     val command: String
 )
+
+enum class VmDesktopAction { DESKTOP, BROWSER }
+
+data class VmDesktopRequest(
+    val action: VmDesktopAction,
+    /** 目标虚拟机名称；为 null 表示自动选择。 */
+    val vmName: String?
+)
+
+/**
+ * 解析“打开虚拟机桌面 / 在虚拟机中使用浏览器”类指令（纯函数，可单测）。
+ * 与 [VmCommandParser] 互斥：显式“执行命令”的请求仍由后者处理。
+ */
+object VmDesktopCommandParser {
+
+    private val BROWSER = Regex(
+        "(?:打开|启动|使用|调用).{0,10}虚拟机.{0,10}浏览器|虚拟机.{0,10}浏览器",
+        RegexOption.IGNORE_CASE
+    )
+    private val DESKTOP = Regex(
+        "(?:打开|启动|显示|进入).{0,10}虚拟机.{0,10}桌面|虚拟机.{0,10}桌面",
+        RegexOption.IGNORE_CASE
+    )
+    private val NAME = Regex(
+        "虚拟机\\s*[\\\"“]?([A-Za-z0-9_\\-\\u4e00-\\u9fa5]+)[\\\"”]?\\s*(?:的)?\\s*(?:打开|启动|进入|显示)?\\s*(?:桌面|浏览器)"
+    )
+
+    fun parse(message: String): VmDesktopRequest? {
+        val text = message.trim()
+        if (text.isEmpty() || text.length > 200) return null
+        if (VmCommandParser.parse(text) != null) return null
+
+        val action = when {
+            BROWSER.containsMatchIn(text) -> VmDesktopAction.BROWSER
+            DESKTOP.containsMatchIn(text) -> VmDesktopAction.DESKTOP
+            else -> return null
+        }
+
+        val candidate = NAME.find(text)?.groupValues?.get(1)?.trim()?.removeSuffix("的")
+        val vmName = candidate?.takeIf {
+            it.isNotBlank() && it !in setOf("打开", "启动", "使用", "调用", "桌面", "浏览器")
+        }
+        return VmDesktopRequest(action, vmName)
+    }
+}

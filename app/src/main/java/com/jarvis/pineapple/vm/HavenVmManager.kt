@@ -258,10 +258,10 @@ class HavenVmManager(
     suspend fun installDesktopEnvironment(vmId: String): Boolean {
         val vm = findVm(vmId) ?: return false
         val command = when (vm.packageManager) {
-            "apk" -> "apk add --no-cache xvfb x11vnc xterm"
-            "apt" -> "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb x11vnc xterm"
-            "pacman" -> "pacman -Sy --noconfirm xorg-server-xvfb x11vnc xterm"
-            "xbps" -> "xbps-install -y xvfb x11vnc xterm"
+            "apk" -> "apk add --no-cache xvfb x11vnc xfce4 xfce4-terminal dbus"
+            "apt" -> "apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y xvfb x11vnc xfce4 xfce4-terminal dbus-x11"
+            "pacman" -> "pacman -Sy --noconfirm xorg-server-xvfb x11vnc xfce4 xfce4-terminal dbus"
+            "xbps" -> "xbps-install -y xvfb x11vnc xfce4 xfce4-terminal dbus"
             else -> return false
         }
         val result = prootManager.executeCommand(configFor(vm), command)

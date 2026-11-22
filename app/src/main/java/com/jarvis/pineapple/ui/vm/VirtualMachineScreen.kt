@@ -1,10 +1,15 @@
 package com.jarvis.pineapple.ui.vm
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,7 +60,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.vm.DownloadStatus
@@ -64,6 +78,7 @@ import com.jarvis.pineapple.vm.PackageOperationResult
 import com.jarvis.pineapple.vm.ProotManager
 import com.jarvis.pineapple.vm.SnapshotResult
 import com.jarvis.pineapple.vm.VmDistroManager
+import com.jarvis.pineapple.vm.VmDesktopManager
 import com.jarvis.pineapple.vm.VmFile
 import com.jarvis.pineapple.vm.VmFileManager
 import com.jarvis.pineapple.vm.VmImageImporter
@@ -72,9 +87,11 @@ import com.jarvis.pineapple.vm.VmPackageManager
 import com.jarvis.pineapple.vm.VmResourceMonitor
 import com.jarvis.pineapple.vm.VmSnapshotManager
 import com.jarvis.pineapple.vm.VmTerminal
+import com.jarvis.pineapple.vm.VncClient
 import com.jarvis.pineapple.vm.LogLevel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.min
 import org.koin.androidx.compose.get
 import java.io.File
 import java.io.FileOutputStream
@@ -96,7 +113,8 @@ fun VirtualMachineScreen(
     prootManager: ProotManager = get(),
     distroManager: VmDistroManager = get(),
     havenVmManager: HavenVmManager = get(),
-    vmImageImporter: VmImageImporter = get()
+    vmImageImporter: VmImageImporter = get(),
+    vmDesktopManager: VmDesktopManager = get()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -122,7 +140,7 @@ fun VirtualMachineScreen(
         if (prootReady) prootVersion = prootManager.getProotVersion()
     }
 
-    val tabs = listOf("发行版", "虚拟机", "终端", "软件包", "文件", "快照", "监控", "日志")
+    val tabs = listOf("发行版", "虚拟机", "终端", "软件包", "文件", "快照", "监控", "日志", "桌面")
 
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { selectedUri ->
@@ -274,9 +292,287 @@ fun VirtualMachineScreen(
                 )
                 6 -> MonitorTab(vm = vms.firstOrNull { it.id == activeVmId })
                 7 -> LogTab(logManager = loggerFor(activeVmId))
+                8 -> DesktopTab(
+                    vm = vms.firstOrNull { it.id == activeVmId },
+                    desktop = vmDesktopManager,
+                    logManager = loggerFor(activeVmId),
+                    showMsg = showMsg
+                )
             }
         }
     }
+}
+
+/**
+ * 虚拟机桌面页：内置 RFB(VNC) 客户端，显示并操作 PRoot 内的 XFCE 桌面。
+ * 桌面由 Xvfb + x11vnc 提供，用户可通过触摸/键盘操作，AI 通过终端操作同一虚拟机。
+ */
+@Composable
+private fun DesktopTab(
+    vm: HavenVmManager.HavenVm?,
+    desktop: VmDesktopManager,
+    logManager: VmLogManager?,
+    showMsg: (String) -> Unit
+) {
+    if (vm == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("请先在“虚拟机”页选择一台虚拟机", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+
+    val scope = rememberCoroutineScope()
+    var running by remember(vm.id) { mutableStateOf(desktop.isRunning(vm.id)) }
+    var port by remember(vm.id) { mutableIntStateOf(desktop.portFor(vm.id)) }
+    var status by remember(vm.id) { mutableStateOf(if (running) "桌面进程运行中" else "桌面未启动") }
+    var busy by remember(vm.id) { mutableStateOf(false) }
+    var frame by remember(vm.id) { mutableStateOf<ImageBitmap?>(null) }
+    var frameWidth by remember(vm.id) { mutableIntStateOf(0) }
+    var frameHeight by remember(vm.id) { mutableIntStateOf(0) }
+    var viewSize by remember { mutableStateOf(IntSize.Zero) }
+    var textInput by remember { mutableStateOf("") }
+    var connectionKey by remember(vm.id) { mutableIntStateOf(0) }
+    var lastPointer by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+
+    val client = remember(vm.id) {
+        VncClient(object : VncClient.Listener {
+            override fun onConnected(width: Int, height: Int) {
+                scope.launch {
+                    frameWidth = width
+                    frameHeight = height
+                    status = "已连接 ${width}x${height}"
+                }
+            }
+
+            override fun onFrame(pixels: IntArray, width: Int, height: Int) {
+                val bitmap = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+                    .asImageBitmap()
+                scope.launch {
+                    frame = bitmap
+                    frameWidth = width
+                    frameHeight = height
+                }
+            }
+
+            override fun onDisconnected(reason: String) {
+                scope.launch {
+                    status = reason
+                    running = desktop.isRunning(vm.id)
+                }
+            }
+        })
+    }
+
+    DisposableEffect(vm.id) {
+        onDispose { client.disconnect() }
+    }
+
+    LaunchedEffect(connectionKey, port) {
+        if (connectionKey > 0) {
+            status = "连接 127.0.0.1:$port ..."
+            client.run("127.0.0.1", port)
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        status = "正在安装桌面环境（需联网，可能较久）..."
+                        val ok = desktop.installDesktop(vm.id)
+                        busy = false
+                        status = if (ok) "桌面环境安装完成" else "桌面环境安装失败，请检查网络/包管理器"
+                        if (ok) logManager?.addLog(LogLevel.INFO, status, "Desktop")
+                        else logManager?.addLog(LogLevel.ERROR, status, "Desktop")
+                        showMsg(status)
+                    }
+                },
+                enabled = !busy
+            ) { Text("安装桌面环境") }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        status = "正在启动桌面..."
+                        val result = desktop.start(vm.id)
+                        busy = false
+                        if (result.running) {
+                            running = true
+                            port = result.port
+                            frame = null
+                            status = "桌面已启动，正在连接 127.0.0.1:${result.port}"
+                            logManager?.addLog(LogLevel.INFO, status, "Desktop")
+                            connectionKey++
+                        } else {
+                            running = false
+                            status = result.error ?: "桌面启动失败"
+                            logManager?.addLog(LogLevel.ERROR, status, "Desktop")
+                            showMsg(status)
+                        }
+                    }
+                },
+                enabled = !busy
+            ) { Text("启动桌面") }
+
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        busy = true
+                        client.disconnect()
+                        val ok = desktop.stop(vm.id)
+                        busy = false
+                        if (ok) {
+                            running = false
+                            frame = null
+                            status = "桌面已停止"
+                            logManager?.addLog(LogLevel.INFO, status, "Desktop")
+                        } else {
+                            status = "桌面进程未能正常停止"
+                            logManager?.addLog(LogLevel.ERROR, status, "Desktop")
+                        }
+                        showMsg(status)
+                    }
+                },
+                enabled = !busy
+            ) { Text("停止桌面") }
+        }
+
+        Text(status, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        val image = frame
+        if (image == null) {
+            Box(
+                modifier = Modifier.fillMaxWidth().height(320.dp).background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (running) "等待桌面画面…" else "桌面未连接", color = Color.White)
+            }
+        } else {
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(320.dp)
+                    .background(Color.Black)
+                    .onSizeChanged { viewSize = it }
+                    .pointerInput(frameWidth, frameHeight, viewSize) {
+                        detectTapGestures { offset ->
+                            mapToFrame(offset, viewSize, frameWidth, frameHeight)?.let { point ->
+                                client.pointer(point.first, point.second, 1)
+                                client.pointer(point.first, point.second, 0)
+                            }
+                        }
+                    }
+                    .pointerInput(frameWidth, frameHeight, viewSize) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                mapToFrame(offset, viewSize, frameWidth, frameHeight)?.let { point ->
+                                    lastPointer = point
+                                    client.pointer(point.first, point.second, 1)
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                mapToFrame(change.position, viewSize, frameWidth, frameHeight)?.let { point ->
+                                    lastPointer = point
+                                    client.pointer(point.first, point.second, 1)
+                                }
+                            },
+                            onDragEnd = {
+                                lastPointer?.let { client.pointer(it.first, it.second, 0) }
+                                lastPointer = null
+                            }
+                        )
+                    }
+            ) {
+                val scale = min(
+                    size.width / image.width,
+                    size.height / image.height
+                )
+                val drawWidth = image.width * scale
+                val drawHeight = image.height * scale
+                drawImage(
+                    image = image,
+                    dstOffset = IntOffset(
+                        ((size.width - drawWidth) / 2f).toInt(),
+                        ((size.height - drawHeight) / 2f).toInt()
+                    ),
+                    dstSize = IntSize(drawWidth.toInt(), drawHeight.toInt())
+                )
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = textInput,
+                onValueChange = { textInput = it },
+                label = { Text("键盘输入（ASCII）") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            Button(onClick = {
+                client.sendText(textInput)
+                textInput = ""
+            }) { Text("发送") }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = {
+                client.key(0xFF0D, true)
+                client.key(0xFF0D, false)
+            }) { Text("回车") }
+            OutlinedButton(onClick = {
+                client.key(0xFF1B, true)
+                client.key(0xFF1B, false)
+            }) { Text("Esc") }
+            OutlinedButton(onClick = {
+                client.key(0xFF09, true)
+                client.key(0xFF09, false)
+            }) { Text("Tab") }
+            OutlinedButton(onClick = {
+                scope.launch {
+                    val ok = desktop.launchBrowser(vm.id)
+                    val msg = if (ok) "已在桌面启动浏览器" else "启动浏览器失败：桌面未运行或未安装浏览器"
+                    if (ok) logManager?.addLog(LogLevel.INFO, msg, "Desktop")
+                    else logManager?.addLog(LogLevel.ERROR, msg, "Desktop")
+                    showMsg(msg)
+                }
+            }) { Text("打开浏览器") }
+        }
+
+        Text(
+            "提示：桌面由 Xvfb + x11vnc 提供，AI 可在同一虚拟机执行命令；浏览器需在桌面安装后再打开。",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** 将画布触摸点换算为 VNC 帧缓冲坐标；落在黑边时返回 null。 */
+private fun mapToFrame(
+    offset: Offset,
+    viewSize: IntSize,
+    frameWidth: Int,
+    frameHeight: Int
+): Pair<Int, Int>? {
+    if (viewSize.width <= 0 || viewSize.height <= 0 || frameWidth <= 0 || frameHeight <= 0) return null
+    val scale = min(
+        viewSize.width.toFloat() / frameWidth,
+        viewSize.height.toFloat() / frameHeight
+    )
+    if (scale <= 0f) return null
+    val drawWidth = frameWidth * scale
+    val drawHeight = frameHeight * scale
+    val left = (viewSize.width - drawWidth) / 2f
+    val top = (viewSize.height - drawHeight) / 2f
+    val x = ((offset.x - left) / scale).toInt()
+    val y = ((offset.y - top) / scale).toInt()
+    if (x !in 0 until frameWidth || y !in 0 until frameHeight) return null
+    return x to y
 }
 
 /**

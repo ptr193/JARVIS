@@ -1,6 +1,7 @@
 package com.jarvis.pineapple.vm
 
 import com.jarvis.pineapple.chat.VmCommandBridge
+import com.jarvis.pineapple.chat.VmDesktopActionResult
 import com.jarvis.pineapple.chat.VmRunResult
 import com.jarvis.pineapple.chat.VmSummary
 
@@ -8,7 +9,8 @@ import com.jarvis.pineapple.chat.VmSummary
  * [VmCommandBridge] 的真实实现：把对话指令转发到 [HavenVmManager] 的 PRoot 后端。
  */
 class HavenVmCommandBridge(
-    private val manager: HavenVmManager
+    private val manager: HavenVmManager,
+    private val desktopManager: VmDesktopManager
 ) : VmCommandBridge {
 
     override suspend fun listVms(): List<VmSummary> =
@@ -26,5 +28,37 @@ class HavenVmCommandBridge(
         val result = manager.executeCommandResult(vmId, command)
             ?: return VmRunResult("Error: 虚拟机不存在", -1)
         return VmRunResult(result.output, result.exitCode)
+    }
+
+    override suspend fun openDesktop(vmId: String): VmDesktopActionResult {
+        val status = desktopManager.start(vmId)
+        return if (status.running) {
+            VmDesktopActionResult(
+                true,
+                "已启动虚拟机桌面，VNC 端口 ${status.port}。可在“虚拟机 → 桌面”标签中操作。"
+            )
+        } else {
+            VmDesktopActionResult(false, "桌面启动失败：${status.error ?: "未知原因"}")
+        }
+    }
+
+    override suspend fun openBrowser(vmId: String): VmDesktopActionResult {
+        val status = desktopManager.start(vmId)
+        if (!status.running) {
+            return VmDesktopActionResult(false, "桌面启动失败：${status.error ?: "未知原因"}")
+        }
+        val launched = desktopManager.launchBrowser(vmId)
+        return if (launched) {
+            VmDesktopActionResult(
+                true,
+                "已在虚拟机桌面启动浏览器（VNC 端口 ${status.port}）。"
+            )
+        } else {
+            VmDesktopActionResult(
+                false,
+                "启动浏览器失败：虚拟机内未安装浏览器或桌面未运行。可先执行 " +
+                    "“虚拟机 <名称> 执行 apt-get install -y firefox-esr”（按发行版选择包管理器）。"
+            )
+        }
     }
 }

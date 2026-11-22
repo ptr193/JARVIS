@@ -96,6 +96,12 @@ class ChatEngine(
             return finishDirectReply(content, reply, "翻译请求：${content.take(50)}")
         }
 
+        // ===== 虚拟机桌面/浏览器：命中后直接调用真实桌面管理 =====
+        VmDesktopCommandParser.parse(content)?.let { request ->
+            val reply = executeVmDesktop(request)
+            return finishDirectReply(content, reply, "虚拟机桌面：${content.take(50)}")
+        }
+
         // ===== 虚拟机操控：命中“虚拟机/终端执行”指令时转发到真实 PRoot =====
         VmCommandParser.parse(content)?.let { execution ->
             val reply = executeVmCommand(execution)
@@ -305,40 +311,20 @@ class ChatEngine(
      */
     private suspend fun executeVmCommand(execution: VmExecution): String {
         val bridge = vmCommandBridge ?: return "虚拟机能力不可用，无法执行该指令。"
-        val vms = try {
-            bridge.listVms()
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return "读取虚拟机列表失败：${e.message ?: e.javaClass.simpleName}"
-        }
-        if (vms.isEmpty()) {
-            return "当前没有已创建的虚拟机，请先在虚拟机页面下载发行版并创建虚拟机。"
-        }
-        val vm = resolveVm(vms, execution.vmName)
-            ?: return "未找到名为「${execution.vmName}」的虚拟机。可用：${vms.joinToString { it.name }}"
-
-        if (!vm.running) {
-            val started = try {
-                bridge.start(vm.id)
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                false
-            }
-            if (!started) return "虚拟机「${vm.name}」启动失败，未执行命令。"
-        }
+        val (vm, error) = resolveVmForAction(execution.vmName)
+        if (error != null) return error
+        val target = vm ?: return "未找到可用虚拟机。"
 
         val result = try {
-            bridge.run(vm.id, execution.command)
+            bridge.run(target.id, execution.command)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            return "虚拟机「${vm.name}」执行失败：${e.message ?: e.javaClass.simpleName}"
+            return "虚拟机「${target.name}」执行失败：${e.message ?: e.javaClass.simpleName}"
         }
 
         return buildString {
-            appendLine("虚拟机：${vm.name}")
+            appendLine("虚拟机：${target.name}")
             appendLine("命令：${execution.command}")
             appendLine("退出码：${result.exitCode}")
             if (result.output.isBlank()) {
@@ -348,6 +334,54 @@ class ChatEngine(
                 appendLine(result.output.trimEnd())
             }
         }.trimEnd()
+    }
+
+    /** 打开虚拟机桌面或桌面内浏览器，并把真实结果返回给对话。 */
+    private suspend fun executeVmDesktop(request: VmDesktopRequest): String {
+        val bridge = vmCommandBridge ?: return "虚拟机能力不可用，无法执行该指令。"
+        val (vm, error) = resolveVmForAction(request.vmName)
+        if (error != null) return error
+        val target = vm ?: return "未找到可用虚拟机。"
+        return try {
+            val result = when (request.action) {
+                VmDesktopAction.DESKTOP -> bridge.openDesktop(target.id)
+                VmDesktopAction.BROWSER -> bridge.openBrowser(target.id)
+            }
+            if (result.ok) result.message else "虚拟机「${target.name}」：${result.message}"
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            "虚拟机「${target.name}」桌面操作失败：${e.message ?: e.javaClass.simpleName}"
+        }
+    }
+
+    /**
+     * 按名称解析虚拟机；未运行时先尝试启动。
+     * @return 第一个值为目标虚拟机（找不到时为 null），第二个值为需要直接返回的错误说明。
+     */
+    private suspend fun resolveVmForAction(vmName: String?): Pair<VmSummary?, String?> {
+        val bridge = vmCommandBridge ?: return null to "虚拟机能力不可用，无法执行该指令。"
+        val vms = try {
+            bridge.listVms()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null to "读取虚拟机列表失败：${e.message ?: e.javaClass.simpleName}"
+        }
+        if (vms.isEmpty()) {
+            return null to "当前没有已创建的虚拟机，请先在虚拟机页面下载发行版并创建虚拟机。"
+        }
+        val vm = resolveVm(vms, vmName)
+            ?: return null to "未找到名为「$vmName」的虚拟机。可用：${vms.joinToString { it.name }}"
+        if (vm.running) return vm to null
+        val started = try {
+            bridge.start(vm.id)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+        return if (started) vm to null else vm to "虚拟机「${vm.name}」启动失败。"
     }
 
     private fun buildContextPrompt(): String {

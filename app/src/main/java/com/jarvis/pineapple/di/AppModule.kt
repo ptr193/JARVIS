@@ -67,6 +67,7 @@ import com.jarvis.pineapple.system.SystemSettingsController
 import com.jarvis.pineapple.ui.chat.ChatViewModel
 import com.jarvis.pineapple.vm.HavenVmManager
 import com.jarvis.pineapple.vm.HavenVmCommandBridge
+import com.jarvis.pineapple.vm.VmDesktopManager
 import com.jarvis.pineapple.vm.ProotManager
 import com.jarvis.pineapple.wake.AppIconWakeDetector
 import com.jarvis.pineapple.wake.BluetoothWakeDetector
@@ -190,7 +191,8 @@ val appModule = module {
         }
     }
     single { VmImageImporter(get(), get()) }
-    single<VmCommandBridge> { HavenVmCommandBridge(get()) }
+    single<VmCommandBridge> { HavenVmCommandBridge(get(), get()) }
+    single { VmDesktopManager(get(), get()) }
 
     // Smart home
     single { SmartHomeAdapter() }

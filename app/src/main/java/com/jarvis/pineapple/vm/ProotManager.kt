@@ -48,6 +48,7 @@ class ProotManager internal constructor(
 
     private val sessionLock = Any()
     private val sessions = mutableMapOf<String, Process>()
+    private val backgrounds = mutableMapOf<String, Process>()
 
     init {
         if (!prootDir.exists()) prootDir.mkdirs()
@@ -337,6 +338,72 @@ class ProotManager internal constructor(
     }
 
     private fun sessionKey(config: ProotConfig): String = File(config.rootfsPath).canonicalPath
+
+    /**
+     * 在 PRoot 中启动一个长期驻留的后台进程（如 Xvfb + x11vnc 桌面会话、GUI 浏览器）。
+     * 与 [startSession] 分开登记，避免覆盖同 rootfs 的普通会话。
+     */
+    suspend fun launchBackground(config: ProotConfig, key: String, command: String): Boolean =
+        withContext(Dispatchers.IO) {
+            if (!isProotInstalled()) return@withContext false
+            synchronized(sessionLock) {
+                val existing = backgrounds[key]
+                if (existing != null && isProcessAlive(existing)) return@synchronized true
+                backgrounds.remove(key)
+                try {
+                    val process = commandProcess(config, command).start()
+                    Thread {
+                        process.inputStream.use { input ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            while (input.read(buffer) != -1) {
+                                // 后台输出持续排空，避免子进程写满管道阻塞。
+                            }
+                        }
+                    }.apply {
+                        name = "proot-bg-$key"
+                        isDaemon = true
+                        start()
+                    }
+                    if (isProcessAlive(process)) {
+                        backgrounds[key] = process
+                        true
+                    } else {
+                        false
+                    }
+                } catch (e: Exception) {
+                    false
+                }
+            }
+        }
+
+    /** 停止后台进程并确认退出；没有存活进程时目标状态已经达成。 */
+    suspend fun stopBackground(key: String): Boolean = withContext(Dispatchers.IO) {
+        val process = synchronized(sessionLock) {
+            val current = backgrounds[key]
+            if (current != null && !isProcessAlive(current)) {
+                backgrounds.remove(key)
+                null
+            } else {
+                current
+            }
+        } ?: return@withContext true
+
+        process.destroy()
+        val deadline = System.nanoTime() + 3_000_000_000L
+        while (isProcessAlive(process) && System.nanoTime() < deadline) {
+            Thread.sleep(25)
+        }
+        val stopped = !isProcessAlive(process)
+        if (stopped) {
+            synchronized(sessionLock) { backgrounds.remove(key) }
+        }
+        stopped
+    }
+
+    /** 后台进程是否仍在运行。 */
+    fun isBackgroundRunning(key: String): Boolean = synchronized(sessionLock) {
+        backgrounds[key]?.let { isProcessAlive(it) } == true
+    }
 
     private fun isProcessAlive(process: Process): Boolean {
         return try {
