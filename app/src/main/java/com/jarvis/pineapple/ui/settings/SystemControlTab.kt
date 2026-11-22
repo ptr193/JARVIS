@@ -27,6 +27,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Build
+import com.jarvis.pineapple.system.AnswerReadiness
 import com.jarvis.pineapple.system.PermissionManager
 import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 import com.jarvis.pineapple.system.CalendarController
@@ -120,6 +122,41 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
         },
         onDenied = { scheduleInfo = it; showMsg(it) }
     )
+    val requestAnswer = rememberOnDemandPermission(
+        permissions = PermissionManager.PHONE_PERMISSIONS,
+        onGranted = {
+            val ok = phone.answerCall()
+            phoneInfo = if (ok) "已下发接听来电指令" else "当前无来电或系统拒绝接听"
+            showMsg(phoneInfo)
+        },
+        onDenied = { phoneInfo = it; showMsg(it) }
+    )
+
+    fun answerCall() {
+        val readiness = PhoneController.answerReadiness(
+            Build.VERSION.SDK_INT, phone.hasAnswerPermission(), phone.isDefaultDialer()
+        )
+        when (readiness) {
+            AnswerReadiness.UNSUPPORTED_SDK -> {
+                phoneInfo = "接听来电需要 Android 8.0（API 26）及以上"
+                showMsg(phoneInfo)
+            }
+            AnswerReadiness.PERMISSION_REQUIRED -> {
+                phoneInfo = "缺少 ANSWER_PHONE_CALLS 权限，正在请求…"
+                showMsg(phoneInfo)
+                requestAnswer()
+            }
+            AnswerReadiness.NOT_DEFAULT_DIALER -> {
+                phoneInfo = "请先在系统设置中将 JARVIS 设为默认电话应用，否则无法接听来电"
+                showMsg(phoneInfo)
+            }
+            AnswerReadiness.READY -> {
+                val ok = phone.answerCall()
+                phoneInfo = if (ok) "已下发接听来电指令" else "当前无来电或系统拒绝接听"
+                showMsg(phoneInfo)
+            }
+        }
+    }
 
     Text("系统操控", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
@@ -140,6 +177,8 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
             OutlinedButton(onClick = { requestSms() }) { Text("发送短信") }
         }
         Row {
+            Button(onClick = { answerCall() }) { Text("接听来电") }
+            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
                 val logs = phone.readCallLogs()
                 phoneInfo = if (logs.isEmpty()) "无通话记录或缺少权限" else "最近通话：\n" + logs.take(5).joinToString("\n")
