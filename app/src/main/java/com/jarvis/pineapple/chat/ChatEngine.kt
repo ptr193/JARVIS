@@ -40,7 +40,8 @@ class ChatEngine(
     private val conversationEnhancer: ConversationEnhancer,
     private val infoProcessor: InfoProcessor,
     private val commandExecutor: SimpleCommandExecutor? = null,
-    private val vmCommandBridge: VmCommandBridge? = null
+    private val vmCommandBridge: VmCommandBridge? = null,
+    private val rootCommandBridge: RootCommandBridge? = null
 ) {
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
@@ -56,6 +57,9 @@ class ChatEngine(
     val persistenceError: StateFlow<String?> = conversationRepository.lastError
 
     private var conversation = Conversation()
+
+    /** 待用户二次确认的危险特权操作；确认前绝不执行。 */
+    private var pendingDangerousAction: (suspend () -> String)? = null
 
     init {
         val recentConversation = conversationRepository.getCurrentConversation()
@@ -88,6 +92,35 @@ class ChatEngine(
         _messages.value = conversation.messages.toList()
 
         _isGenerating.value = true
+
+        // ===== 危险特权操作二次确认：未确认前不会执行任何命令 =====
+        val pending = pendingDangerousAction
+        if (pending != null) {
+            when {
+                isConfirmationText(content) -> {
+                    pendingDangerousAction = null
+                    val reply = try {
+                        pending()
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        "执行失败：${e.message ?: e.javaClass.simpleName}"
+                    }
+                    return finishDirectReply(content, reply, "危险操作确认执行：${content.take(50)}")
+                }
+                isCancelText(content) -> {
+                    pendingDangerousAction = null
+                    return finishDirectReply(content, "已取消该危险操作，未执行任何命令。", "危险操作取消")
+                }
+                else -> pendingDangerousAction = null
+            }
+        }
+
+        // ===== 宿主机 root 指令：真实 su 执行，未授权/未 root 如实告知 =====
+        RootCommandParser.parse(content)?.let { command ->
+            val reply = executeRootCommand(command)
+            return finishDirectReply(content, reply, "宿主机 root 指令：${content.take(50)}")
+        }
 
         // ===== 翻译指令（#12/#13）：直接调用翻译引擎，无需经过大模型 =====
         parseTranslationRequest(content)?.let { (text, target) ->
@@ -315,8 +348,23 @@ class ChatEngine(
         if (error != null) return error
         val target = vm ?: return "未找到可用虚拟机。"
 
+        if (isDangerousCommand(execution.command)) {
+            pendingDangerousAction = { runVmCommand(target, execution.command) }
+            return buildString {
+                appendLine("检测到危险命令，需要二次确认：")
+                appendLine("虚拟机：${target.name}")
+                appendLine("命令：${execution.command}")
+                appendLine("该命令可能删除数据或破坏系统。回复“确认执行”继续，回复“取消”放弃。")
+            }.trimEnd()
+        }
+        return runVmCommand(target, execution.command)
+    }
+
+    /** 实际执行虚拟机命令并如实回传输出与退出码。 */
+    private suspend fun runVmCommand(target: VmSummary, command: String): String {
+        val bridge = vmCommandBridge ?: return "虚拟机能力不可用，无法执行该指令。"
         val result = try {
-            bridge.run(target.id, execution.command)
+            bridge.run(target.id, command)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -325,7 +373,55 @@ class ChatEngine(
 
         return buildString {
             appendLine("虚拟机：${target.name}")
-            appendLine("命令：${execution.command}")
+            appendLine("命令：$command")
+            appendLine("退出码：${result.exitCode}")
+            if (result.output.isBlank()) {
+                appendLine("输出：（无）")
+            } else {
+                appendLine("输出：")
+                appendLine(result.output.trimEnd())
+            }
+        }.trimEnd()
+    }
+
+    /** 宿主机 root 指令入口：授权检查 + 危险命令二次确认。 */
+    private suspend fun executeRootCommand(command: String): String {
+        val bridge = rootCommandBridge ?: return "宿主机 root 能力不可用。"
+        val status = try {
+            bridge.status()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "root 状态探测失败：${e.message ?: e.javaClass.simpleName}"
+        }
+        if (!status.allowed) {
+            return "已关闭“允许 AI 使用宿主机 root”。请先在系统控制中开启授权，再执行该命令。"
+        }
+        if (!status.granted) {
+            return "设备当前无法提供 root 权限：${status.detail}"
+        }
+        if (isDangerousCommand(command)) {
+            pendingDangerousAction = { runRootCommand(bridge, command) }
+            return buildString {
+                appendLine("检测到危险 root 命令，需要二次确认：")
+                appendLine("命令：$command")
+                appendLine("该命令将以宿主机 root 身份执行，可能删除数据或破坏系统。")
+                appendLine("回复“确认执行”继续，回复“取消”放弃。")
+            }.trimEnd()
+        }
+        return runRootCommand(bridge, command)
+    }
+
+    private suspend fun runRootCommand(bridge: RootCommandBridge, command: String): String {
+        val result = try {
+            bridge.run(command)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "宿主机 root 命令执行失败：${e.message ?: e.javaClass.simpleName}"
+        }
+        return buildString {
+            appendLine("宿主机 root 命令：$command")
             appendLine("退出码：${result.exitCode}")
             if (result.output.isBlank()) {
                 appendLine("输出：（无）")
@@ -480,6 +576,38 @@ class ChatEngine(
     }
 
     companion object {
+
+        /** 危险命令特征：命中后必须经用户二次确认才允许执行。 */
+        private val DANGEROUS_PATTERNS = listOf(
+            Regex("\\brm\\s+[^\\n]*-[a-zA-Z]*[rf][a-zA-Z]*\\s+/(?:\\s|$)"),
+            Regex("\\brm\\s+[^\\n]*-(?:rf|fr|R|fR|rF)\\b"),
+            Regex("\\bmkfs(?:\\.[a-z0-9]+)?\\b"),
+            Regex("\\bdd\\s+[^\\n]*\\bof=/dev/"),
+            Regex("\\b(?:shutdown|reboot|halt|poweroff)\\b"),
+            Regex("\\biptables\\s+[^\\n]*(?:-F|--flush)"),
+            Regex("\\b(?:userdel|groupdel)\\b"),
+            Regex("\\bchmod\\s+[^\\n]*\\b777\\s+/(?:\\s|$)"),
+            Regex(":\\(\\)\\s*\\{\\s*:\\|:&\\s*\\}\\s*;"),
+            Regex("\\b(?:mv|cp|rm)\\b[^\\n]*\\s/(?:system|vendor|boot|data)(?:\\s|/|$)"),
+            Regex("\\b(?:wipe|format)\\b[^\\n]*\\b(?:data|system|boot)\\b")
+        )
+
+        /** 判断命令是否属于危险操作（纯函数，可单测）。 */
+        internal fun isDangerousCommand(command: String): Boolean {
+            val normalized = command.trim()
+            if (normalized.isEmpty()) return false
+            return DANGEROUS_PATTERNS.any { it.containsMatchIn(normalized) }
+        }
+
+        internal fun isConfirmationText(text: String): Boolean {
+            val normalized = text.trim().lowercase()
+            return normalized in setOf("确认", "确认执行", "确定", "确定执行", "继续", "继续执行", "是", "执行", "yes", "y", "confirm")
+        }
+
+        internal fun isCancelText(text: String): Boolean {
+            val normalized = text.trim().lowercase()
+            return normalized in setOf("取消", "取消执行", "不要", "不用", "否", "放弃", "no", "n", "cancel")
+        }
         /**
          * 判断是否为需要联网的检索请求，并抽取查询词（纯函数，可单测）。
          * 支持“搜索/查一下/帮我查/上网查/查询…”及英文 search/look up，

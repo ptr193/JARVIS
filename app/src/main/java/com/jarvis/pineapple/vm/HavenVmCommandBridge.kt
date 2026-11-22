@@ -10,7 +10,8 @@ import com.jarvis.pineapple.chat.VmSummary
  */
 class HavenVmCommandBridge(
     private val manager: HavenVmManager,
-    private val desktopManager: VmDesktopManager
+    private val desktopManager: VmDesktopManager,
+    private val auditLog: VmAuditLog
 ) : VmCommandBridge {
 
     override suspend fun listVms(): List<VmSummary> =
@@ -27,6 +28,13 @@ class HavenVmCommandBridge(
     override suspend fun run(vmId: String, command: String): VmRunResult {
         val result = manager.executeCommandResult(vmId, command)
             ?: return VmRunResult("Error: 虚拟机不存在", -1)
+        // 特权审计：身份由全局 root 开关决定，关闭后以普通用户身份执行。
+        auditLog.record(
+            vmName = manager.findVm(vmId)?.name ?: vmId,
+            identity = if (manager.isRootEnabled()) "root" else "user",
+            command = command,
+            exitCode = result.exitCode
+        )
         return VmRunResult(result.output, result.exitCode)
     }
 

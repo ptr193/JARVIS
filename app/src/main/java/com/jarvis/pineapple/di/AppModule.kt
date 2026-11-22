@@ -9,6 +9,7 @@ import com.jarvis.pineapple.autonomous.TaskScheduler
 import com.jarvis.pineapple.chat.ChatEngine
 import com.jarvis.pineapple.chat.ConversationEnhancer
 import com.jarvis.pineapple.chat.ConversationRepository
+import com.jarvis.pineapple.chat.RootCommandBridge
 import com.jarvis.pineapple.chat.SimpleCommandExecutor
 import com.jarvis.pineapple.chat.TranslationEngine
 import com.jarvis.pineapple.chat.VmCommandBridge
@@ -67,6 +68,9 @@ import com.jarvis.pineapple.system.SystemSettingsController
 import com.jarvis.pineapple.ui.chat.ChatViewModel
 import com.jarvis.pineapple.vm.HavenVmManager
 import com.jarvis.pineapple.vm.HavenVmCommandBridge
+import com.jarvis.pineapple.vm.VmAuditLog
+import com.jarvis.pineapple.system.HostRootBridge
+import com.jarvis.pineapple.system.HostRootManager
 import com.jarvis.pineapple.vm.VmDesktopManager
 import com.jarvis.pineapple.vm.ProotManager
 import com.jarvis.pineapple.wake.AppIconWakeDetector
@@ -178,7 +182,7 @@ val appModule = module {
     single { PermissionManager }
     single { MediaController(get()) }
     single { SimpleCommandExecutor(get(), get(), get(), get(), get(), get()) }
-    single { ChatEngine(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { ChatEngine(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 
     // Virtual machine
     single { ProotManager(get()) }
@@ -191,8 +195,11 @@ val appModule = module {
         }
     }
     single { VmImageImporter(get(), get()) }
-    single<VmCommandBridge> { HavenVmCommandBridge(get(), get()) }
+    single { VmAuditLog(get()) }
+    single<VmCommandBridge> { HavenVmCommandBridge(get(), get(), get()) }
     single { VmDesktopManager(get(), get()) }
+    single { HostRootManager(get()) }
+    single<RootCommandBridge> { HostRootBridge(get()) }
 
     // Smart home
     single { SmartHomeAdapter() }

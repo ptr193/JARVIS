@@ -15,6 +15,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +38,7 @@ import com.jarvis.pineapple.system.CommunicationManager
 import com.jarvis.pineapple.system.CrossAppOperator
 import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
+import com.jarvis.pineapple.system.HostRootManager
 import com.jarvis.pineapple.system.UsbDeviceManager
 import com.jarvis.pineapple.system.SecondaryDisplayManager
 import com.jarvis.pineapple.system.RemoteAssistanceManager
@@ -76,6 +79,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val displays = remember { GlobalContext.get().get<SecondaryDisplayManager>() }
     val remote = remember { GlobalContext.get().get<RemoteAssistanceManager>() }
     val holographic = remember { GlobalContext.get().get<HolographicInterface>() }
+    val hostRoot = remember { GlobalContext.get().get<HostRootManager>() }
     val context = LocalContext.current
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
@@ -91,6 +95,8 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     var diagInfo by remember { mutableStateOf("尚未诊断") }
     var scheduleInfo by remember { mutableStateOf("暂无日程") }
     var shareInfo by remember { mutableStateOf("尚未捕获") }
+    var rootStatus by remember { mutableStateOf("尚未检测") }
+    var rootAllowed by remember { mutableStateOf(hostRoot.isAllowed()) }
 
     val requestPhone = rememberOnDemandPermission(
         permissions = PermissionManager.PHONE_PERMISSIONS,
@@ -178,6 +184,36 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
 
     Text("系统操控", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
+
+    SectionCard("宿主机 Root 权限（高级用户）") {
+        Text(
+            "设备已 root 时，JARVIS 可在授权后通过 su 以 root 身份执行命令；未 root 或拒绝授权会如实提示。",
+            fontSize = 12.sp
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("允许 AI 使用宿主机 root", modifier = Modifier.weight(1f), fontSize = 13.sp)
+            Switch(
+                checked = rootAllowed,
+                onCheckedChange = { checked ->
+                    rootAllowed = checked
+                    hostRoot.setAllowed(checked)
+                }
+            )
+        }
+        Text("状态：$rootStatus", fontSize = 12.sp)
+        OutlinedButton(onClick = {
+            scope.launch {
+                rootStatus = "正在执行 su -c id 探测..."
+                val status = hostRoot.check()
+                rootStatus = status.detail
+            }
+        }) { Text("检测 / 申请 root") }
+        Text(
+            "对话中可发送：root 执行 id；危险命令需二次确认，执行记录写入 root_audit.log。",
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 
     SectionCard("电话与短信 (#49-#52)") {
         OutlinedTextField(
