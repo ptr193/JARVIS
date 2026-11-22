@@ -93,7 +93,7 @@ object DownloadLogger {
             append("包名: ${context.packageName}\n")
             append("设备: ${Build.MANUFACTURER} ${Build.MODEL}\n")
             append("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})\n")
-            append("ABI: ${Build.SUPPORTED_ABIS.joinToString()}\n")
+            append("ABI: ${(Build.SUPPORTED_ABIS ?: emptyArray()).joinToString()}\n")
             append("ROM: ${Build.DISPLAY}\n")
             append("CPU_ABI: ${Build.CPU_ABI}\n")
         }
@@ -203,7 +203,7 @@ object DownloadLogger {
             pw.println("线程: ${thread.name} (id=${thread.id})")
             pw.println("设备: ${Build.MANUFACTURER} ${Build.MODEL}")
             pw.println("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-            pw.println("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
+            pw.println("ABI: ${(Build.SUPPORTED_ABIS ?: emptyArray()).joinToString()}")
             pw.println("ROM: ${Build.DISPLAY}")
             pw.println("----- 堆栈 -----")
             throwable.printStackTrace(pw)

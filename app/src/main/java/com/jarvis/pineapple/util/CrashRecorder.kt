@@ -28,32 +28,48 @@ object CrashRecorder {
     private const val DIR_NAME = "crash"
     private const val MAX_FILES = 10
 
-    /** 记录崩溃堆栈到 filesDir/crash/crash_<时间戳>.txt。任何失败都只记日志，不再抛异常。 */
-    fun record(context: Context, thread: Thread, throwable: Throwable) {
-        try {
-            val dir = File(context.filesDir, DIR_NAME)
-            if (!dir.exists()) dir.mkdirs()
-            prune(dir)
-
-            val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
-            val file = File(dir, "crash_$stamp.txt")
-
-            val sw = StringWriter()
-            PrintWriter(sw).use { pw ->
-                pw.println("=== JARVIS 崩溃报告 ===")
-                pw.println("时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
-                pw.println("线程: ${thread.name} (id=${thread.id})")
-                pw.println("设备: ${Build.MANUFACTURER} ${Build.MODEL}")
-                pw.println("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-                pw.println("ABI: ${Build.SUPPORTED_ABIS.joinToString()}")
-                pw.println("ROM: ${Build.DISPLAY}")
-                pw.println("----- 堆栈 -----")
-                throwable.printStackTrace(pw)
-            }
-            file.writeText(sw.toString())
+    /**
+     * 记录崩溃堆栈到 filesDir/crash/crash_<时间戳>.txt。
+     *
+     * 返回 true 仅当文件已真实写入并通过长度校验；任何失败都只记日志，不再向外抛异常
+     * （避免在未捕获异常处理器中二次抛出，掩盖原始崩溃）。
+     * 绝不允许“调用没抛异常”就当作记录成功——必须校验落盘结果。
+     */
+    fun record(context: Context, thread: Thread, throwable: Throwable): Boolean {
+        val dir = File(context.filesDir, DIR_NAME)
+        return try {
+            val ok = recordToDir(dir, thread, throwable)
+            if (!ok) Log.e(TAG, "崩溃记录写入失败或校验未通过，未生成崩溃文件")
+            ok
         } catch (e: Throwable) {
             Log.e(TAG, "崩溃记录失败", e)
+            false
         }
+    }
+
+    /** 纯文件逻辑：在指定目录写入并校验一条崩溃记录，便于脱离 Context 单测。 */
+    internal fun recordToDir(dir: File, thread: Thread, throwable: Throwable): Boolean {
+        if ((!dir.exists() && !dir.mkdirs()) || !dir.isDirectory) return false
+        prune(dir)
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val file = File(dir, "crash_$stamp.txt")
+        return writeVerifiedText(file, buildCrashText(thread, throwable))
+    }
+
+    private fun buildCrashText(thread: Thread, throwable: Throwable): String {
+        val sw = StringWriter()
+        PrintWriter(sw).use { pw ->
+            pw.println("=== JARVIS 崩溃报告 ===")
+            pw.println("时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())}")
+            pw.println("线程: ${thread.name} (id=${thread.id})")
+            pw.println("设备: ${Build.MANUFACTURER} ${Build.MODEL}")
+            pw.println("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            pw.println("ABI: ${(Build.SUPPORTED_ABIS ?: emptyArray()).joinToString()}")
+            pw.println("ROM: ${Build.DISPLAY}")
+            pw.println("----- 堆栈 -----")
+            throwable.printStackTrace(pw)
+        }
+        return sw.toString()
     }
 
     /** 列出已记录的崩溃文件（最新在前）；目录不可读时明确失败。 */
