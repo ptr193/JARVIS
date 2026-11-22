@@ -52,6 +52,7 @@ import com.jarvis.pineapple.system.CrossAppOperator
 import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.DeviceMonitor
 import com.jarvis.pineapple.system.UsbDeviceManager
+import com.jarvis.pineapple.system.SecondaryDisplayManager
 import com.jarvis.pineapple.system.RemoteAssistanceManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.NavigationController
@@ -154,6 +155,7 @@ val appModule = module {
     single { ScreenshotManager(get()) }
     single { DeviceControlManager(get()) }
     single { UsbDeviceManager(get()) }
+    single { SecondaryDisplayManager(get()) }
     single { RemoteAssistanceManager(get(), get()) }
     single { HardwareDiagnostics(get()) }
 

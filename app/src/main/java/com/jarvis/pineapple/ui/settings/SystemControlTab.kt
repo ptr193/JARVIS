@@ -37,6 +37,7 @@ import com.jarvis.pineapple.system.CrossAppOperator
 import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.UsbDeviceManager
+import com.jarvis.pineapple.system.SecondaryDisplayManager
 import com.jarvis.pineapple.system.RemoteAssistanceManager
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
@@ -71,6 +72,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
     val device = remember { GlobalContext.get().get<DeviceControlManager>() }
     val usb = remember { GlobalContext.get().get<UsbDeviceManager>() }
+    val displays = remember { GlobalContext.get().get<SecondaryDisplayManager>() }
     val remote = remember { GlobalContext.get().get<RemoteAssistanceManager>() }
     val context = LocalContext.current
 
@@ -370,6 +372,21 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
             }) { Text("探测 USB 设备") }
         }
         Text(usbInfo, fontSize = 12.sp)
+    }
+
+    SectionCard("外接显示 (#72)") {
+        var displayInfo by remember { mutableStateOf("尚未探测") }
+        Row {
+            Button(onClick = {
+                val result = displays.probeDisplays()
+                displayInfo = SecondaryDisplayManager.summarize(result)
+                showMsg(
+                    if (result is SecondaryDisplayManager.ProbeResult.Ok) "外接显示探测完成"
+                    else displayInfo
+                )
+            }) { Text("探测外接显示") }
+        }
+        Text(displayInfo, fontSize = 12.sp)
     }
 
     fun captureAndShare() {
