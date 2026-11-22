@@ -34,6 +34,7 @@ import com.jarvis.pineapple.ui.permission.rememberOnDemandPermission
 import com.jarvis.pineapple.system.CalendarController
 import com.jarvis.pineapple.system.CommunicationManager
 import com.jarvis.pineapple.system.CrossAppOperator
+import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
@@ -60,6 +61,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val crossApp = remember { GlobalContext.get().get<CrossAppOperator>() }
     val communication = remember { GlobalContext.get().get<CommunicationManager>() }
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
+    val device = remember { GlobalContext.get().get<DeviceControlManager>() }
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
     val reminders by communication.reminders.collectAsState()
@@ -313,6 +315,32 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
                     showMsg("完整诊断完成")
                 }
             }) { Text("完整诊断") }
+        }
+    }
+
+    SectionCard("设备控制 (#78 振动 / #79 手电筒)") {
+        var torchOn by remember { mutableStateOf(false) }
+        Text(
+            "振动器: ${if (device.hasVibrator()) "可用" else "不可用"}　" +
+                "闪光灯: ${if (device.hasTorch()) "可用" else "不可用"}",
+            fontSize = 12.sp
+        )
+        Row {
+            Button(onClick = {
+                val ok = device.vibrate(200)
+                showMsg(if (ok) "已触发振动" else "振动失败：设备不支持或被系统拦截")
+            }) { Text("振动 200ms") }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = {
+                val next = !torchOn
+                val ok = device.setTorchEnabled(next)
+                if (ok) {
+                    torchOn = next
+                    showMsg(if (next) "手电筒已打开" else "手电筒已关闭")
+                } else {
+                    showMsg("手电筒操作失败：无闪光灯、相机被占用或系统拒绝")
+                }
+            }) { Text(if (torchOn) "关闭手电筒" else "打开手电筒") }
         }
     }
 
