@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.load
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.jarvis.pineapple.assistant.AssistStructureReader
 import com.jarvis.pineapple.assistant.OverlayCameraController
 import com.jarvis.pineapple.assistant.OverlayReplyCoordinator
@@ -9,6 +10,7 @@ import com.jarvis.pineapple.chat.AssistantCommandParser
 import com.jarvis.pineapple.chat.ChatMessage
 import com.jarvis.pineapple.chat.ConversationRepository
 import com.jarvis.pineapple.chat.Role
+import com.jarvis.pineapple.db.JarvisDatabase
 import com.jarvis.pineapple.perception.CameraCaptureSession
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -120,17 +122,30 @@ class ProgressiveLoadTest(private val round: Int) {
         assertEquals(CameraCaptureSession.NO_IMAGE, OverlayCameraController.noImageMessage())
 
         val memoryDir = tmp.newFolder("memory-$round")
-        val memory = MemorySystem(File(memoryDir, "memories.json"), File(memoryDir, "archive"))
-        repeat(profile.memories) { idx ->
-            memory.recordConversation("负荷记忆$round-$idx 蓝牙 音量")
-        }
-        if (profile.memories > 0) {
-            val hits = memory.search("蓝牙")
-            assertTrue("第 $round 轮记忆检索应命中", hits.isNotEmpty())
-            assertTrue(memory.buildMemoryContext("蓝牙音量").contains("历史记忆参考"))
-        }
-        if (profile.memories > 1000) {
-            assertTrue("归档后记忆应不超过上限", memory.getStats().totalCount <= 1000)
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        JarvisDatabase.Schema.create(driver)
+        val memory = MemorySystem(
+            File(memoryDir, "memories.json"),
+            File(memoryDir, "archive"),
+            JarvisDatabase(driver)
+        )
+        try {
+            repeat(profile.memories) { idx ->
+                assertTrue(
+                    "第 $round 轮第 $idx 条记忆必须真实保存",
+                    memory.recordConversation("负荷记忆$round-$idx 蓝牙 音量")
+                )
+            }
+            if (profile.memories > 0) {
+                val hits = memory.search("蓝牙")
+                assertTrue("第 $round 轮记忆检索应命中", hits.isNotEmpty())
+                assertTrue(memory.buildMemoryContext("蓝牙音量").contains("历史记忆参考"))
+            }
+            if (profile.memories > 1000) {
+                assertTrue("归档后记忆应不超过上限", memory.getStats().totalCount <= 1000)
+            }
+        } finally {
+            driver.close()
         }
 
         val convDir = tmp.newFolder("full-conv-$round")

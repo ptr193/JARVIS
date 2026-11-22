@@ -1,6 +1,8 @@
 package com.jarvis.pineapple.chat
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.jarvis.pineapple.autonomous.MemorySystem
+import com.jarvis.pineapple.db.JarvisDatabase
 import com.jarvis.pineapple.model.AiModel
 import com.jarvis.pineapple.model.ModelCapabilityScheduler
 import com.jarvis.pineapple.model.ModelInfo
@@ -22,6 +24,7 @@ import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -33,6 +36,12 @@ class ChatEngineBehaviorTest {
     val tmp = TemporaryFolder()
 
     private var fixtureCounter = 0
+    private val memoryDrivers = mutableListOf<JdbcSqliteDriver>()
+
+    @After
+    fun closeMemoryDrivers() {
+        memoryDrivers.forEach { it.close() }
+    }
 
     @Test
     fun createFailureReturnsChineseErrorWithoutExecutingCommandOrModel() {
@@ -200,6 +209,7 @@ class ChatEngineBehaviorTest {
         assertTrue(failure.engine.newConversation())
         failure.send("你好")
         val failureReply = failure.engine.messages.value.last().content
+        assertTrue(failureReply.contains("部分"))
         assertTrue(failureReply.contains("模型请求失败"))
         assertTrue(failureReply.contains("boom"))
         assertFalse(failure.engine.isGenerating.value)
@@ -260,13 +270,50 @@ class ChatEngineBehaviorTest {
         assertTrue(fixture.engine.persistenceError.value?.contains("记忆保存失败") == true)
     }
 
+    @Test
+    fun sensitiveConversationIsRejectedByLongTermMemory() {
+        val fixture = Fixture()
+        assertTrue(fixture.engine.newConversation())
+        val conversationId = requireNotNull(fixture.repo.currentConversationId.value)
+
+        val reply = fixture.send("我的密码是：CorrectHorseBatteryStaple")
+
+        assertTrue(reply.contains("长期记忆保存失败"))
+        assertTrue(fixture.memory.getConversationTurns(conversationId).isEmpty())
+        assertTrue(fixture.memory.memories.value.isEmpty())
+        assertTrue(fixture.memory.lastError.value?.contains("敏感信息") == true)
+    }
+
+    @Test
+    fun conversationMemoryStoresCompleteRawTurns() {
+        val userText = "用户首行\n" + "用户原文".repeat(1_500)
+        val assistantText = "助手首行\n" + "助手原文".repeat(1_500)
+        val fixture = Fixture(
+            FakeModel(usable = true, streamFactory = { flowOf(assistantText) })
+        )
+        assertTrue(fixture.engine.newConversation())
+        val conversationId = requireNotNull(fixture.repo.currentConversationId.value)
+
+        assertEquals(assistantText, fixture.send(userText))
+
+        val turns = fixture.memory.getConversationTurns(conversationId)
+        assertEquals(2, turns.size)
+        assertEquals(userText, turns.single { it.role == "USER" }.content)
+        assertEquals(assistantText, turns.single { it.role == "ASSISTANT" }.content)
+        assertTrue(turns.all { it.conversationId == conversationId })
+    }
+
     private inner class Fixture(
         private val model: FakeModel = FakeModel(usable = false)
     ) {
         val conversationDir: File = tmp.newFolder("chat-${fixtureCounter++}")
         val memoryDir: File = File(conversationDir.parentFile, "${conversationDir.name}-memory").apply { mkdirs() }
         val repo = ConversationRepository(conversationsDirOverride = conversationDir)
-        val memory = MemorySystem(File(memoryDir, "memories.json"), File(memoryDir, "archive"))
+        val memory = MemorySystem(
+            File(memoryDir, "memories.json"),
+            File(memoryDir, "archive"),
+            newMemoryDatabase()
+        )
         val vm = FakeVmBridge()
         val root = FakeRootBridge()
         private val scheduler = ModelScheduler(model)
@@ -341,6 +388,13 @@ class ChatEngineBehaviorTest {
             commands += command
             return RootRunResult(output = "root-output", exitCode = 0)
         }
+    }
+
+    private fun newMemoryDatabase(): JarvisDatabase {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        memoryDrivers += driver
+        JarvisDatabase.Schema.create(driver)
+        return JarvisDatabase(driver)
     }
 
     private fun blockDirectory(directory: File) {

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -913,7 +914,14 @@ private fun LogTab(
     memorySystem: com.jarvis.pineapple.autonomous.MemorySystem = org.koin.androidx.compose.get()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val memoryError by memorySystem.lastError.collectAsState()
+    val memories by memorySystem.memories.collectAsState()
+    var topic by remember { mutableStateOf("") }
+    var pendingTopic by remember { mutableStateOf<String?>(null) }
+    var pendingClear by remember { mutableStateOf(false) }
+    var pendingForget by remember { mutableStateOf<com.jarvis.pineapple.autonomous.MemoryEntry?>(null) }
+    var viewingTurns by remember { mutableStateOf<List<com.jarvis.pineapple.autonomous.MemoryTurn>?>(null) }
     Text("日志与记忆", style = MaterialTheme.typography.titleMedium)
     Spacer(Modifier.height(8.dp))
 
@@ -983,10 +991,7 @@ private fun LogTab(
             }
         }) { Text("导出记忆 (JSON)") }
         Spacer(Modifier.width(8.dp))
-        Button(onClick = {
-            val cleared = memorySystem.clearAll()
-            showMsg(if (cleared) "所有记忆已清空" else memorySystem.lastError.value ?: "记忆清空失败")
-        }) { Text("清空所有记忆") }
+        Button(onClick = { pendingClear = true }) { Text("清空所有记忆") }
     }
 
     Spacer(Modifier.height(8.dp))
@@ -1006,6 +1011,130 @@ private fun LogTab(
     }
     Button(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain")) }) {
         Text("导入记忆 (JSON)")
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Text("记忆查看与永久删除", style = MaterialTheme.typography.bodyMedium)
+    Spacer(Modifier.height(4.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = topic,
+            onValueChange = { topic = it },
+            label = { Text("主题或对话 ID") },
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(
+            enabled = topic.isNotBlank(),
+            onClick = { pendingTopic = topic.trim() }
+        ) { Text("删除匹配项") }
+    }
+    Spacer(Modifier.height(8.dp))
+    if (memories.isEmpty()) {
+        Text("暂无结构化记忆", style = MaterialTheme.typography.bodySmall)
+    } else {
+        memories.take(30).forEach { entry ->
+            Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text("${entry.type.name} · ${entry.timestamp}", style = MaterialTheme.typography.labelSmall)
+                    Text(entry.content, maxLines = 4, style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        if (entry.type == com.jarvis.pineapple.autonomous.MemoryType.CONVERSATION_RECORD) {
+                            OutlinedButton(onClick = {
+                                viewingTurns = memorySystem.getConversationTurns().filter { it.memoryId == entry.id }
+                            }) { Text("查看完整原文") }
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        OutlinedButton(onClick = { pendingForget = entry }) { Text("永久删除") }
+                    }
+                }
+            }
+        }
+        if (memories.size > 30) {
+            Text("仅显示最近 30 条；可使用主题或对话 ID 精确删除其它记忆。", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+
+    pendingForget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingForget = null },
+            title = { Text("永久删除这条记忆？") },
+            text = { Text("将同时删除关联原文、归档和备份，删除后不可恢复。") },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) { memorySystem.forget(target.id) }
+                        pendingForget = null
+                        showMsg(if (ok) "该记忆及关联原文已永久删除" else memorySystem.lastError.value ?: "记忆删除失败")
+                    }
+                }) { Text("确认永久删除") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingForget = null }) { Text("取消") }
+            }
+        )
+    }
+    pendingTopic?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingTopic = null },
+            title = { Text("永久删除匹配记忆？") },
+            text = { Text("主题/对话 ID：$target\n关联原文、归档和备份会一并删除，且不可恢复。") },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) { memorySystem.forgetByTopic(target) }
+                        pendingTopic = null
+                        if (ok) topic = ""
+                        showMsg(if (ok) "匹配记忆及关联原文已永久删除" else memorySystem.lastError.value ?: "按主题删除失败")
+                    }
+                }) { Text("确认永久删除") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingTopic = null }) { Text("取消") }
+            }
+        )
+    }
+    if (pendingClear) {
+        AlertDialog(
+            onDismissRequest = { pendingClear = false },
+            title = { Text("永久清空所有记忆？") },
+            text = { Text("结构化记忆、全部对话原文、归档和备份都会被清除，操作不可恢复。") },
+            confirmButton = {
+                Button(onClick = {
+                    scope.launch {
+                        val ok = withContext(Dispatchers.IO) { memorySystem.clearAll() }
+                        pendingClear = false
+                        showMsg(if (ok) "所有记忆、原文、归档和备份已永久清空" else memorySystem.lastError.value ?: "记忆清空失败")
+                    }
+                }) { Text("确认全部清空") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { pendingClear = false }) { Text("取消") }
+            }
+        )
+    }
+    viewingTurns?.let { turns ->
+        AlertDialog(
+            onDismissRequest = { viewingTurns = null },
+            title = { Text("对话完整原文") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    if (turns.isEmpty()) {
+                        Text("该旧记忆只有摘要，没有可显示的完整原文。")
+                    } else {
+                        turns.forEach { turn ->
+                            Text(
+                                "${if (turn.role == "USER") "用户" else "JARVIS"}（${turn.timestamp}）\n${turn.content}",
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewingTurns = null }) { Text("关闭") }
+            }
+        )
     }
 
     Spacer(Modifier.height(16.dp))

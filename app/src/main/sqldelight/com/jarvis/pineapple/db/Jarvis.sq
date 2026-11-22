@@ -61,6 +61,30 @@ CREATE TABLE IF NOT EXISTS memories (
     updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    importance INTEGER NOT NULL,
+    metadata TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_entries_type_timestamp
+ON memory_entries(type, timestamp);
+
+CREATE TABLE IF NOT EXISTS memory_turns (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_turns_memory ON memory_turns(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_turns_conversation ON memory_turns(conversation_id, timestamp);
+
 selectAllConversations:
 SELECT * FROM conversations ORDER BY created_at DESC;
 
@@ -111,3 +135,37 @@ DELETE FROM generic_records WHERE type = ?;
 
 deleteAllGenericRecords:
 DELETE FROM generic_records;
+
+-- ==================== 本地长期记忆（REQ-11） ====================
+
+selectAllMemoryEntries:
+SELECT * FROM memory_entries ORDER BY timestamp DESC, id DESC;
+
+upsertMemoryEntry:
+INSERT OR REPLACE INTO memory_entries(id, type, content, timestamp, importance, metadata)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deleteMemoryEntry:
+DELETE FROM memory_entries WHERE id = ?;
+
+deleteAllMemoryEntries:
+DELETE FROM memory_entries;
+
+selectAllMemoryTurns:
+SELECT * FROM memory_turns
+ORDER BY timestamp ASC, CASE role WHEN 'USER' THEN 0 ELSE 1 END ASC, id ASC;
+
+selectMemoryTurnsForConversation:
+SELECT * FROM memory_turns
+WHERE conversation_id = ?
+ORDER BY timestamp ASC, CASE role WHEN 'USER' THEN 0 ELSE 1 END ASC, id ASC;
+
+upsertMemoryTurn:
+INSERT OR REPLACE INTO memory_turns(id, memory_id, conversation_id, role, content, timestamp)
+VALUES (?, ?, ?, ?, ?, ?);
+
+deleteMemoryTurn:
+DELETE FROM memory_turns WHERE id = ?;
+
+deleteAllMemoryTurns:
+DELETE FROM memory_turns;

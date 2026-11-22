@@ -1,11 +1,14 @@
 package com.jarvis.pineapple.autonomous
 
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.jarvis.pineapple.db.JarvisDatabase
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -19,6 +22,20 @@ class AutonomousModulesTest {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private val memoryDrivers = mutableListOf<JdbcSqliteDriver>()
+
+    @After
+    fun closeMemoryDrivers() {
+        memoryDrivers.forEach { it.close() }
+    }
+
+    private fun newMemory(memoryFile: File, archiveDir: File): MemorySystem {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        JarvisDatabase.Schema.create(driver)
+        memoryDrivers += driver
+        return MemorySystem(memoryFile, archiveDir, JarvisDatabase(driver))
+    }
 
     @Test
     fun `TaskScheduler schedules and runs by priority`() {
@@ -79,12 +96,12 @@ class AutonomousModulesTest {
 
     @Test
     fun `memory system export then import restores facts`() {
-        val src = MemorySystem(tmp.newFile("memories.json"), tmp.newFolder("archive"))
+        val src = newMemory(tmp.newFile("memories.json"), tmp.newFolder("archive"))
         src.rememberFact("用户喜欢红茶")
         val json = src.exportMemories()
         assertTrue(json.contains("用户喜欢红茶"))
 
-        val dest = MemorySystem(tmp.newFile("imported.json"), tmp.newFolder("archive2"))
+        val dest = newMemory(tmp.newFile("imported.json"), tmp.newFolder("archive2"))
         assertTrue(dest.importMemories(json))
         assertEquals(1, dest.search("红茶").size)
         assertFalse(dest.importMemories("{not-json"))
@@ -95,7 +112,7 @@ class AutonomousModulesTest {
     @Test
     fun `memory save failure is visible and does not change state`() {
         val blockedParent = tmp.newFile("not-a-directory")
-        val memory = MemorySystem(
+        val memory = newMemory(
             File(blockedParent, "memories.json"),
             File(tmp.root, "unused-archive")
         )
@@ -109,7 +126,7 @@ class AutonomousModulesTest {
     fun `memory archive failure retains all current entries`() {
         val dir = tmp.newFolder("archive-blocked")
         val blockedArchive = tmp.newFile("archive-is-a-file")
-        val memory = MemorySystem(File(dir, "memories.json"), File(blockedArchive, "archive"))
+        val memory = newMemory(File(dir, "memories.json"), File(blockedArchive, "archive"))
 
         repeat(1000) { index ->
             assertTrue(memory.recordConversation("记忆-$index"))

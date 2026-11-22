@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS memory_entries (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    importance INTEGER NOT NULL,
+    metadata TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_entries_type_timestamp
+ON memory_entries(type, timestamp);
+
+CREATE TABLE IF NOT EXISTS memory_turns (
+    id TEXT PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    timestamp INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_turns_memory ON memory_turns(memory_id);
+CREATE INDEX IF NOT EXISTS idx_memory_turns_conversation ON memory_turns(conversation_id, timestamp);

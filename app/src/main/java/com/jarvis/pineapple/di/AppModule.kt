@@ -146,7 +146,7 @@ val appModule = module {
 
     // Chat
     single { ConversationRepository(get()) }
-    single { MemorySystem(get()) }
+    single { MemorySystem(get(), get()) }
     single { ConversationEnhancer(get()) }
     single { TranslationEngine() }
     viewModel { ChatViewModel(get(), get(), get()) }

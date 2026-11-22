@@ -123,16 +123,21 @@ class ChatEngine private constructor(
             "该提示与上述命令执行或内容生成结果相互独立。"
     }
 
-    private fun persistOutcome(reply: String, memoryNote: String): String {
+    private fun persistOutcome(reply: String, memoryNote: String, userText: String): String {
         val conversationSaved = conversationRepository.updateMessages(conversation.messages.toList())
-        val memorySaved = memorySystem.recordConversation(memoryNote)
+        val memorySaved = memorySystem.recordConversationTurn(
+            conversationId = conversation.id,
+            userText = userText,
+            assistantText = reply,
+            summary = memoryNote
+        )
         refreshPersistenceError()
         return reply + persistenceSuffix(conversationSaved, memorySaved)
     }
 
     private fun finishDirectReply(content: String, reply: String, memoryNote: String): Flow<String> {
         conversation.messages.add(ChatMessage(role = Role.ASSISTANT, content = reply, isStreaming = false))
-        val visibleReply = persistOutcome(reply, memoryNote)
+        val visibleReply = persistOutcome(reply, memoryNote, content)
         conversation.messages[conversation.messages.lastIndex] =
             conversation.messages.last().copy(content = visibleReply)
         _messages.value = conversation.messages.toList()
@@ -334,7 +339,9 @@ class ChatEngine private constructor(
                 val message = "模型请求失败：${error.message ?: error.javaClass.simpleName}"
                 val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
                 if (idx >= 0) {
-                    conversation.messages[idx] = conversation.messages[idx].copy(content = message)
+                    val partial = conversation.messages[idx].content
+                    val contentWithError = if (partial.isBlank()) message else "$partial\n\n$message"
+                    conversation.messages[idx] = conversation.messages[idx].copy(content = contentWithError)
                     _messages.value = conversation.messages.toList()
                 }
                 _lastSchedulingInfo.value = message
@@ -361,7 +368,7 @@ class ChatEngine private constructor(
                         isStreaming = false
                     )
                 }
-                val visibleReply = persistOutcome(finalReply, summary)
+                val visibleReply = persistOutcome(finalReply, summary, content)
                 if (idx >= 0) {
                     conversation.messages[idx] = conversation.messages[idx].copy(content = visibleReply)
                 }
