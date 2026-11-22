@@ -36,6 +36,7 @@ import com.jarvis.pineapple.system.CommunicationManager
 import com.jarvis.pineapple.system.CrossAppOperator
 import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
+import com.jarvis.pineapple.system.UsbDeviceManager
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
 import com.jarvis.pineapple.system.PhoneController
@@ -62,6 +63,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val communication = remember { GlobalContext.get().get<CommunicationManager>() }
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
     val device = remember { GlobalContext.get().get<DeviceControlManager>() }
+    val usb = remember { GlobalContext.get().get<UsbDeviceManager>() }
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
     val reminders by communication.reminders.collectAsState()
@@ -342,6 +344,22 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
                 }
             }) { Text(if (torchOn) "关闭手电筒" else "打开手电筒") }
         }
+    }
+
+    SectionCard("外设 (#73 USB 设备)") {
+        var usbInfo by remember { mutableStateOf("尚未探测") }
+        Text(
+            "USB 主机特性: ${if (usb.hasUsbHostFeature()) "支持" else "不支持"}",
+            fontSize = 12.sp
+        )
+        Row {
+            Button(onClick = {
+                val devices = usb.probeUsbDevices()
+                usbInfo = UsbDeviceManager.summarize(devices)
+                showMsg(if (devices.isEmpty()) "未检测到 USB 设备" else "已探测 ${devices.size} 个 USB 设备")
+            }) { Text("探测 USB 设备") }
+        }
+        Text(usbInfo, fontSize = 12.sp)
     }
 
 }
