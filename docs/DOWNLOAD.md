@@ -1,6 +1,6 @@
 # JARVIS 交付物与直连下载路径
 
-> 生成日期：2026-11-22 | 版本：v0.0.1（Debug，40 轮加压 + 358 项 JVM 回归）
+> 生成日期：2026-11-22 | 版本：v0.0.1（Debug，40 轮加压 + 367 项 JVM 回归）
 
 ---
 
@@ -28,15 +28,15 @@
 APK 体积大于 100MB，仓库提供 `.7z` 压缩包。请下载后解压再安装。
 
 ```text
-版本：   v0.0.1-debug（40 轮加压 + 358 项 JVM 回归）
+版本：   v0.0.1-debug（40 轮加压 + 367 项 JVM 回归）
 压缩包： apk/jarvis-debug.apk.7z
-压缩包大小： 82,717,484 字节（78.9 MiB）
-压缩包 SHA256： 38b2f24441c52ded2a06c1abba44e6fa3761a7da3b5c32e1aed485ab9e4e3d29
-APK 大小： 219,931,064 字节（209.7 MiB）
-APK SHA256： d2fc810d1f11f721dde59e5aa1f64194d83450007db590fd04bcdb4cc8e64a67
+压缩包大小： 82,748,016 字节（78.9 MiB）
+压缩包 SHA256： cdc95531a09f7b4628d3357a19464bc29df057475d925f2d5f9475c1cd6284a0
+APK 大小： 220,283,615 字节（210.1 MiB）
+APK SHA256： 6e7ecf2e4e67490ea9cca916de7239952c82cd0feefc306efc095852fe0d12e7
 构建：   2026-11-22
 构建命令：JAVA_HOME=/root/.local/share/mise/installs/java/17.0.20+101 ANDROID_HOME=/workspace/.android-sdk ANDROID_SDK_ROOT=/workspace/.android-sdk ./gradlew --no-daemon :app:assembleDebug
-代码基线：6954fc1；交付物以 origin/main 最新提交为准
+代码基线：3700a12；交付物以 origin/main 最新提交为准
 直链：   https://github.com/ptr193/JARVIS/raw/main/apk/jarvis-debug.apk.7z
 ```
 
@@ -52,16 +52,16 @@ sha256sum apk/jarvis-debug.apk.7z
 期望：
 
 ```text
-38b2f24441c52ded2a06c1abba44e6fa3761a7da3b5c32e1aed485ab9e4e3d29
+cdc95531a09f7b4628d3357a19464bc29df057475d925f2d5f9475c1cd6284a0
 ```
 
 解压后校验 APK：
 
 ```text
-d2fc810d1f11f721dde59e5aa1f64194d83450007db590fd04bcdb4cc8e64a67
+6e7ecf2e4e67490ea9cca916de7239952c82cd0feefc306efc095852fe0d12e7
 ```
 
-本包基于最终修复后的代码构建：40/40 轮递增加压、358/358 项 Debug JVM 测试通过，Lint 为 0 error / 43 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
+本包基于最终修复后的代码构建：40/40 轮递增加压、367/367 项 Debug JVM 测试通过，Lint 为 0 error / 43 warning。压缩包通过 `7z t`，包内 APK 流式解压哈希与上述 APK SHA256 一致。`*.apk` 不入 Git，仅提交 `.7z`。真机硬件、电话、短信、传感器、模型推理、云服务与 arm64 PRoot 尚需按回归报告第 6 节验收；Release 仍阻断。
 
 ---
 
@@ -108,4 +108,4 @@ d2fc810d1f11f721dde59e5aa1f64194d83450007db590fd04bcdb4cc8e64a67
 
 ---
 
-*文档版本：v3.7 | 生成日期：2026-11-22*
+*文档版本：v3.8 | 生成日期：2026-11-22*
