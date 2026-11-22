@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
@@ -45,6 +46,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Tab
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -186,6 +188,33 @@ fun VirtualMachineScreen(
                 }
             }
 
+            val vmPrefs = remember {
+                context.getSharedPreferences("jarvis_vm_config", Context.MODE_PRIVATE)
+            }
+            var vmRootEnabled by remember {
+                mutableStateOf(vmPrefs.getBoolean("enable_root", true))
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("虚拟机 root 权限（PRoot）", fontSize = 13.sp)
+                    Text(
+                        "关闭后 AI 与终端以普通用户身份执行；root 操作会记录审计日志",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = vmRootEnabled,
+                    onCheckedChange = { checked ->
+                        vmRootEnabled = checked
+                        vmPrefs.edit().putBoolean("enable_root", checked).apply()
+                    }
+                )
+            }
+
             when (selectedTab) {
                 0 -> DistroTab(
                     distros = distros,
@@ -266,6 +295,40 @@ fun VirtualMachineScreen(
                                 "desktop"
                             )
                             showMsg(if (ok) "桌面环境已安装" else "桌面环境安装失败")
+                        }
+                    },
+                    onPause = { id ->
+                        scope.launch {
+                            val ok = havenVmManager.pauseVm(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "虚拟机已暂停" else "虚拟机暂停失败（设备不支持或会话未运行）",
+                                "lifecycle"
+                            )
+                            showMsg(if (ok) "虚拟机已暂停" else "暂停失败：无法取得进程 PID 或会话未运行")
+                        }
+                    },
+                    onResume = { id ->
+                        scope.launch {
+                            val ok = havenVmManager.resumeVm(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "虚拟机已恢复" else "虚拟机恢复失败",
+                                "lifecycle"
+                            )
+                            showMsg(if (ok) "虚拟机已恢复运行" else "虚拟机恢复失败")
+                        }
+                    },
+                    onReboot = { id ->
+                        scope.launch {
+                            showMsg("正在重启虚拟机...")
+                            val ok = havenVmManager.rebootVm(id)
+                            loggerFor(id)?.addLog(
+                                if (ok) LogLevel.INFO else LogLevel.ERROR,
+                                if (ok) "虚拟机重启成功" else "虚拟机重启失败",
+                                "lifecycle"
+                            )
+                            showMsg(if (ok) "虚拟机已重启" else "虚拟机重启失败")
                         }
                     }
                 )
@@ -712,7 +775,10 @@ private fun VmTab(
     onStart: (String) -> Unit,
     onStop: (String) -> Unit,
     onDelete: (String) -> Unit,
-    onInstallDesktop: (String) -> Unit
+    onInstallDesktop: (String) -> Unit,
+    onPause: (String) -> Unit,
+    onResume: (String) -> Unit,
+    onReboot: (String) -> Unit
 ) {
     if (vms.isEmpty()) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -741,13 +807,33 @@ private fun VmTab(
                                 else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        if (vm.state == HavenVmManager.HavenVmState.RUNNING) {
-                            IconButton(onClick = { onStop(vm.id) }) {
-                                Icon(Icons.Filled.Stop, contentDescription = "停止")
+                        when (vm.state) {
+                            HavenVmManager.HavenVmState.RUNNING -> {
+                                IconButton(onClick = { onPause(vm.id) }) {
+                                    Icon(Icons.Filled.Pause, contentDescription = "暂停")
+                                }
+                                IconButton(onClick = { onReboot(vm.id) }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "重启")
+                                }
+                                IconButton(onClick = { onStop(vm.id) }) {
+                                    Icon(Icons.Filled.Stop, contentDescription = "停止")
+                                }
                             }
-                        } else {
-                            IconButton(onClick = { onStart(vm.id) }) {
-                                Icon(Icons.Filled.PlayArrow, contentDescription = "启动")
+                            HavenVmManager.HavenVmState.PAUSED -> {
+                                IconButton(onClick = { onResume(vm.id) }) {
+                                    Icon(Icons.Filled.PlayArrow, contentDescription = "恢复")
+                                }
+                                IconButton(onClick = { onReboot(vm.id) }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "重启")
+                                }
+                                IconButton(onClick = { onStop(vm.id) }) {
+                                    Icon(Icons.Filled.Stop, contentDescription = "停止")
+                                }
+                            }
+                            else -> {
+                                IconButton(onClick = { onStart(vm.id) }) {
+                                    Icon(Icons.Filled.PlayArrow, contentDescription = "启动")
+                                }
                             }
                         }
                         IconButton(onClick = { onDelete(vm.id) }) {
@@ -776,6 +862,7 @@ private fun stateText(state: HavenVmManager.HavenVmState): String = when (state)
     HavenVmManager.HavenVmState.STARTING -> "启动中"
     HavenVmManager.HavenVmState.RUNNING -> "运行中"
     HavenVmManager.HavenVmState.STOPPING -> "停止中"
+    HavenVmManager.HavenVmState.PAUSED -> "已暂停"
     HavenVmManager.HavenVmState.ERROR -> "错误"
 }
 

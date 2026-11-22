@@ -43,7 +43,7 @@ class HavenVmManager(
     )
 
     enum class HavenVmState {
-        STOPPED, STARTING, RUNNING, STOPPING, ERROR
+        STOPPED, STARTING, RUNNING, STOPPING, PAUSED, ERROR
     }
 
     // ==================== 生命周期 ====================
@@ -128,6 +128,35 @@ class HavenVmManager(
             it.copy(state = if (stopped) HavenVmState.STOPPED else HavenVmState.RUNNING)
         }
         return stopped
+    }
+
+    /**
+     * 暂停虚拟机：向 PRoot 会话发送 SIGSTOP，进程与现场保留。
+     * 仅运行中可暂停；API < 26 或信号发送失败时保持原状态并返回 false。
+     */
+    suspend fun pauseVm(vmId: String): Boolean {
+        val vm = findVm(vmId) ?: return false
+        if (vm.state != HavenVmState.RUNNING) return false
+        val paused = prootManager.pauseSession(configFor(vm))
+        if (paused) updateVm(vmId) { it.copy(state = HavenVmState.PAUSED) }
+        return paused
+    }
+
+    /** 恢复已暂停的虚拟机（SIGCONT）。 */
+    suspend fun resumeVm(vmId: String): Boolean {
+        val vm = findVm(vmId) ?: return false
+        if (vm.state != HavenVmState.PAUSED) return false
+        val resumed = prootManager.resumeSession(configFor(vm))
+        if (resumed) updateVm(vmId) { it.copy(state = HavenVmState.RUNNING) }
+        return resumed
+    }
+
+    /** 重启虚拟机：先真实停止，再重新启动；停止失败时不继续。 */
+    suspend fun rebootVm(vmId: String): Boolean {
+        val vm = findVm(vmId) ?: return false
+        if (vm.state != HavenVmState.RUNNING && vm.state != HavenVmState.PAUSED) return false
+        if (!stopVm(vmId)) return false
+        return startVm(vmId)
     }
 
     /** 删除虚拟机登记；共享发行版 rootfs 保留，导入虚拟机的独立 rootfs 一并删除。 */
@@ -248,8 +277,17 @@ class HavenVmManager(
     fun getInstalledPackages(vmId: String): List<String> =
         findVm(vmId)?.installedPackages ?: emptyList()
 
-    fun configFor(vm: HavenVm): ProotManager.ProotConfig =
-        ProotManager.ProotConfig(rootfsPath = vm.rootfsPath, workingDir = "/root", asRoot = asRoot())
+    fun configFor(vm: HavenVm): ProotManager.ProotConfig {
+        val root = asRoot()
+        return ProotManager.ProotConfig(
+            rootfsPath = vm.rootfsPath,
+            workingDir = if (root) "/root" else "/tmp",
+            asRoot = root
+        )
+    }
+
+    /** 当前是否允许在虚拟机内使用 root 身份（全局开关，默认开启）。 */
+    fun isRootEnabled(): Boolean = asRoot()
 
     /**
      * 安装桌面会话所需组件并返回可用性说明。

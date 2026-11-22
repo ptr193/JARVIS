@@ -91,6 +91,57 @@ class ProotManager internal constructor(
     companion object {
         const val PROOT_VERSION = "2.3.1"
 
+        /**
+         * 获取进程 PID（多路真实获取，全部失败返回 null）：
+         * 1. 解析 ProcessImpl.toString() 中的 `pid=`；
+         * 2. 反射读取 pid/mPid 字段；
+         * Android 隐藏 API 限制或 JVM 模块限制下前两者可能失败，由 [pidFromPs] 兜底。
+         */
+        internal fun processPid(process: Process): Long? {
+            PID_IN_TO_STRING.find(process.toString())?.groupValues?.get(1)?.toLongOrNull()
+                ?.let { return it }
+
+            var cls: Class<*>? = process.javaClass
+            while (cls != null) {
+                val field = runCatching { cls.getDeclaredField("pid") }.getOrNull()
+                    ?: runCatching { cls.getDeclaredField("mPid") }.getOrNull()
+                if (field != null) {
+                    val value = runCatching {
+                        field.isAccessible = true
+                        when (val v = field.get(process)) {
+                            is Int -> v.toLong()
+                            is Long -> v
+                            else -> null
+                        }
+                    }.getOrNull()
+                    if (value != null) return value
+                }
+                cls = cls.superclass
+            }
+            return null
+        }
+
+        /** 会话 PID：优先进程对象，失败时按 rootfs 路径扫描 ps 输出。 */
+        internal fun sessionPid(process: Process, rootfsPath: String): Long? =
+            processPid(process) ?: pidFromPs(rootfsPath)
+
+        private val PID_IN_TO_STRING = Regex("pid=(\\d+)")
+
+        /** 通过 ps 查找命令行中包含指定 rootfs 的 proot 进程 PID。 */
+        internal fun pidFromPs(rootfsPath: String): Long? = runCatching {
+            val ps = ProcessBuilder("sh", "-c", "ps -A -o PID,ARGS 2>/dev/null || ps").start()
+            val text = ps.inputStream.bufferedReader().use { it.readText() }
+            ps.errorStream.use { it.readBytes() }
+            ps.waitFor()
+            text.lineSequence()
+                .map { it.trim() }
+                .filter { it.contains("proot") && it.contains(rootfsPath) }
+                .mapNotNull { line ->
+                    line.split(Regex("\\s+"), limit = 2).firstOrNull()?.toLongOrNull()
+                }
+                .firstOrNull()
+        }.getOrNull()
+
         private const val GH_PROXY = "https://ghproxy.net/"
         private const val RAW = "https://raw.githubusercontent.com/proot-me/proot-static-build/master/static/"
 
@@ -338,6 +389,31 @@ class ProotManager internal constructor(
     }
 
     private fun sessionKey(config: ProotConfig): String = File(config.rootfsPath).canonicalPath
+
+    /**
+     * 暂停 PRoot 会话（SIGSTOP）。进程仍在、状态保留，可通过 [resumeSession] 恢复。
+     * 通过运行时进程实现反射取得 PID；无法取得时如实返回 false，不伪造暂停成功。
+     */
+    suspend fun pauseSession(config: ProotConfig): Boolean = signalSession(config, "STOP")
+
+    /** 恢复被暂停的 PRoot 会话（SIGCONT）。 */
+    suspend fun resumeSession(config: ProotConfig): Boolean = signalSession(config, "CONT")
+
+    private suspend fun signalSession(config: ProotConfig, signal: String): Boolean =
+        withContext(Dispatchers.IO) {
+            val process = synchronized(sessionLock) { sessions[sessionKey(config)] }
+                ?: return@withContext false
+            if (!isProcessAlive(process)) return@withContext false
+            val pid = sessionPid(process, config.rootfsPath) ?: return@withContext false
+            try {
+                val signalProcess = ProcessBuilder("kill", "-$signal", pid.toString()).start()
+                signalProcess.inputStream.use { it.readBytes() }
+                signalProcess.errorStream.use { it.readBytes() }
+                signalProcess.waitFor() == 0
+            } catch (e: Exception) {
+                false
+            }
+        }
 
     /**
      * 在 PRoot 中启动一个长期驻留的后台进程（如 Xvfb + x11vnc 桌面会话、GUI 浏览器）。
