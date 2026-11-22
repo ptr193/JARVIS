@@ -250,6 +250,23 @@ class SecurityManager(private val context: Context) {
         return bins
     }
 
+    // ==================== 虹膜扫描（#36 预留） ====================
+
+    /** 虹膜扫描结果：仅在具备专用 IR 摄像头与厂商 SDK 的机型上可能成功。 */
+    sealed class IrisScanResult {
+        data class Success(val irisCode: String) : IrisScanResult()
+        data class Unsupported(val reason: String) : IrisScanResult()
+    }
+
+    /**
+     * 虹膜扫描（#36，规格书预留）。
+     *
+     * 标准 Android SDK 不提供虹膜采集 API；仅三星 Note 等配备专用 IR 摄像头的机型支持，
+     * 且需要厂商 SDK。当前设备无此硬件，故诚实返回 [IrisScanResult.Unsupported]，
+     * 绝不伪造 irisCode（历史硬编码占位符已移除）。
+     */
+    fun scanIris(): IrisScanResult = irisScanResult()
+
     // ==================== 手机锁定与防盗（#39） ====================
 
     /**
@@ -830,5 +847,11 @@ class SecurityManager(private val context: Context) {
         fun adminActivationIntent(): android.content.Intent {
             return android.content.Intent(ADMIN_ACTIVATION_ACTION)
         }
+
+        const val UNSUPPORTED_IRIS_REASON =
+            "当前设备无虹膜扫描硬件（需专用 IR 摄像头与厂商 SDK），无法采集虹膜"
+
+        /** 纯逻辑：虹膜扫描结果，便于脱离 Context 单测；绝不伪造成功。 */
+        fun irisScanResult(): IrisScanResult = IrisScanResult.Unsupported(UNSUPPORTED_IRIS_REASON)
     }
 }

@@ -122,6 +122,18 @@ fun SecurityTab(showMsg: (String) -> Unit) {
         }) { Text("启动强生物识别验证") }
     }
 
+    SectionCard("虹膜扫描 (#36 预留)") {
+        Text("仅配备专用 IR 摄像头（如三星 Note 系列）的机型支持；普通设备会如实报告不支持。", fontSize = 12.sp)
+        Button(onClick = {
+            when (val r = security.scanIris()) {
+                is SecurityManager.IrisScanResult.Success -> showMsg("虹膜已采集")
+                is SecurityManager.IrisScanResult.Unsupported -> {
+                    showMsg("虹膜扫描不可用：${r.reason}")
+                }
+            }
+        }) { Text("尝试虹膜扫描") }
+    }
+
     SectionCard("安全风险评估 (#45)") {
         Text(securityRisk, fontSize = 13.sp)
         Button(onClick = {
