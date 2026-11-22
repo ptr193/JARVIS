@@ -356,20 +356,28 @@ class ModelDownloadManager internal constructor(
             java.io.FileOutputStream(partFile, append).use { out ->
                 val buffer = ByteArray(64 * 1024)
                 var written = if (append) resumeFrom else 0L
+                var lastPercent = -1
                 while (true) {
                     val n = channel.readAvailable(buffer, 0, buffer.size)
                     if (n == -1) break
                     if (n == 0) continue
                     out.write(buffer, 0, n)
                     written += n
-                    updateState(config.id, ModelDownloadState(
-                        modelId = config.id,
-                        modelName = config.name,
-                        status = DownloadStatus.DOWNLOADING,
-                        progress = if (totalLength > 0) (written.toFloat() / totalLength).coerceIn(0f, 0.99f) else 0f,
-                        downloadedBytes = written,
-                        totalBytes = config.sizeBytes
-                    ))
+                    val progress =
+                        if (totalLength > 0) (written.toFloat() / totalLength).coerceIn(0f, 0.99f) else 0f
+                    val percent = (progress * 100).toInt()
+                    // 仅在百分比变化时刷新状态，避免每个 64KB 分块都触发 UI 重组。
+                    if (percent != lastPercent) {
+                        lastPercent = percent
+                        updateState(config.id, ModelDownloadState(
+                            modelId = config.id,
+                            modelName = config.name,
+                            status = DownloadStatus.DOWNLOADING,
+                            progress = progress,
+                            downloadedBytes = written,
+                            totalBytes = config.sizeBytes
+                        ))
+                    }
                 }
             }
         }

@@ -65,6 +65,32 @@ class ApiModelTest {
         assertTrue(error!!.message.orEmpty().contains("无效的流式数据"))
     }
 
+    @Test
+    fun `generateWithImage sends OpenAI vision content parts`() = runBlocking {
+        var requestBody = ""
+        val engine = MockEngine { request ->
+            requestBody = (request.body as io.ktor.http.content.TextContent).text
+            respond(
+                content = """{"choices":[{"message":{"role":"assistant","content":"图中是设置页"}}]}""",
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/json")
+            )
+        }
+        val client = HttpClient(engine) {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+        }
+        val model = ApiModel("api", "API", "https://example.test/v1", "key", "model", client)
+
+        assertTrue(model.supportsImages)
+        assertEquals(
+            "图中是设置页",
+            model.generateWithImage("描述图片", "系统人格", ImageInput("QUJD", "image/png"))
+        )
+        assertTrue(requestBody.contains("\"type\":\"image_url\""))
+        assertTrue(requestBody.contains("data:image/png;base64,QUJD"))
+        assertTrue(requestBody.contains("\"text\":\"描述图片\""))
+    }
+
     private fun modelReturning(
         status: HttpStatusCode,
         body: String,

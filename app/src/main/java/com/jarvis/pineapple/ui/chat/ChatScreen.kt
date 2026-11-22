@@ -1,6 +1,8 @@
 package com.jarvis.pineapple.ui.chat
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,10 +19,10 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
@@ -37,6 +39,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -60,6 +64,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -106,6 +112,7 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val clipboard = LocalClipboardManager.current
     val requestMic = rememberOnDemandPermission(
         permissions = PermissionManager.MICROPHONE_PERMISSIONS,
         onGranted = onNavigateToVoiceChat,
@@ -233,8 +240,26 @@ fun ChatScreen(
             modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(messages, key = { it.id }) { msg ->
-                MessageBubble(msg)
+            itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
+                MessageBubble(
+                    msg = msg,
+                    canRegenerate = index == messages.lastIndex &&
+                        msg.role == Role.ASSISTANT && !msg.isStreaming && !isGenerating,
+                    onCopy = {
+                        clipboard.setText(AnnotatedString(msg.content))
+                        ioNotice = "已复制消息"
+                    },
+                    onQuote = {
+                        input = msg.content.lineSequence()
+                            .joinToString("\n") { "> $it" } + "\n"
+                        ioNotice = "已引用该消息，可继续输入"
+                    },
+                    onDelete = {
+                        viewModel.deleteMessage(msg.id)
+                        ioNotice = "已删除该消息"
+                    },
+                    onRegenerate = { viewModel.regenerateLast() }
+                )
             }
         }
 
@@ -514,14 +539,24 @@ private fun ConversationRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageBubble(msg: com.jarvis.pineapple.chat.ChatMessage) {
+private fun MessageBubble(
+    msg: com.jarvis.pineapple.chat.ChatMessage,
+    canRegenerate: Boolean,
+    onCopy: () -> Unit,
+    onQuote: () -> Unit,
+    onDelete: () -> Unit,
+    onRegenerate: () -> Unit
+) {
     val isUser = msg.role == Role.USER
+    var menuExpanded by remember { mutableStateOf(false) }
 
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
+        ) {
         if (!isUser) {
             // AI 头像
             Surface(
@@ -554,17 +589,19 @@ private fun MessageBubble(msg: com.jarvis.pineapple.chat.ChatMessage) {
                 bottomStart = if (isUser) 16.dp else 4.dp,
                 bottomEnd = if (isUser) 4.dp else 16.dp
             ),
-            modifier = Modifier.widthIn(max = 300.dp)
-        ) {
-            // 支持长按选中并复制消息内容（SelectionContainer 提供系统复制/全选菜单）
-            SelectionContainer {
-                Text(
-                    text = msg.content.ifEmpty { if (msg.isStreaming) "..." else "" },
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 15.sp
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = { menuExpanded = true }
                 )
-            }
+        ) {
+            Text(
+                text = msg.content.ifEmpty { if (msg.isStreaming) "..." else "" },
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                color = if (isUser) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 15.sp
+            )
         }
 
         if (isUser) {
@@ -583,6 +620,45 @@ private fun MessageBubble(msg: com.jarvis.pineapple.chat.ChatMessage) {
                         fontWeight = FontWeight.Bold
                     )
                 }
+            }
+        }
+        }
+
+        DropdownMenu(
+            expanded = menuExpanded,
+            onDismissRequest = { menuExpanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("复制") },
+                onClick = {
+                    menuExpanded = false
+                    onCopy()
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("引用") },
+                onClick = {
+                    menuExpanded = false
+                    onQuote()
+                }
+            )
+            if (!msg.isStreaming && msg.content.isNotBlank()) {
+                DropdownMenuItem(
+                    text = { Text("删除") },
+                    onClick = {
+                        menuExpanded = false
+                        onDelete()
+                    }
+                )
+            }
+            if (canRegenerate) {
+                DropdownMenuItem(
+                    text = { Text("重新生成") },
+                    onClick = {
+                        menuExpanded = false
+                        onRegenerate()
+                    }
+                )
             }
         }
     }

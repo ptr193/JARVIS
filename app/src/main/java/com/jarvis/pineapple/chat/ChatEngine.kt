@@ -5,6 +5,7 @@ import com.jarvis.pineapple.info.FilterCriteria
 import com.jarvis.pineapple.info.InfoProcessor
 import com.jarvis.pineapple.info.IntelligenceItem
 import com.jarvis.pineapple.model.AiModel
+import com.jarvis.pineapple.model.ImageInput
 import com.jarvis.pineapple.model.ModelCapabilityScheduler
 import com.jarvis.pineapple.model.ModelScheduler
 import com.jarvis.pineapple.model.ModelState
@@ -169,11 +170,17 @@ class ChatEngine private constructor(
         return null
     }
 
-    suspend fun sendUserMessage(content: String): Flow<String> {
+    suspend fun sendUserMessage(
+        content: String,
+        image: ImageInput? = null,
+        appendUserMessage: Boolean = true
+    ): Flow<String> {
         ensureConversation()?.let { return flowOf(it) }
-        val userMsg = ChatMessage(role = Role.USER, content = content)
-        conversation.messages.add(userMsg)
-        _messages.value = conversation.messages.toList()
+        if (appendUserMessage) {
+            val userMsg = ChatMessage(role = Role.USER, content = content)
+            conversation.messages.add(userMsg)
+            _messages.value = conversation.messages.toList()
+        }
 
         _isGenerating.value = true
 
@@ -312,18 +319,36 @@ class ChatEngine private constructor(
             primaryModel
         }
 
+        if (image != null && !activeModel.supportsImages) {
+            return finishDirectReply(
+                content,
+                "当前模型（${activeModel.info.name}）不支持图片输入。" +
+                    "请在 设置 → 服务 配置支持视觉的 API 模型后重试，或改用文字描述图片内容。",
+                "图片输入不受支持：${content.take(50)}"
+            )
+        }
+
         val aiMsg = ChatMessage(role = Role.ASSISTANT, content = "", isStreaming = true)
         conversation.messages.add(aiMsg)
         _messages.value = conversation.messages.toList()
 
         // 将 stream() 的创建也纳入下方 catch，覆盖同步抛错的模型实现。
-        val flow = flow { emitAll(activeModel.stream(fullPrompt, systemPrompt)) }
+        val flow = if (image != null) {
+            flow { emitAll(activeModel.streamWithImage(fullPrompt, systemPrompt, image)) }
+        } else {
+            flow { emitAll(activeModel.stream(fullPrompt, systemPrompt)) }
+        }
         val collected = StringBuilder()
         var failed = false
+        var lastEmitAt = 0L
 
         return flow
             .onEach { chunk ->
                 collected.append(chunk)
+                // 流式回复按 60ms 节流刷新，避免逐 token 触发整页重组造成卡顿。
+                val now = System.currentTimeMillis()
+                if (now - lastEmitAt < 60) return@onEach
+                lastEmitAt = now
                 val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
                 if (idx >= 0) {
                     conversation.messages[idx] = conversation.messages[idx].copy(content = collected.toString())
@@ -339,7 +364,8 @@ class ChatEngine private constructor(
                 val message = "模型请求失败：${error.message ?: error.javaClass.simpleName}"
                 val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
                 if (idx >= 0) {
-                    val partial = conversation.messages[idx].content
+                    // 节流可能跳过最后一次状态刷新，以完整累积内容为准，避免丢失末尾 token。
+                    val partial = collected.toString()
                     val contentWithError = if (partial.isBlank()) message else "$partial\n\n$message"
                     conversation.messages[idx] = conversation.messages[idx].copy(content = contentWithError)
                     _messages.value = conversation.messages.toList()
@@ -350,8 +376,18 @@ class ChatEngine private constructor(
                 val cancelled = cause is kotlinx.coroutines.CancellationException
                 if (cancelled) failed = true
                 val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
-                val raw = if (idx >= 0) conversation.messages[idx].content else collected.toString()
-                val terminalReply = if (cancelled) "$raw\n\n模型请求已取消。" else raw
+                // 状态刷新有 60ms 节流，收尾必须以完整累积内容为准，避免丢失最后一段 token。
+                val raw = if (failed && !cancelled && idx >= 0) {
+                    conversation.messages[idx].content
+                } else {
+                    collected.toString()
+                }
+                val terminalReply = if (cancelled) {
+                    val base = raw.trimEnd()
+                    if (base.isBlank()) "模型请求已取消。" else "$base\n\n模型请求已取消。"
+                } else {
+                    raw
+                }
                 val finalReply = if (!failed && !cancelled) {
                     conversationEnhancer.adjustResponseTone(terminalReply, emotional.userEmotion)
                 } else {
@@ -399,6 +435,35 @@ class ChatEngine private constructor(
         _messages.value = conv.messages.toList()
         refreshPersistenceError()
         return true
+    }
+
+    /** 删除单条消息并持久化；返回是否保存成功。 */
+    fun deleteMessage(messageId: String): Boolean {
+        val idx = conversation.messages.indexOfFirst { it.id == messageId }
+        if (idx < 0) return false
+        conversation.messages.removeAt(idx)
+        val saved = conversationRepository.updateMessages(conversation.messages.toList())
+        refreshPersistenceError()
+        _messages.value = conversation.messages.toList()
+        return saved
+    }
+
+    /**
+     * 为“重新生成”移除最后一条已完成的助手回复，并返回对应的用户输入。
+     * 不满足条件（正在生成或最后一条不是助手回复）时返回 null。
+     */
+    fun prepareRegeneration(): String? {
+        if (_isGenerating.value) return null
+        val last = conversation.messages.lastOrNull() ?: return null
+        if (last.role != Role.ASSISTANT || last.isStreaming) return null
+        conversation.messages.removeAt(conversation.messages.lastIndex)
+        val user = conversation.messages.lastOrNull { it.role == Role.USER }
+        if (user == null) {
+            conversation.messages.add(last)
+            return null
+        }
+        _messages.value = conversation.messages.toList()
+        return user.content
     }
 
     fun deleteConversation(conversationId: String): Boolean {

@@ -303,6 +303,49 @@ class ChatEngineBehaviorTest {
         assertTrue(turns.all { it.conversationId == conversationId })
     }
 
+    @Test
+    fun deleteMessageRemovesOnlyTargetAndPersists() {
+        val fixture = Fixture(model = FakeModel(usable = true))
+        assertTrue(fixture.engine.newConversation())
+        runBlocking { fixture.engine.sendUserMessage("第一条").toList() }
+        runBlocking { fixture.engine.sendUserMessage("第二条").toList() }
+        val target = fixture.engine.messages.value.first { it.role == Role.USER }
+
+        assertTrue(fixture.engine.deleteMessage(target.id))
+        assertFalse(fixture.engine.messages.value.any { it.id == target.id })
+        val reloaded = ConversationRepository(conversationsDirOverride = fixture.conversationDir)
+        val persisted = reloaded.conversations.value.first()
+        assertFalse(persisted.messages.any { it.id == target.id })
+    }
+
+    @Test
+    fun prepareRegenerationRemovesLastAssistantAndReusesUserInput() {
+        val fixture = Fixture(model = FakeModel(usable = true))
+        assertTrue(fixture.engine.newConversation())
+        runBlocking { fixture.engine.sendUserMessage("你好").toList() }
+        assertEquals(2, fixture.engine.messages.value.size)
+
+        assertEquals("你好", fixture.engine.prepareRegeneration())
+        assertEquals(1, fixture.engine.messages.value.size)
+        assertEquals(Role.USER, fixture.engine.messages.value.single().role)
+        assertNull(fixture.engine.prepareRegeneration())
+    }
+
+    @Test
+    fun imageOnTextModelReturnsExplicitUnsupportedMessage() {
+        val fixture = Fixture(model = FakeModel(usable = true))
+        assertTrue(fixture.engine.newConversation())
+
+        val reply = runBlocking {
+            fixture.engine.sendUserMessage(
+                "看这张图",
+                image = com.jarvis.pineapple.model.ImageInput("QUJD", "image/png")
+            ).toList().joinToString("")
+        }
+
+        assertTrue(reply.contains("不支持图片输入"))
+    }
+
     private inner class Fixture(
         private val model: FakeModel = FakeModel(usable = false)
     ) {

@@ -50,6 +50,7 @@ import com.jarvis.pineapple.model.OnboardingGate
 import com.jarvis.pineapple.ui.chat.ChatScreen
 import com.jarvis.pineapple.ui.model.ModelSelectionScreen
 import com.jarvis.pineapple.ui.onboarding.ModelOnboardingScreen
+import com.jarvis.pineapple.ui.permission.StartupPermissionRequest
 import com.jarvis.pineapple.ui.settings.SettingsScreen
 import com.jarvis.pineapple.ui.theme.JarvisTheme
 import com.jarvis.pineapple.ui.vm.VirtualMachineScreen
@@ -211,6 +212,9 @@ fun JarvisApp() {
     val items = listOf(Screen.Chat, Screen.Vm, Screen.Settings)
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+
+    // 首次进入主界面主动申请麦克风、通知、电话、短信等运行时权限。
+    StartupPermissionRequest()
 
     if (showOnboarding) {
         ModelOnboardingScreen(

@@ -14,6 +14,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 /**
  * API 模型（OpenAI 兼容协议）
@@ -31,6 +37,7 @@ class ApiModel(
         description = "云端 API 模型", priority = 20
     )
     override var state: ModelState = ModelState.READY
+    override val supportsImages: Boolean = true
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -95,6 +102,96 @@ class ApiModel(
             check(emittedContent) { "API 返回空回答" }
         }
     }
+
+    override suspend fun generateWithImage(
+        prompt: String,
+        systemPrompt: String?,
+        image: ImageInput
+    ): String {
+        val body = VisionChatRequest(
+            model = modelName,
+            messages = visionMessages(prompt, systemPrompt, image),
+            stream = false
+        )
+        val response = httpClient.post("$baseUrl/chat/completions") {
+            header("Authorization", "Bearer $apiKey")
+            header("Content-Type", "application/json")
+            setBody(body)
+        }
+        if (!response.status.isSuccess()) {
+            throw ApiRequestException(response.status.value, response.bodyAsText().take(MAX_ERROR_BODY))
+        }
+        val result: ChatResponse = response.body()
+        return result.choices.firstOrNull()?.message?.content?.takeIf { it.isNotBlank() }
+            ?: throw IllegalStateException("API 返回空回答")
+    }
+
+    override fun streamWithImage(
+        prompt: String,
+        systemPrompt: String?,
+        image: ImageInput
+    ): Flow<String> = flow {
+        val body = VisionChatRequest(
+            model = modelName,
+            messages = visionMessages(prompt, systemPrompt, image),
+            stream = true
+        )
+        httpClient.preparePost("$baseUrl/chat/completions") {
+            header("Authorization", "Bearer $apiKey")
+            header("Content-Type", "application/json")
+            header("Accept", "text/event-stream")
+            setBody(body)
+        }.execute { response ->
+            if (!response.status.isSuccess()) {
+                throw ApiRequestException(response.status.value, response.bodyAsText().take(MAX_ERROR_BODY))
+            }
+            val channel = response.bodyAsChannel()
+            var receivedData = false
+            var emittedContent = false
+            while (true) {
+                val line = channel.readUTF8Line() ?: break
+                if (!line.startsWith("data:")) continue
+                val payload = line.removePrefix("data:").trim()
+                if (payload == "[DONE]") break
+                if (payload.isEmpty()) continue
+                receivedData = true
+                val chunk = try {
+                    json.decodeFromString<ChatChunkResponse>(payload)
+                } catch (e: Exception) {
+                    throw IllegalStateException("API 返回了无效的流式数据", e)
+                }
+                chunk.choices.firstOrNull()?.delta?.content?.takeIf { it.isNotEmpty() }?.let {
+                    emittedContent = true
+                    emit(it)
+                }
+            }
+            check(receivedData) { "API 未返回流式数据" }
+            check(emittedContent) { "API 返回空回答" }
+        }
+    }
+
+    private fun visionMessages(
+        prompt: String,
+        systemPrompt: String?,
+        image: ImageInput
+    ): List<VisionMessage> {
+        val parts = buildJsonArray {
+            addJsonObject {
+                put("type", "text")
+                put("text", prompt)
+            }
+            addJsonObject {
+                put("type", "image_url")
+                putJsonObject("image_url") {
+                    put("url", "data:${image.mimeType};base64,${image.base64}")
+                }
+            }
+        }
+        return buildList {
+            systemPrompt?.let { add(VisionMessage("system", JsonPrimitive(it))) }
+            add(VisionMessage("user", parts))
+        }
+    }
 }
 
 private const val MAX_ERROR_BODY = 500
@@ -129,3 +226,14 @@ data class ChatChunkResponse(
     @Serializable
     data class ChunkChoice(val delta: Message = Message("", ""))
 }
+
+@Serializable
+private data class VisionMessage(val role: String, val content: JsonElement)
+
+@Serializable
+private data class VisionChatRequest(
+    val model: String,
+    val messages: List<VisionMessage>,
+    val stream: Boolean = false,
+    val temperature: Double = 0.7
+)

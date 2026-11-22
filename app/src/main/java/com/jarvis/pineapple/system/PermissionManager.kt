@@ -58,6 +58,33 @@ object PermissionManager {
         android.Manifest.permission.CAMERA
     )
 
+    /** 通讯录相关权限 */
+    val CONTACTS_PERMISSIONS = arrayOf(
+        android.Manifest.permission.READ_CONTACTS
+    )
+
+    /**
+     * 首次启动时集中申请的运行时权限。
+     * 仅包含当前系统版本实际需要动态申请、且清单已声明的权限。
+     */
+    fun coreRuntimePermissions(): Array<String> {
+        val permissions = mutableListOf<String>()
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            permissions += NOTIFICATION_PERMISSIONS
+        }
+        permissions += MICROPHONE_PERMISSIONS
+        permissions += CAMERA_PERMISSIONS
+        permissions += PHONE_PERMISSIONS
+        permissions += SMS_PERMISSIONS
+        permissions += LOCATION_PERMISSIONS
+        permissions += CONTACTS_PERMISSIONS
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            permissions += android.Manifest.permission.BLUETOOTH_CONNECT
+            permissions += android.Manifest.permission.BLUETOOTH_SCAN
+        }
+        return permissions.distinct().toTypedArray()
+    }
+
     /**
      * 检查权限是否已授予
      */
