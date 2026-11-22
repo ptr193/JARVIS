@@ -6,6 +6,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -16,7 +17,12 @@ import kotlinx.coroutines.withContext
  * 32bpp true-color、RAW 编码、指针/键盘事件。服务器端（x11vnc）以 `-nopw` 启动。
  * 不支持 Tight/ZRLE 等压缩编码，也不处理文件传输。
  */
-class VncClient(private val listener: Listener) {
+class VncClient internal constructor(
+    private val listener: Listener,
+    private val socketFactory: () -> Socket
+) {
+
+    constructor(listener: Listener) : this(listener, { Socket() })
 
     interface Listener {
         fun onConnected(width: Int, height: Int)
@@ -39,18 +45,22 @@ class VncClient(private val listener: Listener) {
     @Volatile
     private var frameHeight = 0
 
+    private val writeLock = Any()
+    private val disconnectedNotified = AtomicBoolean(false)
+
     /** 连接并持续接收画面，直到断开或 [disconnect]。 */
     suspend fun run(host: String, port: Int) = withContext(Dispatchers.IO) {
         var reason = "连接已关闭"
+        disconnectedNotified.set(false)
+        running = true
         try {
-            val s = Socket()
+            val s = socketFactory()
             s.tcpNoDelay = true
             s.connect(InetSocketAddress(host, port), 8_000)
             socket = s
             val input = DataInputStream(BufferedInputStream(s.getInputStream()))
             val out = DataOutputStream(BufferedOutputStream(s.getOutputStream()))
             output = out
-            running = true
 
             val serverVersion = readVersion(input)
             writeVersion(out, serverVersion)
@@ -69,6 +79,7 @@ class VncClient(private val listener: Listener) {
                     0 -> {
                         input.skipFully(1)
                         val rects = input.readUnsignedShort()
+                        if (rects > MAX_RECTS) throw IllegalStateException("VNC 矩形数量过大：$rects")
                         var changed = false
                         repeat(rects) {
                             val x = input.readUnsignedShort()
@@ -89,6 +100,7 @@ class VncClient(private val listener: Listener) {
                     3 -> {
                         input.skipFully(3)
                         val length = input.readInt()
+                        validateTextLength(length, "CutText", MAX_CUT_TEXT_BYTES)
                         input.skipFully(length)
                     }
                     else -> throw IllegalStateException("未知的 RFB 消息类型：$messageType")
@@ -99,11 +111,13 @@ class VncClient(private val listener: Listener) {
             reason = if (running) "VNC 连接中断：${e.message ?: e.javaClass.simpleName}" else "连接已关闭"
         } finally {
             running = false
-            runCatching { output?.close() }
+            synchronized(writeLock) {
+                runCatching { output?.close() }
+                output = null
+            }
             runCatching { socket?.close() }
-            output = null
             socket = null
-            if (reason.isNotBlank()) listener.onDisconnected(reason)
+            notifyDisconnected(reason)
         }
     }
 
@@ -113,45 +127,58 @@ class VncClient(private val listener: Listener) {
     }
 
     /** 指针事件：buttonMask 1=左键 2=中键 4=右键，0=释放。 */
-    fun pointer(x: Int, y: Int, buttonMask: Int) {
-        if (x < 0 || y < 0 || x >= frameWidth || y >= frameHeight) return
-        synchronized(this) {
-            val out = output ?: return
-            runCatching {
-                out.writeByte(5)
-                out.writeByte(buttonMask)
-                out.writeShort(x)
-                out.writeShort(y)
-                out.flush()
-            }
+    fun pointer(x: Int, y: Int, buttonMask: Int): Boolean {
+        if (x < 0 || y < 0 || x >= frameWidth || y >= frameHeight) return false
+        return writeEvent {
+            writeByte(5)
+            writeByte(buttonMask)
+            writeShort(x)
+            writeShort(y)
         }
     }
 
     /** 按键事件（X11 keysym）。 */
-    fun key(keysym: Int, down: Boolean) {
-        synchronized(this) {
-            val out = output ?: return
-            runCatching {
-                out.writeByte(4)
-                out.writeByte(if (down) 1 else 0)
-                out.writeShort(0)
-                out.writeInt(keysym)
-                out.flush()
-            }
-        }
+    fun key(keysym: Int, down: Boolean): Boolean = writeEvent {
+        writeByte(4)
+        writeByte(if (down) 1 else 0)
+        writeShort(0)
+        writeInt(keysym)
     }
 
     /** 发送文本：ASCII 可见字符直接映射，回车映射为 Return。 */
-    fun sendText(text: String) {
-        text.forEach { ch ->
+    fun sendText(text: String): Boolean {
+        for (ch in text) {
             val keysym = when (ch) {
                 '\n', '\r' -> 0xFF0D
                 '\t' -> 0xFF09
-                else -> if (ch.code in 0x20..0x7E) ch.code else return@forEach
+                else -> if (ch.code in 0x20..0x7E) ch.code else continue
             }
-            key(keysym, true)
-            key(keysym, false)
+            if (!key(keysym, true) || !key(keysym, false)) return false
         }
+        return true
+    }
+
+    private fun writeEvent(event: DataOutputStream.() -> Unit): Boolean {
+        var failure: String? = null
+        synchronized(writeLock) {
+            if (!running) return false
+            val out = output ?: return false
+            try {
+                out.event()
+                out.flush()
+            } catch (e: Exception) {
+                running = false
+                failure = "VNC 发送失败：${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+        val reason = failure ?: return true
+        runCatching { socket?.close() }
+        notifyDisconnected(reason)
+        return false
+    }
+
+    private fun notifyDisconnected(reason: String) {
+        if (disconnectedNotified.compareAndSet(false, true)) listener.onDisconnected(reason)
     }
 
     private fun readVersion(input: DataInputStream): String {
@@ -205,11 +232,22 @@ class VncClient(private val listener: Listener) {
         frameHeight = input.readUnsignedShort()
         input.skipFully(16) // server pixel format，稍后由客户端覆盖
         val nameLength = input.readInt()
-        if (nameLength > 0) input.skipFully(nameLength)
+        validateTextLength(nameLength, "桌面名称", MAX_NAME_BYTES)
+        input.skipFully(nameLength)
         if (frameWidth <= 0 || frameHeight <= 0) {
             throw IllegalStateException("VNC 返回了无效分辨率：${frameWidth}x$frameHeight")
         }
+        val pixelCount = frameWidth.toLong() * frameHeight.toLong()
+        if (pixelCount > MAX_FRAME_PIXELS) {
+            throw IllegalStateException("VNC 分辨率过大：${frameWidth}x$frameHeight")
+        }
         listener.onConnected(frameWidth, frameHeight)
+    }
+
+    private fun validateTextLength(length: Int, label: String, maximum: Int) {
+        if (length < 0 || length > maximum) {
+            throw IllegalStateException("VNC ${label}长度非法：$length")
+        }
     }
 
     private fun setPixelFormat(out: DataOutputStream) {
@@ -259,21 +297,30 @@ class VncClient(private val listener: Listener) {
         width: Int,
         height: Int
     ) {
-        val rowBytes = ByteArray(width * 4)
+        if (width <= 0 || height <= 0) {
+            throw IllegalStateException("VNC 矩形尺寸非法：${width}x$height")
+        }
+        if (x.toLong() + width > frameWidth || y.toLong() + height > frameHeight) {
+            throw IllegalStateException("VNC 矩形越界：x=$x y=$y w=$width h=$height")
+        }
+        val pixelCount = width.toLong() * height.toLong()
+        if (pixelCount > MAX_FRAME_PIXELS) {
+            throw IllegalStateException("VNC 矩形像素数过大：$pixelCount")
+        }
+        val rowByteCount = width.toLong() * 4
+        if (rowByteCount > Int.MAX_VALUE) throw IllegalStateException("VNC 行宽溢出：$width")
+        val rowBytes = ByteArray(rowByteCount.toInt())
         for (row in 0 until height) {
             input.readFully(rowBytes)
             val destY = y + row
-            if (destY < 0 || destY >= frameHeight) continue
             var src = 0
             for (col in 0 until width) {
                 val destX = x + col
-                if (destX in 0 until frameWidth) {
-                    val b = rowBytes[src].toInt() and 0xFF
-                    val g = rowBytes[src + 1].toInt() and 0xFF
-                    val r = rowBytes[src + 2].toInt() and 0xFF
-                    pixels[destY * frameWidth + destX] =
-                        0xFF000000.toInt() or (r shl 16) or (g shl 8) or b
-                }
+                val b = rowBytes[src].toInt() and 0xFF
+                val g = rowBytes[src + 1].toInt() and 0xFF
+                val r = rowBytes[src + 2].toInt() and 0xFF
+                pixels[destY * frameWidth + destX] =
+                    0xFF000000.toInt() or (r shl 16) or (g shl 8) or b
                 src += 4
             }
         }
@@ -288,5 +335,12 @@ class VncClient(private val listener: Listener) {
             if (read < 0) throw java.io.EOFException("VNC 连接提前结束")
             remaining -= read
         }
+    }
+
+    private companion object {
+        const val MAX_FRAME_PIXELS = 16_777_216
+        const val MAX_NAME_BYTES = 65_536
+        const val MAX_CUT_TEXT_BYTES = 1_048_576
+        const val MAX_RECTS = 4_096
     }
 }
