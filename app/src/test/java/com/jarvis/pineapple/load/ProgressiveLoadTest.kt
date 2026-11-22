@@ -72,7 +72,7 @@ class ProgressiveLoadTest(private val round: Int) {
 
         val dir = tmp.newFolder("core-$round")
         val repo = ConversationRepository(conversationsDirOverride = dir)
-        val conv = repo.createConversation("负荷$round")
+        val conv = requireNotNull(repo.createConversation("负荷$round"))
         val payload = "汉".repeat(profile.payloadChars.coerceAtLeast(1))
         val messages = (1..profile.messagesPerConversation).map { idx ->
             ChatMessage(

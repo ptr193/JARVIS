@@ -31,18 +31,44 @@ import kotlinx.coroutines.flow.onEach
  * - 记忆系统上下文注入（REQ-11）
  * - 模型能力短板自动调度（REQ-13）
  */
-class ChatEngine(
+class ChatEngine private constructor(
     private val modelScheduler: ModelScheduler,
-    private val personalityRepository: PersonalityRepository,
     private val conversationRepository: ConversationRepository,
     private val memorySystem: MemorySystem,
     private val capabilityScheduler: ModelCapabilityScheduler,
     private val conversationEnhancer: ConversationEnhancer,
-    private val infoProcessor: InfoProcessor,
-    private val commandExecutor: SimpleCommandExecutor? = null,
-    private val vmCommandBridge: VmCommandBridge? = null,
-    private val rootCommandBridge: RootCommandBridge? = null
+    private val infoProcessor: InfoProcessor?,
+    private val commandExecutor: SimpleCommandExecutor?,
+    private val vmCommandBridge: VmCommandBridge?,
+    private val rootCommandBridge: RootCommandBridge?,
+    private val systemPromptProvider: suspend () -> String
 ) {
+    constructor(
+        modelScheduler: ModelScheduler,
+        personalityRepository: PersonalityRepository,
+        conversationRepository: ConversationRepository,
+        memorySystem: MemorySystem,
+        capabilityScheduler: ModelCapabilityScheduler,
+        conversationEnhancer: ConversationEnhancer,
+        infoProcessor: InfoProcessor,
+        commandExecutor: SimpleCommandExecutor? = null,
+        vmCommandBridge: VmCommandBridge? = null,
+        rootCommandBridge: RootCommandBridge? = null
+    ) : this(
+        modelScheduler = modelScheduler,
+        conversationRepository = conversationRepository,
+        memorySystem = memorySystem,
+        capabilityScheduler = capabilityScheduler,
+        conversationEnhancer = conversationEnhancer,
+        infoProcessor = infoProcessor,
+        commandExecutor = commandExecutor,
+        vmCommandBridge = vmCommandBridge,
+        rootCommandBridge = rootCommandBridge,
+        systemPromptProvider = {
+            val personality = personalityRepository.personality.first()
+            personalityRepository.buildSystemPrompt(personality)
+        }
+    )
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
@@ -54,12 +80,22 @@ class ChatEngine(
 
     val conversations: StateFlow<List<Conversation>> = conversationRepository.conversations
     val currentConversationId: StateFlow<String?> = conversationRepository.currentConversationId
-    val persistenceError: StateFlow<String?> = conversationRepository.lastError
+    private val _persistenceError = MutableStateFlow<String?>(null)
+    val persistenceError: StateFlow<String?> = _persistenceError.asStateFlow()
 
     private var conversation = Conversation()
 
-    /** 待用户二次确认的危险特权操作；确认前绝不执行。 */
-    private var pendingDangerousAction: (suspend () -> String)? = null
+    private enum class DangerousActionType { VM, HOST_ROOT }
+
+    /** 只保存重新核验所需的身份与命令，绝不保留可直接执行的旧闭包。 */
+    private data class PendingDangerousAction(
+        val conversationId: String,
+        val type: DangerousActionType,
+        val command: String,
+        val vmId: String? = null
+    )
+
+    private var pendingDangerousAction: PendingDangerousAction? = null
 
     init {
         val recentConversation = conversationRepository.getCurrentConversation()
@@ -67,26 +103,69 @@ class ChatEngine(
             conversation = recentConversation
             _messages.value = recentConversation.messages.toList()
         }
+        refreshPersistenceError()
+    }
+
+    private fun refreshPersistenceError() {
+        val errors = listOfNotNull(conversationRepository.lastError.value, memorySystem.lastError.value)
+            .filter { it.isNotBlank() }
+            .distinct()
+        _persistenceError.value = if (errors.isEmpty()) null else errors.joinToString("\n")
+    }
+
+    private fun persistenceSuffix(conversationSaved: Boolean, memorySaved: Boolean): String {
+        if (conversationSaved && memorySaved) return ""
+        val failures = buildList {
+            if (!conversationSaved) add("对话记录保存失败")
+            if (!memorySaved) add("长期记忆保存失败")
+        }
+        return "\n\n【记录保存警告】${failures.joinToString("；")}。" +
+            "该提示与上述命令执行或内容生成结果相互独立。"
+    }
+
+    private fun persistOutcome(reply: String, memoryNote: String): String {
+        val conversationSaved = conversationRepository.updateMessages(conversation.messages.toList())
+        val memorySaved = memorySystem.recordConversation(memoryNote)
+        refreshPersistenceError()
+        return reply + persistenceSuffix(conversationSaved, memorySaved)
     }
 
     private fun finishDirectReply(content: String, reply: String, memoryNote: String): Flow<String> {
         conversation.messages.add(ChatMessage(role = Role.ASSISTANT, content = reply, isStreaming = false))
+        val visibleReply = persistOutcome(reply, memoryNote)
+        conversation.messages[conversation.messages.lastIndex] =
+            conversation.messages.last().copy(content = visibleReply)
         _messages.value = conversation.messages.toList()
         _isGenerating.value = false
-        conversationRepository.updateMessages(conversation.messages.toList())
-        memorySystem.recordConversation(memoryNote)
-        return flowOf(reply)
+        return flowOf(visibleReply)
     }
 
-    private fun ensureConversation() {
-        if (conversationRepository.getCurrentConversation() == null) {
-            conversation = conversationRepository.createConversation()
-            _messages.value = conversation.messages.toList()
+    /** 返回 null 表示当前会话可用；否则返回应直接展示给用户的错误。 */
+    private fun ensureConversation(): String? {
+        val current = conversationRepository.getCurrentConversation()
+        if (current != null) {
+            if (conversation.id != current.id) {
+                conversation = current
+                _messages.value = current.messages.toList()
+            }
+            return null
         }
+        val created = conversationRepository.createConversation()
+        refreshPersistenceError()
+        if (created == null) {
+            val detail = conversationRepository.lastError.value?.let { " $it" }.orEmpty()
+            val error = "无法创建当前会话，已停止处理该指令，未执行命令或模型。$detail"
+            _lastSchedulingInfo.value = error
+            _isGenerating.value = false
+            return error
+        }
+        conversation = created
+        _messages.value = created.messages.toList()
+        return null
     }
 
     suspend fun sendUserMessage(content: String): Flow<String> {
-        ensureConversation()
+        ensureConversation()?.let { return flowOf(it) }
         val userMsg = ChatMessage(role = Role.USER, content = content)
         conversation.messages.add(userMsg)
         _messages.value = conversation.messages.toList()
@@ -100,13 +179,14 @@ class ChatEngine(
                 isConfirmationText(content) -> {
                     pendingDangerousAction = null
                     val reply = try {
-                        pending()
+                        confirmDangerousAction(pending)
                     } catch (e: kotlinx.coroutines.CancellationException) {
+                        _isGenerating.value = false
                         throw e
                     } catch (e: Exception) {
                         "执行失败：${e.message ?: e.javaClass.simpleName}"
                     }
-                    return finishDirectReply(content, reply, "危险操作确认执行：${content.take(50)}")
+                    return finishDirectReply(content, reply, "危险操作确认请求：${content.take(50)}")
                 }
                 isCancelText(content) -> {
                     pendingDangerousAction = null
@@ -155,16 +235,11 @@ class ChatEngine(
         if (loadedModel == null) {
             val error = ModelScheduler.NO_MODEL_MESSAGE
             _lastSchedulingInfo.value = error
-            conversation.messages.add(ChatMessage(role = Role.ASSISTANT, content = error, isStreaming = false))
-            _messages.value = conversation.messages.toList()
-            _isGenerating.value = false
-            conversationRepository.updateMessages(conversation.messages.toList())
-            return flowOf(error)
+            return finishDirectReply(content, error, "无模型响应：${content.take(50)}")
         }
 
         val primaryModel: AiModel = loadedModel
-        val personality = personalityRepository.personality.first()
-        val systemPrompt = personalityRepository.buildSystemPrompt(personality)
+        val systemPrompt = systemPromptProvider()
 
         val decision = capabilityScheduler.analyzeAndDecide(content)
         _lastSchedulingInfo.value = decision.reason
@@ -244,7 +319,7 @@ class ChatEngine(
         return flow
             .onEach { chunk ->
                 collected.append(chunk)
-                val idx = conversation.messages.indexOfLast { it.isStreaming }
+                val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
                 if (idx >= 0) {
                     conversation.messages[idx] = conversation.messages[idx].copy(content = collected.toString())
                     _messages.value = conversation.messages.toList()
@@ -252,54 +327,79 @@ class ChatEngine(
             }
             .catch { error ->
                 failed = true
+                if (error is kotlinx.coroutines.CancellationException) {
+                    _lastSchedulingInfo.value = "模型请求已取消"
+                    throw error
+                }
                 val message = "模型请求失败：${error.message ?: error.javaClass.simpleName}"
-                val idx = conversation.messages.indexOfLast { it.isStreaming }
+                val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
                 if (idx >= 0) {
-                    conversation.messages[idx] = conversation.messages[idx].copy(
-                        content = message,
-                        isStreaming = false
-                    )
+                    conversation.messages[idx] = conversation.messages[idx].copy(content = message)
                     _messages.value = conversation.messages.toList()
                 }
                 _lastSchedulingInfo.value = message
             }
-            .onCompletion {
-                val idx = conversation.messages.indexOfLast { it.isStreaming }
+            .onCompletion { cause ->
+                val cancelled = cause is kotlinx.coroutines.CancellationException
+                if (cancelled) failed = true
+                val idx = conversation.messages.indexOfLast { it.id == aiMsg.id }
+                val raw = if (idx >= 0) conversation.messages[idx].content else collected.toString()
+                val terminalReply = if (cancelled) "$raw\n\n模型请求已取消。" else raw
+                val finalReply = if (!failed && !cancelled) {
+                    conversationEnhancer.adjustResponseTone(terminalReply, emotional.userEmotion)
+                } else {
+                    terminalReply
+                }
+                val summary = when {
+                    cancelled -> "用户问：${content.take(50)}... JARVIS回复已取消：${raw.take(100)}"
+                    failed -> "用户问：${content.take(50)}... JARVIS响应失败：${raw.take(100)}"
+                    else -> "用户问：${content.take(50)}... JARVIS答：${finalReply.take(100)}..."
+                }
                 if (idx >= 0) {
-                    // 语气与情绪适配（#9）：对最终回复做后处理
-                    val raw = conversation.messages[idx].content
-                    val adjusted = conversationEnhancer.adjustResponseTone(raw, emotional.userEmotion)
-                    conversation.messages[idx] = conversation.messages[idx].copy(content = adjusted, isStreaming = false)
-                    _messages.value = conversation.messages.toList()
+                    conversation.messages[idx] = conversation.messages[idx].copy(
+                        content = finalReply,
+                        isStreaming = false
+                    )
                 }
+                val visibleReply = persistOutcome(finalReply, summary)
+                if (idx >= 0) {
+                    conversation.messages[idx] = conversation.messages[idx].copy(content = visibleReply)
+                }
+                _messages.value = conversation.messages.toList()
                 _isGenerating.value = false
-
-                conversationRepository.updateMessages(conversation.messages.toList())
-
-                if (!failed && collected.isNotEmpty()) {
-                    val summary = "用户问：${content.take(50)}... JARVIS答：${collected.toString().take(100)}..."
-                    memorySystem.recordConversation(summary)
-                }
             }
     }
 
-    fun newConversation(title: String = "新对话") {
-        conversation = conversationRepository.createConversation(title)
-        _messages.value = emptyList()
+    fun newConversation(title: String = "新对话"): Boolean {
+        pendingDangerousAction = null
+        val created = conversationRepository.createConversation(title)
+        refreshPersistenceError()
+        if (created == null) return false
+        conversation = created
+        _messages.value = created.messages.toList()
         _lastSchedulingInfo.value = null
+        return true
     }
 
-    fun switchConversation(conversationId: String) {
-        conversationRepository.switchConversation(conversationId)
-        val conv = conversationRepository.getCurrentConversation()
-        if (conv != null) {
-            conversation = conv
-            _messages.value = conv.messages.toList()
+    fun switchConversation(conversationId: String): Boolean {
+        pendingDangerousAction = null
+        if (!conversationRepository.switchConversation(conversationId)) {
+            refreshPersistenceError()
+            return false
         }
+        val conv = conversationRepository.getCurrentConversation() ?: return false
+        conversation = conv
+        _messages.value = conv.messages.toList()
+        refreshPersistenceError()
+        return true
     }
 
-    fun deleteConversation(conversationId: String) {
-        conversationRepository.deleteConversation(conversationId)
+    fun deleteConversation(conversationId: String): Boolean {
+        pendingDangerousAction = null
+        if (!conversationRepository.deleteConversation(conversationId)) {
+            refreshPersistenceError()
+            return false
+        }
         val conv = conversationRepository.getCurrentConversation()
         if (conv != null) {
             conversation = conv
@@ -308,6 +408,8 @@ class ChatEngine(
             conversation = Conversation()
             _messages.value = emptyList()
         }
+        refreshPersistenceError()
+        return true
     }
 
     // ==================== 对话导出 / 导入 / 归档 ====================
@@ -321,20 +423,28 @@ class ChatEngine(
 
     /** 导入对话（兼容全部/单个导出格式）；成功后同步当前会话消息。 */
     fun importConversations(json: String): Boolean {
+        pendingDangerousAction = null
         val ok = conversationRepository.importFromJson(json)
         if (ok) {
             val conv = conversationRepository.getCurrentConversation()
             if (conv != null) {
                 conversation = conv
                 _messages.value = conv.messages.toList()
+            } else {
+                conversation = Conversation()
+                _messages.value = emptyList()
             }
         }
+        refreshPersistenceError()
         return ok
     }
 
     /** 归档或恢复对话；持久化失败返回 false。 */
-    fun archiveConversation(conversationId: String, archived: Boolean): Boolean =
-        conversationRepository.setArchived(conversationId, archived)
+    fun archiveConversation(conversationId: String, archived: Boolean): Boolean {
+        val saved = conversationRepository.setArchived(conversationId, archived)
+        refreshPersistenceError()
+        return saved
+    }
 
     // ==================== 虚拟机操控 ====================
 
@@ -349,7 +459,16 @@ class ChatEngine(
         val target = vm ?: return "未找到可用虚拟机。"
 
         if (isDangerousCommand(execution.command)) {
-            pendingDangerousAction = { runVmCommand(target, execution.command) }
+            val conversationId = conversationRepository.currentConversationId.value
+            if (conversationId == null || conversationId != conversation.id) {
+                return "当前会话已变化，危险命令未执行，请重新发起指令。"
+            }
+            pendingDangerousAction = PendingDangerousAction(
+                conversationId = conversationId,
+                type = DangerousActionType.VM,
+                command = execution.command,
+                vmId = target.id
+            )
             return buildString {
                 appendLine("检测到危险命令，需要二次确认：")
                 appendLine("虚拟机：${target.name}")
@@ -358,6 +477,57 @@ class ChatEngine(
             }.trimEnd()
         }
         return runVmCommand(target, execution.command)
+    }
+
+    private suspend fun confirmDangerousAction(pending: PendingDangerousAction): String {
+        if (conversationRepository.currentConversationId.value != pending.conversationId ||
+            conversation.id != pending.conversationId ||
+            conversationRepository.conversations.value.none { it.id == pending.conversationId }
+        ) {
+            return "当前会话已变化，原危险操作已失效，未执行任何命令。"
+        }
+        return when (pending.type) {
+            DangerousActionType.VM -> confirmVmAction(pending)
+            DangerousActionType.HOST_ROOT -> confirmRootAction(pending.command)
+        }
+    }
+
+    private suspend fun confirmVmAction(pending: PendingDangerousAction): String {
+        val bridge = vmCommandBridge ?: return "虚拟机能力不可用，危险操作未执行。"
+        val vms = try {
+            bridge.listVms()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "确认前读取虚拟机列表失败，危险操作未执行：${e.message ?: e.javaClass.simpleName}"
+        }
+        val target = vms.firstOrNull { it.id == pending.vmId }
+            ?: return "目标虚拟机已不存在，原危险操作已失效，未执行任何命令。"
+        if (!target.running) {
+            val started = try {
+                bridge.start(target.id)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                false
+            }
+            if (!started) return "目标虚拟机当前未运行且启动失败，危险操作未执行。"
+        }
+        return runVmCommand(target, pending.command)
+    }
+
+    private suspend fun confirmRootAction(command: String): String {
+        val bridge = rootCommandBridge ?: return "宿主机 root 能力不可用，危险操作未执行。"
+        val status = try {
+            bridge.status()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "确认前 root 状态探测失败，危险操作未执行：${e.message ?: e.javaClass.simpleName}"
+        }
+        if (!status.allowed) return "root 授权已撤销，原危险操作已失效，未执行任何命令。"
+        if (!status.granted) return "确认前 root 权限已不可用，危险操作未执行：${status.detail}"
+        return runRootCommand(bridge, command)
     }
 
     /** 实际执行虚拟机命令并如实回传输出与退出码。 */
@@ -401,7 +571,15 @@ class ChatEngine(
             return "设备当前无法提供 root 权限：${status.detail}"
         }
         if (isDangerousCommand(command)) {
-            pendingDangerousAction = { runRootCommand(bridge, command) }
+            val conversationId = conversationRepository.currentConversationId.value
+            if (conversationId == null || conversationId != conversation.id) {
+                return "当前会话已变化，危险 root 命令未执行，请重新发起指令。"
+            }
+            pendingDangerousAction = PendingDangerousAction(
+                conversationId = conversationId,
+                type = DangerousActionType.HOST_ROOT,
+                command = command
+            )
             return buildString {
                 appendLine("检测到危险 root 命令，需要二次确认：")
                 appendLine("命令：$command")
@@ -491,10 +669,16 @@ class ChatEngine(
         }
     }
 
-    fun clearConversation() {
+    fun clearConversation(): Boolean {
+        pendingDangerousAction = null
+        if (!conversationRepository.updateMessages(emptyList())) {
+            refreshPersistenceError()
+            return false
+        }
         conversation.messages.clear()
         _messages.value = emptyList()
-        conversationRepository.updateMessages(emptyList())
+        refreshPersistenceError()
+        return true
     }
 
     // ==================== 翻译指令解析（#12/#13） ====================
@@ -538,9 +722,10 @@ class ChatEngine(
     private suspend fun buildRetrievalContext(content: String): String {
         val t = content.trim()
         val query = detectSearchQuery(t) ?: return ""
+        val processor = infoProcessor ?: return "【实时检索失败】\n查询：$query\n信息处理器不可用。"
 
         return try {
-            val retrieval = infoProcessor.retrieveInfo(query)
+            val retrieval = processor.retrieveInfo(query)
             if (retrieval.results.isEmpty()) {
                 return "【实时检索无结果】\n查询：$query\n未检索到可用结果，请明确告知用户没有查到，不得编造实时信息。"
             }
@@ -555,9 +740,9 @@ class ChatEngine(
                     priority = retrieval.results.size - i
                 )
             }
-            val filtered = infoProcessor.filterIntelligence(items, FilterCriteria(minRelevance = 0.3f))
-            val sorted = infoProcessor.sortByPriority(filtered)
-            val summary = infoProcessor.summarizeIntelligence(sorted)
+            val filtered = processor.filterIntelligence(items, FilterCriteria(minRelevance = 0.3f))
+            val sorted = processor.sortByPriority(filtered)
+            val summary = processor.summarizeIntelligence(sorted)
 
             buildString {
                 appendLine("【实时检索结果（来源：网络搜索）】")
@@ -576,6 +761,30 @@ class ChatEngine(
     }
 
     companion object {
+
+        /** JVM 行为测试使用纯 Kotlin 入口；生产仍统一走公开 Android 依赖构造器。 */
+        internal fun createForTest(
+            modelScheduler: ModelScheduler,
+            conversationRepository: ConversationRepository,
+            memorySystem: MemorySystem,
+            capabilityScheduler: ModelCapabilityScheduler,
+            conversationEnhancer: ConversationEnhancer,
+            commandExecutor: SimpleCommandExecutor? = null,
+            vmCommandBridge: VmCommandBridge? = null,
+            rootCommandBridge: RootCommandBridge? = null,
+            systemPromptProvider: suspend () -> String
+        ): ChatEngine = ChatEngine(
+            modelScheduler = modelScheduler,
+            conversationRepository = conversationRepository,
+            memorySystem = memorySystem,
+            capabilityScheduler = capabilityScheduler,
+            conversationEnhancer = conversationEnhancer,
+            infoProcessor = null,
+            commandExecutor = commandExecutor,
+            vmCommandBridge = vmCommandBridge,
+            rootCommandBridge = rootCommandBridge,
+            systemPromptProvider = systemPromptProvider
+        )
 
         /** 危险命令特征：命中后必须经用户二次确认才允许执行。 */
         private val DANGEROUS_PATTERNS = listOf(

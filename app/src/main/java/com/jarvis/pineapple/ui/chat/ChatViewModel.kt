@@ -102,17 +102,11 @@ class ChatViewModel(
         "【附件】读取失败：${e.message}"
     }
 
-    fun newConversation() {
-        chatEngine.newConversation()
-    }
+    fun newConversation(): Boolean = chatEngine.newConversation()
 
-    fun switchConversation(conversationId: String) {
-        chatEngine.switchConversation(conversationId)
-    }
+    fun switchConversation(conversationId: String): Boolean = chatEngine.switchConversation(conversationId)
 
-    fun deleteConversation(conversationId: String) {
-        chatEngine.deleteConversation(conversationId)
-    }
+    fun deleteConversation(conversationId: String): Boolean = chatEngine.deleteConversation(conversationId)
 
     fun archiveConversation(conversationId: String, archived: Boolean): Boolean =
         chatEngine.archiveConversation(conversationId, archived)
@@ -147,9 +141,7 @@ class ChatViewModel(
         }.getOrDefault(false)
     }
 
-    fun clearConversation() {
-        chatEngine.clearConversation()
-    }
+    fun clearConversation(): Boolean = chatEngine.clearConversation()
 
     companion object {
         private const val MAX_TEXT_CHARS = 24_000
