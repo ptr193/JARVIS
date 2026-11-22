@@ -21,6 +21,8 @@
 
 最终 40/40 轮加压和 272/272 项 Debug JVM 测试通过，Lint 为 0 error。静态源码契约测试只证明代码结构与 JVM 行为，不代表硬件、电话、短信、传感器、云服务或 arm64 PRoot 已完成真机验收。
 
+**矩阵诚实性复核（本轮）**：逐项核对矩阵引用的源码文件与方法名，修正错误引用（`reconstruct2D`→`analyzeImageFeatures`、`checkPermissionUsage`→`checkPermissionGrants`、`remoteLockDevice`→`lockDevice`、`remoteWipeData`→`wipeDeviceData`、#73 文件 `HolographicInterface.kt`→`UsbDeviceManager.kt` 等）；补实 #50 接听电话、#72 外接显示、#67/#68/#71 屏幕共享、#46/#42 反入侵、#78/#79 振动/手电、#73 USB、#36 虹膜扫描预留；为 #97/#114/#115/#116 新增 `HolographicInterface` 诚实能力边界（接入 ARCore 真实探测可用性，不支持绝不伪造）。#97（无手部追踪模型）与 #115（AR 交互渲染未实现）由虚假 DONE 更正为 PARTIAL。
+
 ---
 
 ## 历史可达性复核（2026-10-20）
@@ -82,8 +84,8 @@
 | 29 | 数据恢复 | `info/InfoProcessor.kt`、`autonomous/AutonomousModules.kt` | DONE | 本轮接入：智能中枢"恢复数据/查看备份" |
 | 30 | 数据记录 | `info/InfoProcessor.kt` | DONE | `logData()`，本轮接入 |
 | 31 | 数据回放 | `info/InfoProcessor.kt` | DONE | `replayData()` 时间窗口回放，本轮接入 |
-| 32 | 数字重建 | `info/InfoProcessor.kt` | DONE | `reconstruct2D/3D()` 真实实现（需输入图像） |
-| 33 | 场景还原 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 场景还原」可拍照后调用 `reconstruct2D` |
+| 32 | 数字重建 | `info/InfoProcessor.kt` | DONE | `analyzeImageFeatures()`/`analyzeDepthSamples()` 真实实现（需输入图像） |
+| 33 | 场景还原 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 场景还原」可拍照后调用 `analyzeImageFeatures` |
 
 ---
 
@@ -93,12 +95,12 @@
 |---|------|---------|------|------|
 | 34 | 人脸识别 | `security/SecurityManager.kt`、`perception/MLKitFaceDetector.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 安全中心「打开相机拍照 → 人脸识别」走 ML Kit |
 | 35 | 身份比对 | `security/SecurityManager.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 安全中心采集参考人脸后再比对 `compareFaces()` |
-| 36 | 虹膜扫描 | `security/SecurityManager.kt` | RESERVED | 接口 `scanIris()` 预留（普通相机无法采集虹膜） |
+| 36 | 虹膜扫描 | `security/SecurityManager.kt` | RESERVED | `scanIris()` 已实现为诚实边界：无 IR 摄像头返回 Unsupported，绝不伪造 irisCode；UI 可达 |
 | 37 | 生物验证 | `security/SecurityModules.kt`、`security/SecurityManager.kt` | DONE | `BiometricPrompt` 真实接入 |
-| 38 | 访问权限分级 | `security/SecurityManager.kt`、`ui/settings/SecurityTab.kt` | DONE | `checkPermissionUsage()` 真实扫描，本轮接入 UI |
-| 39 | 手机锁定与防盗 | `security/SecurityManager.kt` | DONE | `lockDevice()`/`remoteLockDevice()`，本轮接入 UI |
-| 40 | 身份验证与防冒用 | `security/SecurityManager.kt` | DONE | `verifyIdentity()` 多因素 |
-| 41 | 远程数据擦除 | `security/SecurityManager.kt` | DONE | `remoteWipeData()`（需设备管理器），本轮接入 UI+二次确认 |
+| 38 | 访问权限分级 | `security/SecurityManager.kt`、`ui/settings/SecurityTab.kt` | DONE | `checkPermissionGrants()` 真实扫描，本轮接入 UI |
+| 39 | 手机锁定与防盗 | `security/SecurityManager.kt` | DONE | `lockDevice()`（设备管理器），本轮接入 UI |
+| 40 | 身份验证与防冒用 | `security/SecurityManager.kt`、`security/SecurityModules.kt` | DONE | 强生物识别（`BiometricAuthActivity`）+ 人脸比对（`compareFaces()`），UI 可达 |
+| 41 | 远程数据擦除 | `security/SecurityManager.kt` | DONE | `wipeDeviceData()`（需设备管理器），本轮接入 UI+二次确认 |
 | 42 | 权限管控与安全响应 | `security/SecurityManager.kt` | DONE | `respondToSecurityEvent()`，本轮接入 |
 | 43 | 安全策略效能评估 | `security/SecurityManager.kt` | DONE | `evaluateSecurityPolicy()`，本轮接入 UI |
 | 44 | 隐私风险评估 | `security/SecurityManager.kt` | DONE | `assessPrivacyRisk()`，本轮接入 UI |
@@ -114,7 +116,7 @@
 | # | 功能 | 代码文件 | 状态 | 证据 |
 |---|------|---------|------|------|
 | 49 | 拨打电话 | `system/PhoneController.kt` | DONE | 本轮接入：系统操控"拨打电话" |
-| 50 | 接听电话 | `system/PhoneController.kt` | PARTIAL | `answerCall()` 有系统 API 实现，需权限/角色；当前未发现 UI 或对话调用点 |
+| 50 | 接听电话 | `system/PhoneController.kt` | DONE | `answerCall()` 真实实现（含 SDK 版本/电话权限/默认拨号应用角色校验），本轮接入 UI 入口与权限请求 |
 | 51 | 短信发送 | `system/SmsController.kt` | DONE | 本轮接入：系统操控"发送短信" |
 | 52 | 通话/短信读取 | `system/PhoneController.kt`、`system/SmsController.kt` | DONE | 本轮接入：读取通话记录/短信 |
 | 53 | 日历与提醒 | `system/CalendarController.kt`、`system/CommunicationManager.kt` | DONE | 本轮接入：创建日程/添加提醒 |
@@ -131,8 +133,8 @@
 | 64 | 硬件诊断 | `system/HardwareDiagnostics.kt` | DONE | `quickCheck()`/`performFullDiagnostics()`，本轮接入 |
 | 65 | 组件诊断 | `system/HardwareDiagnostics.kt` | DONE | `diagnoseComponent()` |
 | 66 | 根因分析 | `system/HardwareDiagnostics.kt` | DONE | `analyzeRootCause()` |
-| 67 | 远程协助 | `system/RemoteAssistanceManager.kt` | DONE | `requestRemoteAssistance()`，本轮接入 |
-| 68 | 屏幕共享 | `system/RemoteAssistanceManager.kt` | DONE | `createScreenCaptureIntent()`/`startScreenSharing()` |
+| 67 | 远程协助 | `system/RemoteAssistanceManager.kt` | DONE | `captureScreenToFile()`/`buildShareIntent()` 捕获并分享屏幕截图，本轮接入 UI |
+| 68 | 屏幕共享 | `system/RemoteAssistanceManager.kt` | DONE | `createScreenCaptureIntent()`/`onCaptureConsent()`/`captureScreenToFile()` MediaProjection 真实接入 |
 
 ---
 
@@ -143,8 +145,8 @@
 | 69 | 蓝牙设备管理 | `system/DeviceMonitor.kt`、`system/ScreenshotManager.kt` | DONE | 已实现并接入设置页 |
 | 70 | WiFi 控制 | `system/SystemSettingsController.kt` | DONE | 本轮接入 |
 | 71 | 屏幕镜像 | `system/RemoteAssistanceManager.kt` | DONE | MediaProjection 真实接入 |
-| 72 | 外接显示 | `system/ScreenshotManager.kt` | PARTIAL | 依赖外接显示硬件 |
-| 73 | USB 设备 | `perception/HolographicInterface.kt` | DONE | `probeUsbDevices()` 真实探测 |
+| 72 | 外接显示 | `system/SecondaryDisplayManager.kt` | DONE | `DisplayManager` 真实探测外接屏，区分「无设备」与「探测失败」，UI 可达；实际输出内容仍需外接硬件 |
+| 73 | USB 设备 | `system/UsbDeviceManager.kt` | DONE | `probeUsbDevices()` 真实探测，UI 可达 |
 | 74 | 传感器读取 | `perception/PerceptionManager.kt` | DONE | 加速度/陀螺仪/光照，本轮接入 UI |
 | 75 | 摄像头控制 | `perception/PerceptionManager.kt` | DONE | Camera2 真实采集 |
 | 76 | 麦克风控制 | `speech/SpeechRecognizer.kt` | DONE | AudioRecord/Recognizer |
@@ -168,7 +170,7 @@
 | 94 | 物体检测 | `perception/MLKitObjectDetector.kt`、`perception/ObjectDetector.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 物体检测」走 ML Kit |
 | 95 | 物体追踪 | `perception/PerceptionManager.kt` | DONE | `updateTrackedObjects()`/`markObject()` |
 | 96 | 姿态识别 | `perception/PerceptionManager.kt` | DONE | `getPhoneOrientation()`，本轮接入 |
-| 97 | 手势识别 | `perception/HolographicInterface.kt` | DONE | `handleGesture()` 真实处理 |
+| 97 | 手势识别 | `perception/HolographicInterface.kt` | PARTIAL | `gestureCapability()` 诚实报告未集成手部追踪模型；无真实手势识别，不伪造 |
 | 98 | 跌倒检测 | `autonomous/AutonomousDecisionManager.kt` | DONE | `detectFall()` |
 | 99 | 睡眠监测 | `health/PpgMonitor.kt`、`health/HealthMonitor.kt` | PARTIAL | PPG 需摄像头长时间采集 |
 | 100 | 心率监测 | `health/HealthModules.kt` | DONE | `measureHeartRate()` 传感器真实读取，本轮接入 UI |
@@ -190,15 +192,15 @@
 | 109 | 文字识别 | `perception/PerceptionManager.kt` | DONE | OCR 能力 |
 | 110 | 条形码 | `info/InfoProcessor.kt` | DONE | 已实现 |
 | 111 | 二维码 | `info/InfoProcessor.kt` | DONE | 已实现 |
-| 112 | 文档扫描 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 文档扫描」可拍照后调用 `reconstruct2D` |
+| 112 | 文档扫描 | `perception/PerceptionManager.kt`、`info/InfoProcessor.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 文档扫描」可拍照后调用 `analyzeImageFeatures` |
 | 113 | 实时翻译视觉 | `chat/TranslationEngine.kt`、`ui/camera/CameraCaptureSection.kt` | DONE | 智能中枢「相机采集 → 视觉翻译」检测标签后走 `TranslationEngine` |
-| 114 | 全息投影 | `perception/HolographicInterface.kt` | RESERVED | 需全息硬件，接口预留 |
-| 115 | AR 界面 | `perception/HolographicInterface.kt` | DONE | `CameraArInterface` 真实实现，本轮接入 UI |
-| 116 | 精准抓取 | `perception/HolographicInterface.kt` | RESERVED | 需机械臂硬件 |
+| 114 | 全息投影 | `perception/HolographicInterface.kt` | RESERVED | `holographicProjectionCapability()` 诚实报告无全息投影硬件，接口预留 |
+| 115 | AR 界面 | `perception/HolographicInterface.kt` | PARTIAL | 接入 ARCore，`arCapability()` 真实探测可用性；AR 交互渲染未实现，需支持设备 |
+| 116 | 精准抓取 | `perception/HolographicInterface.kt` | RESERVED | `roboticArmCapability()` 诚实报告无外接机械臂，接口预留 |
 | 117 | 自主任务 | `autonomous/AutonomousDecisionManager.kt` | DONE | `registerTask()`/`executeTask()`，本轮接入 |
 | 118 | 主动预警 | `autonomous/AutonomousModules.kt` | DONE | `ProactiveNotifier.notify()`，本轮接入 |
 | 119 | 主动建议 | `autonomous/AutonomousDecisionManager.kt` | DONE | `generateContextualSuggestions()`，本轮接入 |
-| 120 | 应急协议 | `autonomous/AutonomousModules.kt`、`AutonomousDecisionManager.kt` | DONE | 真实拨号/短信/锁定，本轮接入 |
+| 120 | 应急协议 | `autonomous/AutonomousModules.kt`、`autonomous/AutonomousDecisionManager.kt` | DONE | 真实拨号/短信/锁定，本轮接入 |
 | 121 | 决策推理 | `autonomous/AutonomousDecisionManager.kt` | DONE | `makeDecision()` 规则匹配 |
 | 122 | 生命威胁检测 | `autonomous/AutonomousDecisionManager.kt` | DONE | `detectLifeThreat()` |
 | 123 | 越界保护 | `autonomous/AutonomousDecisionManager.kt` | RESERVED | 越权保护机制按规格预留 |
@@ -212,7 +214,7 @@
 | # | 功能 | 代码文件 | 状态 | 证据 |
 |---|------|---------|------|------|
 | 126 | 健康诊断 | `health/HealthMonitor.kt` | RESERVED | 医疗诊断属受限项 |
-| 127 | 用药建议 | `health/HealthManager.kt` | RESERVED | 医疗建议属受限项 |
+| 127 | 用药建议 | — | RESERVED | 医疗建议属受限项，无实现文件（接口预留） |
 | 128 | 用药提醒 | `health/HealthModules.kt` | DONE | `addMedication()`/`getDueMedications()`，本轮接入 |
 | 129 | 健康趋势 | `health/HealthModules.kt` | DONE | `analyzeTrend()` 真实均值分类，本轮接入 |
 | 130 | 疲劳检测 | `health/HealthModules.kt` | DONE | `FatigueMonitor.detectFatigue()`，本轮接入 |
@@ -250,8 +252,8 @@
 | MISSING | 0 | 0% |
 | **合计** | **144** | 100% |
 
-**PARTIAL 明细（3 项）**：#50 接听电话、#72 外接显示、#99 睡眠监测。
-**PARTIAL 原因**：#50 缺少 UI/对话调用点；#72/#99 依赖外接显示或 PPG 长时间采集等硬件条件。相机入口 #33/#34/#35/#94/#112/#113 已于 2026-11-04 接通。
+**PARTIAL 明细（3 项）**：#97 手势识别、#99 睡眠监测、#115 AR 界面。
+**PARTIAL 原因**：#97 未集成手部追踪模型（`HolographicInterface` 诚实报告不可用，不伪造）；#115 已接入 ARCore 真实探测可用性，但 AR 交互渲染未实现、需支持设备；#99 PPG 需摄像头长时间采集。相机入口 #33/#34/#35/#94/#112/#113 已于 2026-11-04 接通。
 **RESERVED（13 项）**：#36、#114、#116、#123、#126、#127、#131、#135、#137、#138、#140、#142、#144，均为规格书明确预留的科幻/医疗合规/云端算力项。
 
 ---
@@ -264,7 +266,7 @@
 | REQ-02 | 无占位符 | ✅ | 生产源码 `app/src/main` 0 处 `TODO`/`FIXME`/`UnsupportedOperationException`/空 `onClick` |
 | REQ-03 | 唤醒与前台服务 | ✅ | 8 种唤醒方式 + `KeepAliveService` |
 | REQ-04 | 多模型切换 | ✅ | `ModelScheduler` + 4 模型配置 |
-| REQ-05 | 禁止占位、必须真实可用 | 部分达成 | 本轮已修复确认的假成功/吞错；#50 仍缺用户入口，硬件能力待真机验收 |
+| REQ-05 | 禁止占位、必须真实可用 | 部分达成 | 本轮已修复确认的假成功/吞错，并补齐 #50 等用户入口；硬件/云端能力待真机验收 |
 | REQ-06 | 虚拟机（Haven 式 PRoot） | ✅ | `vm/HavenVmManager`、`ProotManager`，集成测试覆盖 |
 | REQ-07 | 人格与灵魂 | ✅ | `personality/Personality.kt` |
 | REQ-08 | 长期记忆 | ✅ | `autonomous/MemorySystem.kt`，本轮补齐导入 |
@@ -292,4 +294,4 @@
 
 ---
 
-*文档版本：v3.0 | 复核日期：2026-11-22 | 上一版本：v2.0（2026-10-20）*
+*文档版本：v3.1 | 复核日期：2026-11-22 | 上一版本：v3.0（2026-11-22）*
