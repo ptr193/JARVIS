@@ -37,12 +37,19 @@ import com.jarvis.pineapple.system.CrossAppOperator
 import com.jarvis.pineapple.system.DeviceControlManager
 import com.jarvis.pineapple.system.HardwareDiagnostics
 import com.jarvis.pineapple.system.UsbDeviceManager
+import com.jarvis.pineapple.system.RemoteAssistanceManager
 import com.jarvis.pineapple.system.MediaController
 import com.jarvis.pineapple.system.NavigationController
 import com.jarvis.pineapple.system.PhoneController
 import com.jarvis.pineapple.system.SmsController
 import com.jarvis.pineapple.system.SystemSettingsController
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import org.koin.core.context.GlobalContext
 
 /**
@@ -64,6 +71,8 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     val diagnostics = remember { GlobalContext.get().get<HardwareDiagnostics>() }
     val device = remember { GlobalContext.get().get<DeviceControlManager>() }
     val usb = remember { GlobalContext.get().get<UsbDeviceManager>() }
+    val remote = remember { GlobalContext.get().get<RemoteAssistanceManager>() }
+    val context = LocalContext.current
 
     // 在组合中通过 collectAsState 观察 StateFlow，避免直接读取 .value 导致不重组。
     val reminders by communication.reminders.collectAsState()
@@ -77,6 +86,7 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
     var systemInfo by remember { mutableStateOf("未操作") }
     var diagInfo by remember { mutableStateOf("尚未诊断") }
     var scheduleInfo by remember { mutableStateOf("暂无日程") }
+    var shareInfo by remember { mutableStateOf("尚未捕获") }
 
     val requestPhone = rememberOnDemandPermission(
         permissions = PermissionManager.PHONE_PERMISSIONS,
@@ -360,6 +370,53 @@ fun SystemControlTab(showMsg: (String) -> Unit) {
             }) { Text("探测 USB 设备") }
         }
         Text(usbInfo, fontSize = 12.sp)
+    }
+
+    fun captureAndShare() {
+        scope.launch {
+            val file = withContext(Dispatchers.IO) { remote.captureScreenToFile() }
+            val intent = remote.buildShareIntent(file)
+            if (intent == null) {
+                shareInfo = "屏幕捕获失败"
+                showMsg(shareInfo)
+            } else {
+                shareInfo = "已捕获屏幕截图：${file?.name}"
+                runCatching {
+                    context.startActivity(
+                        Intent.createChooser(intent, "分享屏幕")
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    )
+                }.onFailure {
+                    shareInfo = "无法唤起分享面板"
+                    showMsg(shareInfo)
+                }
+            }
+        }
+    }
+
+    val captureLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (!remote.onCaptureConsent(result.resultCode, result.data)) {
+            shareInfo = "未获得屏幕录制授权"
+            showMsg(shareInfo)
+        } else {
+            captureAndShare()
+        }
+    }
+
+    SectionCard("屏幕共享 (#67 / #68 / #71)") {
+        Text(shareInfo, fontSize = 12.sp)
+        Text(
+            "仅捕获并分享当前屏幕截图；跨设备远程控制需中继服务，本应用不提供",
+            fontSize = 11.sp
+        )
+        Row {
+            Button(onClick = {
+                if (remote.hasCapturePermission()) captureAndShare()
+                else captureLauncher.launch(remote.createScreenCaptureIntent())
+            }) { Text("捕获并分享屏幕") }
+        }
     }
 
 }
