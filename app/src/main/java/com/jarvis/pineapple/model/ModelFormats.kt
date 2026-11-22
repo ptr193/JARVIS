@@ -20,7 +20,6 @@ enum class ModelFormat(val label: String, val extensions: List<String>) {
     ONNX("ONNX", listOf("onnx")),
     SAFETENSORS("Safetensors", listOf("safetensors")),
     PYTORCH("PyTorch", listOf("bin", "pt", "pth")),
-    TENSORFLOW("TensorFlow", listOf("pb")),
     LITERTLM("LiteRT-LM", listOf("litertlm")),
     UNKNOWN("未知格式", emptyList());
 
@@ -38,7 +37,8 @@ enum class ModelFormat(val label: String, val extensions: List<String>) {
  * - ONNX：校验 protobuf 前缀（field 1 varint / field 7 长度分隔）
  * - Safetensors：读取 8 字节小端头长度并解析 JSON 头
  * - PyTorch：识别 pickle 魔数（0x80 0x02/0x03/0x04）或 ZIP 容器（PK\x03\x04）
- * - TensorFlow：识别 SavedModel 目录或 protobuf raw 格式
+ *
+ * TensorFlow / SavedModel / CoreML 尚未实现结构探测，不会仅凭扩展名注册。
  */
 sealed class FormatProbe {
     data class Detected(

@@ -15,15 +15,16 @@ import java.security.MessageDigest
 /**
  * 多格式本地模型导入管理器（REQ-04）。
  *
- * 支持 GGUF / ONNX / Safetensors / PyTorch / TensorFlow / LiteRT-LM 六类格式：
+ * 支持 GGUF / ONNX / Safetensors / PyTorch / LiteRT-LM 五类格式的探测与导入：
  * 1. SAF 选择文件 → 2. 魔数探测格式（真实二进制解析）→ 3. 资源可行性评估
  * → 4. 复制入库 + SHA-256 校验 → 5. 注册到模型调度器 → 6. 连通性测试（加载+一次推理）
  *
  * 格式支持矩阵：
  * - LiteRT-LM → LiteRT 引擎（内置）
  * - ONNX → ONNX Runtime（内置）
- * - GGUF / Safetensors / PyTorch / TensorFlow → 已完成导入、探测、注册与校验；
- *   推理需对应原生引擎（llama.cpp / vLLM / TF Serving），设备不具备时给出明确转换建议
+ * - GGUF / Safetensors / PyTorch → 已完成导入、探测、注册与校验；
+ *   推理需对应原生引擎（llama.cpp / vLLM），设备不具备时给出明确转换建议
+ * - TensorFlow / SavedModel / CoreML → 未实现结构探测与导入，明确拒绝，不能仅凭扩展名注册
  */
 class ModelImportManager(private val context: Context) {
 

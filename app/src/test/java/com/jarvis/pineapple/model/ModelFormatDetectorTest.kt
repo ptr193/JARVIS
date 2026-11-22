@@ -106,6 +106,12 @@ class ModelFormatDetectorTest {
     }
 
     @Test
+    fun `tensorflow pb extension cannot replace binary validation`() {
+        val f = write("saved_model.pb", ByteArray(64) { 0x11 })
+        assertTrue(ModelFormatDetector.probe(f) is FormatProbe.Rejected)
+    }
+
+    @Test
     fun `safetensors tensor range outside payload rejected`() {
         val json = """{"w":{"dtype":"F32","shape":[2,2],"data_offsets":[0,32]}}"""
         val jsonBytes = json.toByteArray(Charsets.UTF_8)
