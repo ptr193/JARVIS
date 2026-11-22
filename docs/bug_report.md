@@ -275,7 +275,7 @@
      `NotificationWakeDetector` 改用 `NotificationCompat.Builder`。
   3. `SystemControlTab` 以 `collectAsState()` 订阅 `reminders` 与 `lightStates`。
 - **验证**：
-  - `lintDebug`：**0 error / 45 warning**。
+  - `lintDebug`：**0 error / 43 warning**。
   - `testDebugUnitTest`：**190/190 通过**（34 个测试类）。
   - `assembleDebug`：EXIT=0，219,227,864 B，SHA256 `6ffdc7bc…df8`。
   - 重新打包 `apk/jarvis-debug.apk.7z`（82,488,056 B，SHA256 `7c8aa096…acd`）。
@@ -316,8 +316,8 @@
 ### 12.3 最终验证与边界
 
 - 40/40 轮加压通过，综合 `weight` 从 23 严格增至 486360。
-- 全量 Debug JVM 测试 337/337 通过，61 个测试类，0 失败、0 错误、0 跳过。
-- `lintDebug`：0 error / 45 warning / 1 information；`assembleDebug` 成功。
+- 全量 Debug JVM 测试 358/358 通过，65 个测试类，0 失败、0 错误、0 跳过。
+- `lintDebug`：0 error / 43 warning / 3 information；`assembleDebug` 成功。
 - APK 与 `.7z` 完整性、解压内容 SHA-256 一致性均通过，详见回归报告和下载文档。
 - 未执行 Release，也未将 JVM/静态检查写成硬件、电话、短信、传感器、模型推理或 PRoot 真机验收。
 - #50 接听电话本轮已接入 UI 入口（`24cea8a`），由 PARTIAL 更正为 DONE；当前 PARTIAL 仅余 #97/#99/#115，其余真机待验项见第 3 节和回归报告第 6 节。
@@ -343,9 +343,12 @@
 | answerCall 增加 SDK 守卫，修复 lint NewApi（minSdk 24） | `0779db4` |
 | 聊天消息可复制 + 对话导入/导出/归档 + AI 操控虚拟机 | `2980580` |
 | VM 快照/资源监控/日志页签与桌面环境安装接入 | `6c5e8d4` |
+| 联网搜索多引擎回退与检索意图识别 | `c22ee74` |
+| 闹钟式定时唤醒（AlarmManager，平台上限） | `8e8a5d9` |
+| 虚拟机图形桌面/VNC 与 AI 浏览器操作 | `6954fc1` |
 
-`574667a` 修正需求追踪矩阵错误引用与状态；`71bc370` 忽略本地 SDK 安装目录。最终产物：337/337 测试通过、lint 0 error / 45 warning、`apk/jarvis-debug.apk.7z`（82,658,648 B，SHA256 `55636be8…5c77`），详见下载文档。
+`574667a` 修正需求追踪矩阵错误引用与状态；`71bc370` 忽略本地 SDK 安装目录。最终产物：358/358 测试通过、lint 0 error / 43 warning、`apk/jarvis-debug.apk.7z`（82,717,484 B，SHA256 `38b2f244…3d29`），详见下载文档。
 
 ---
 
-*文档版本：v3.2 | 生成日期：2026-11-22 | 上一版本：v3.1（2026-11-22）*
+*文档版本：v3.3 | 生成日期：2026-11-22 | 上一版本：v3.2（2026-11-22）*

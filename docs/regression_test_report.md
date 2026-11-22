@@ -1,8 +1,8 @@
 # JARVIS 回归测试报告
 
 > 最终回归日期：2026-11-22（Asia/Shanghai）
-> 代码基线：`6c5e8d4`（`origin/main`，APK 对应源码提交）
-> 文档版本：v4.2
+> 代码基线：`6954fc1`（`origin/main`，APK 对应源码提交）
+> 文档版本：v4.3
 
 ## 1. 范围与结论
 
@@ -34,10 +34,10 @@
 
 | 检查 | 最终结果 | 证据 |
 |---|---|---|
-| 全量 Debug JVM 测试 | 337/337 通过，61 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 62.857s |
-| 40 轮加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 59.188s；逐轮结果见第 4 节 |
+| 全量 Debug JVM 测试 | 358/358 通过，65 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 73.384s |
+| 40 轮加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 69.261s；逐轮结果见第 4 节 |
 | 递增约束 | 通过 | `weight` 从 23 严格增至 486360；各分项按阶段非递减 |
-| Lint | 0 error / 45 warning / 1 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
+| Lint | 0 error / 43 warning / 3 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
 | Debug 构建 | 通过 | `assembleDebug` BUILD SUCCESSFUL |
 | 占位符扫描 | 0 命中 | `app/src/main` 中 `TODO`、`FIXME`、`UnsupportedOperationException` |
 | 空点击扫描 | 0 命中 | `app/src/main` 中 `onClick = {}` 形式 |
@@ -49,8 +49,8 @@
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `apk/jarvis-debug.apk` | 219,732,517 B | `a4b6fb684cfbae061515cc9ac4e32c37f9c7e955e7d2a7a4cb39bce86d492d83` |
-| `apk/jarvis-debug.apk.7z` | 82,658,648 B | `55636be891bdb1d35cfbe7b96db7d063af988818cd48b9aa95e1f250529f5c77` |
+| `apk/jarvis-debug.apk` | 219,931,064 B | `d2fc810d1f11f721dde59e5aa1f64194d83450007db590fd04bcdb4cc8e64a67` |
+| `apk/jarvis-debug.apk.7z` | 82,717,484 B | `38b2f24441c52ded2a06c1abba44e6fa3761a7da3b5c32e1aed485ab9e4e3d29` |
 
 ## 4. 40 轮加压逐轮结果
 
@@ -140,6 +140,9 @@
 | answerCall 增加 SDK 守卫，修复 lint NewApi（minSdk 24） | `0779db4` | 通过 |
 | 聊天消息可复制 + 对话导入/导出/归档 + AI 操控虚拟机 | `2980580` | 通过 |
 | VM 快照/资源监控/日志页签与桌面环境安装接入 | `6c5e8d4` | 通过 |
+| 联网搜索多引擎回退与检索意图识别 | `c22ee74` | 通过 |
+| 闹钟式定时唤醒（平台上限） | `8e8a5d9` | 通过 |
+| 虚拟机图形桌面/VNC 与 AI 浏览器操作 | `6954fc1` | 通过 |
 
 > `574667a` 同步修正需求追踪矩阵的错误引用与状态；`71bc370` 忽略本地 SDK 安装目录（不影响构建产物）。
 > 本轮新增 ARCore 依赖（`com.google.ar:core:1.43.0`）仅用于**真实探测**设备/ARCore 可用性：不支持时如实返回不支持，绝不伪造 AR、全息或手势能力；#97 手势与 #115 AR 渲染因此保持 PARTIAL。

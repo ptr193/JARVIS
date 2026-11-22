@@ -9,8 +9,8 @@
 > - `RESERVED` = 规格书明确"接口预留"（科幻/违法/系统限制），按规格书计为完成。
 > - `MISSING` = 无实现。
 >
-> 复核日期：2026-11-22 | 复核版本：v3.0
-> 最终验证：40/40 轮加压通过 + 337/337 项 Debug JVM 测试通过 + `lintDebug` 0 error / 45 warning + `assembleDebug` 成功。
+> 复核日期：2026-11-22 | 复核版本：v3.3
+> 最终验证：40/40 轮加压通过 + 358/358 项 Debug JVM 测试通过 + `lintDebug` 0 error / 43 warning + `assembleDebug` 成功。
 > 边界：`DONE` 表示代码真实且可从 UI/对话触达，不等于对应硬件或外部服务已通过真机验收。
 
 ---
@@ -19,7 +19,7 @@
 
 本轮重点检查失败返回是否被 UI 忽略、异常是否被吞掉、状态是否在失败时被错误清空，以及 API 版本兼容性。已修复会话/日志/模型/插件/发行版持久化，唤醒与传感器启动，PRoot 解压与进程，心率降级和生物识别等问题；逐项提交见 `docs/regression_test_report.md` 第 5 节。
 
-最终 40/40 轮加压和 337/337 项 Debug JVM 测试通过，Lint 为 0 error。静态源码契约测试只证明代码结构与 JVM 行为，不代表硬件、电话、短信、传感器、云服务或 arm64 PRoot 已完成真机验收。
+最终 40/40 轮加压和 358/358 项 Debug JVM 测试通过，Lint 为 0 error。静态源码契约测试只证明代码结构与 JVM 行为，不代表硬件、电话、短信、传感器、云服务或 arm64 PRoot 已完成真机验收。
 
 **矩阵诚实性复核（本轮）**：逐项核对矩阵引用的源码文件与方法名，修正错误引用（`reconstruct2D`→`analyzeImageFeatures`、`checkPermissionUsage`→`checkPermissionGrants`、`remoteLockDevice`→`lockDevice`、`remoteWipeData`→`wipeDeviceData`、#73 文件 `HolographicInterface.kt`→`UsbDeviceManager.kt` 等）；补实 #50 接听电话、#72 外接显示、#67/#68/#71 屏幕共享、#46/#42 反入侵、#78/#79 振动/手电、#73 USB、#36 虹膜扫描预留；为 #97/#114/#115/#116 新增 `HolographicInterface` 诚实能力边界（接入 ARCore 真实探测可用性，不支持绝不伪造）。#97（无手部追踪模型）与 #115（AR 交互渲染未实现）由虚假 DONE 更正为 PARTIAL。
 
@@ -264,10 +264,10 @@
 |------|------|------|------|
 | REQ-01 | 完整实现规格书 | 部分达成 | 144/144 有代码或明确预留，MISSING=0；3 项 PARTIAL 见第九节 |
 | REQ-02 | 无占位符 | ✅ | 生产源码 `app/src/main` 0 处 `TODO`/`FIXME`/`UnsupportedOperationException`/空 `onClick` |
-| REQ-03 | 唤醒与前台服务 | ✅ | 8 种唤醒方式 + `KeepAliveService` |
+| REQ-03 | 唤醒与前台服务 | ✅ | 8 种手动唤醒方式 + 闹钟式定时唤醒（`RtcWakeScheduler`）+ `KeepAliveService` |
 | REQ-04 | 多模型切换 | ✅ | `ModelScheduler` + 4 模型配置 |
 | REQ-05 | 禁止占位、必须真实可用 | 部分达成 | 本轮已修复确认的假成功/吞错，并补齐 #50 等用户入口；硬件/云端能力待真机验收 |
-| REQ-06 | 虚拟机（Haven 式 PRoot） | ✅ | `vm/HavenVmManager`、`ProotManager`；快照/资源监控/日志与桌面环境安装已接入 UI，**AI 可经对话指令在虚拟机内执行命令** |
+| REQ-06 | 虚拟机（Haven 式 PRoot） | ✅ | `vm/HavenVmManager`、`ProotManager`；快照/资源监控/日志已接入 UI；**Xvfb + XFCE + x11vnc 图形桌面与内置 VNC 客户端**（`VmDesktopManager`/`VncClient`），用户可触摸/键盘操作；AI 可经对话执行命令、打开桌面与浏览器 |
 | REQ-07 | 人格与灵魂 | ✅ | `personality/Personality.kt` |
 | REQ-08 | 长期记忆 | ✅ | `autonomous/MemorySystem.kt`，本轮补齐导入 |
 | REQ-09 | 安全与隐私 | ✅ | `security/*`，本轮接入安全中心 |
@@ -283,9 +283,9 @@
 | 验证项 | 命令 | 结果 |
 |--------|------|------|
 | Debug 编译 | `./gradlew :app:assembleDebug` | BUILD SUCCESSFUL |
-| Debug JVM 测试 | `./gradlew :app:testDebugUnitTest` | 337/337 通过，61 个测试类，0 失败/错误/跳过 |
+| Debug JVM 测试 | `./gradlew :app:testDebugUnitTest` | 358/358 通过，65 个测试类，0 失败/错误/跳过 |
 | 递增加压 | `ProgressiveLoadTest` | 40/40 通过，`weight` 23 → 486360，逐轮证据见回归报告 |
-| Lint | `./gradlew :app:lintDebug` | 0 error / 45 warning / 1 information |
+| Lint | `./gradlew :app:lintDebug` | 0 error / 43 warning / 3 information |
 | 占位符扫描 | `app/src/main` 中 `TODO`/`FIXME`/`UnsupportedOperationException` | 0 命中 |
 | 空点击扫描 | `app/src/main` 中 `onClick = {}` 形式 | 0 命中 |
 | 调用链复核 | DI、UI、对话与失败返回路径 | 已修复本轮确认问题；#50 本轮接入 UI 入口更正为 DONE，PARTIAL 仅余 #97/#99/#115（见第九节） |
@@ -303,7 +303,11 @@
 | 对话归档/恢复 | ✅ | `Conversation.archived` + `ConversationRepository.setArchived`，抽屉“已归档”分组 |
 | AI 操控虚拟机 | ✅ | `chat/VmCommandBridge.kt`（解析/桥接）+ `vm/HavenVmCommandBridge.kt`；`ChatEngine` 在“虚拟机 X 执行 …”等指令下转发 PRoot，如实回传输出与退出码 |
 | VM 快照/监控/日志/桌面安装 | ✅ | `ui/vm/VirtualMachineScreen.kt` 新页签接入 `VmSnapshotManager`/`VmResourceMonitor`/`VmLogManager` 与 `installDesktopEnvironment` |
+| 联网搜索 | ✅ | `info/WebSearchEngine.kt` 多引擎（DuckDuckGo/Bing/Google）回退、UA/超时、跳转链接还原；`ChatEngine.detectSearchQuery` 支持显式检索与时效提问，失败/无结果如实告知 |
+| 闹钟式定时唤醒 | ✅（平台上限） | `wake/RtcWakeScheduler.kt` 使用 `AlarmManager.setAlarmClock`，设置页可设每日时间，开机/更新后续订；**物理关机状态唤醒受 Android 限制，第三方应用无法设置 RTC 开机闹钟** |
+| 虚拟机图形桌面 / VNC | ✅ | `vm/VmDesktopManager.kt`（Xvfb + XFCE + x11vnc）、`vm/VncClient.kt`（RFB 3.3/3.7/3.8、RAW）、`ui/vm/VirtualMachineScreen.kt` “桌面”标签 |
+| AI 使用虚拟机桌面/浏览器 | ✅ | `chat/VmCommandBridge.kt` 新增 `openDesktop`/`openBrowser`；`ChatEngine` 识别“打开虚拟机桌面/在虚拟机打开浏览器”，自动启动虚拟机并回传真实端口或失败原因 |
 
 ---
 
-*文档版本：v3.2 | 复核日期：2026-11-22 | 上一版本：v3.1（2026-11-22）*
+*文档版本：v3.3 | 复核日期：2026-11-22 | 上一版本：v3.2（2026-11-22）*
