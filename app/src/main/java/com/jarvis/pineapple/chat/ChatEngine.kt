@@ -407,14 +407,13 @@ class ChatEngine(
      */
     private suspend fun buildRetrievalContext(content: String): String {
         val t = content.trim()
-        val triggers = listOf("搜索", "查一下", "帮我查", "查找", "检索", "最新")
-        val trigger = triggers.firstOrNull { t.startsWith(it) } ?: return ""
-        var query = t.substring(trigger.length).trimStart('：', ':', '，', ' ', '一', '下')
-        if (query.isBlank()) query = t
+        val query = detectSearchQuery(t) ?: return ""
 
         return try {
             val retrieval = infoProcessor.retrieveInfo(query)
-            if (retrieval.results.isEmpty()) return ""
+            if (retrieval.results.isEmpty()) {
+                return "【实时检索无结果】\n查询：$query\n未检索到可用结果，请明确告知用户没有查到，不得编造实时信息。"
+            }
 
             val items = retrieval.results.mapIndexed { i, r ->
                 IntelligenceItem(
@@ -447,6 +446,44 @@ class ChatEngine(
     }
 
     companion object {
+        /**
+         * 判断是否为需要联网的检索请求，并抽取查询词（纯函数，可单测）。
+         * 支持“搜索/查一下/帮我查/上网查/查询…”及英文 search/look up，
+         * 也支持“今天天气怎么样”这类含明确时效主题的提问。
+         */
+        internal fun detectSearchQuery(content: String): String? {
+            val text = content.trim()
+            if (text.isBlank()) return null
+            val lower = text.lowercase()
+
+            val explicit = listOf(
+                "上网查", "网络搜索", "联网查", "帮我搜索", "帮忙搜索",
+                "搜索一下", "搜一下", "查一下", "查一查", "帮我查", "帮我查询",
+                "查询", "检索", "查找", "搜索"
+            )
+            val english = listOf("search for", "look up", "search", "google")
+            val hit = explicit.firstOrNull { it in text } ?: english.firstOrNull { it in lower }
+            if (hit != null) {
+                val index = if (hit in text) text.indexOf(hit) else lower.indexOf(hit)
+                var query = text.substring(index + hit.length)
+                    .trim()
+                    .trimStart('：', ':', '，', ',', '。', '.', ' ', '一', '下')
+                query = query.removePrefix("关于").removePrefix("有关").trim()
+                query = query.removeSuffix("的资料").removeSuffix("的信息").removeSuffix("的信息。").trim()
+                return query.ifBlank { null }
+            }
+
+            val freshnessTopics = listOf(
+                "天气", "新闻", "股价", "汇率", "比分", "赛程", "价格",
+                "最新消息", "最新进展", "最新版本", "上映", "发布会",
+                "weather", "news", "stock", "price", "exchange rate", "score"
+            )
+            val looksLikeQuestion = text.any { it in "?？吗呢" } ||
+                listOf("多少", "怎么", "如何", "什么", "哪", "几点").any { it in text }
+            if (looksLikeQuestion && freshnessTopics.any { it in lower }) return text
+            return null
+        }
+
         /**
          * 按名称选择虚拟机（纯函数，可单测）。
          * 未指定名称时优先运行中的虚拟机，否则取第一个；指定名称时先精确匹配再包含匹配。

@@ -59,6 +59,104 @@ class WebSearchEngineTest {
         assertEquals("offline", error?.message)
     }
 
+    @Test
+    fun duckDuckGoRedirectIsDecodedToRealUrl() {
+        val results = WebSearchEngine.parseResults(
+            """<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fa%3Fx%3D1&rut=abc">Title</a>""",
+            "DuckDuckGo",
+            5
+        )
+
+        assertEquals("https://example.com/a?x=1", results.single().url)
+    }
+
+    @Test
+    fun googleRedirectLinksAreParsedAndNavigationFiltered() {
+        val html = """
+            <a href="/url?q=https%3A%2F%2Fexample.org%2Fpage&sa=U">Example page</a>
+            <a href="/search?q=next">Next</a>
+        """.trimIndent()
+
+        val results = WebSearchEngine.parseResults(html, "Google", 5)
+
+        assertEquals(1, results.size)
+        assertEquals("https://example.org/page", results.single().url)
+        assertEquals("Example page", results.single().title)
+    }
+
+    @Test
+    fun bingResultsIncludeSnippetAndNormalizeUrl() {
+        val html = """
+            <h2><a href="https://example.net/x?y=1&amp;z=2">Bing title</a></h2>
+            <p class="b_lineclamp4">Bing snippet</p>
+        """.trimIndent()
+
+        val results = WebSearchEngine.parseResults(html, "Bing", 5)
+
+        assertEquals(1, results.size)
+        assertEquals("Bing title", results.single().title)
+        assertEquals("Bing snippet", results.single().snippet)
+        assertEquals("https://example.net/x?y=1&amp;z=2", results.single().url)
+    }
+
+    @Test
+    fun fallbackUsesNextEngineWhenFirstFails() = runBlocking {
+        val client = HttpClient(MockEngine { request ->
+            if (request.url.host.contains("duckduckgo")) {
+                respond("offline", HttpStatusCode.ServiceUnavailable, headersOf(HttpHeaders.ContentType, "text/html"))
+            } else {
+                respond(
+                    """<h2><a href="https://example.com/ok">OK</a></h2>""",
+                    HttpStatusCode.OK,
+                    headersOf(HttpHeaders.ContentType, "text/html")
+                )
+            }
+        })
+        val engine = WebSearchEngine(client)
+
+        val results = engine.searchWithFallback(
+            "query",
+            engines = listOf(
+                WebSearchEngine.SearchEngine("DuckDuckGo", "https://html.duckduckgo.com/html/"),
+                WebSearchEngine.SearchEngine("Bing", "https://www.bing.com/search")
+            )
+        )
+
+        assertEquals("https://example.com/ok", results.single().url)
+        assertEquals("Bing", results.single().source)
+    }
+
+    @Test
+    fun fallbackReportsFailureOnlyWhenEveryEngineFails() = runBlocking {
+        val engine = engineReturning(HttpStatusCode.ServiceUnavailable, "offline")
+
+        val error = runCatching {
+            engine.searchWithFallback(
+                "query",
+                engines = listOf(
+                    WebSearchEngine.SearchEngine("DuckDuckGo", "https://html.duckduckgo.com/html/"),
+                    WebSearchEngine.SearchEngine("Bing", "https://www.bing.com/search")
+                )
+            )
+        }.exceptionOrNull()
+
+        assertTrue(error is IOException)
+        assertTrue(error?.message?.contains("DuckDuckGo") == true)
+        assertTrue(error?.message?.contains("Bing") == true)
+    }
+
+    @Test
+    fun successfulEnginesWithoutResultsReturnEmptyList() = runBlocking {
+        val engine = engineReturning(HttpStatusCode.OK, "<html>nothing</html>")
+
+        val results = engine.searchWithFallback(
+            "query",
+            engines = listOf(WebSearchEngine.SearchEngine("Bing", "https://www.bing.com/search"))
+        )
+
+        assertTrue(results.isEmpty())
+    }
+
     private fun engineReturning(status: HttpStatusCode, body: String): WebSearchEngine {
         val mockEngine = MockEngine {
             respond(body, status, headersOf(HttpHeaders.ContentType, "text/html"))

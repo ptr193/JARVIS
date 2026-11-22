@@ -34,7 +34,7 @@ class InfoProcessor(
      * 执行网络搜索（委托给 WebSearchEngine）
      */
     suspend fun search(query: String, maxResults: Int = 10): List<SearchResult> {
-        return webSearchEngine.search(query, maxResults = maxResults).map {
+        return webSearchEngine.searchWithFallback(query, maxResults = maxResults).map {
             SearchResult(
                 title = it.title,
                 url = it.url,
