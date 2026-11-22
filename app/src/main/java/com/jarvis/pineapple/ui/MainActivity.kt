@@ -135,8 +135,14 @@ class MainActivity : ComponentActivity() {
         apply(WakeSource.BLUETOOTH, "bluetooth_wake", true)
     }
 
-    /** 处理来自通知唤醒按钮 / 快捷磁贴的 Intent，转为 WakeEngine 唤醒事件。 */
-    private fun handleWakeIntent(intent: Intent?) {        when (intent?.action) {
+    /** 处理来自通知唤醒按钮 / 快捷磁贴 / 定时闹钟的 Intent，转为 WakeEngine 唤醒事件。 */
+    private fun handleWakeIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(com.jarvis.pineapple.wake.RtcWakeScheduler.EXTRA_FROM_ALARM, false) == true) {
+            wakeEngine.trigger(WakeSource.ALARM)
+            // AlarmClock 为一次性闹钟，触发后立即续订次日同一时刻。
+            runCatching { com.jarvis.pineapple.wake.RtcWakeScheduler(this).rescheduleIfEnabled() }
+        }
+        when (intent?.action) {
             NotificationWakeDetector.ACTION_WAKE -> {
                 notificationWakeDetector.onWakeAction()
                 if (notificationWakeDetector.consume()) {

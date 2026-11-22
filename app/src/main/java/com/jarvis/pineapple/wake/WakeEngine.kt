@@ -17,7 +17,7 @@ import kotlinx.coroutines.launch
  * 唤醒来源
  */
 enum class WakeSource {
-    VOICE, POWER_BUTTON, NOTIFICATION, SHAKE, BLUETOOTH, TILE, APP_ICON, HOME_LONG_PRESS
+    VOICE, POWER_BUTTON, NOTIFICATION, SHAKE, BLUETOOTH, TILE, APP_ICON, HOME_LONG_PRESS, ALARM
 }
 
 /**
@@ -39,7 +39,7 @@ class WakeEngine(private val context: Context) {
     private val enabledSources = mutableSetOf(
         WakeSource.VOICE, WakeSource.POWER_BUTTON, WakeSource.NOTIFICATION,
         WakeSource.SHAKE, WakeSource.BLUETOOTH, WakeSource.TILE,
-        WakeSource.APP_ICON, WakeSource.HOME_LONG_PRESS
+        WakeSource.APP_ICON, WakeSource.HOME_LONG_PRESS, WakeSource.ALARM
     )
 
     // 8 种唤醒器实例
@@ -183,6 +183,7 @@ class WakeEngine(private val context: Context) {
                 WakeSource.TILE -> Unit
                 WakeSource.APP_ICON -> appIconWakeDetector.stop()
                 WakeSource.HOME_LONG_PRESS -> homeLongPressDetector.stop()
+                WakeSource.ALARM -> RtcWakeScheduler(context).cancel()
             }
             return true
         }
@@ -202,6 +203,7 @@ class WakeEngine(private val context: Context) {
             WakeSource.TILE -> true
             WakeSource.APP_ICON -> appIconWakeDetector.start().let { true }
             WakeSource.HOME_LONG_PRESS -> homeLongPressDetector.start().let { true }
+            WakeSource.ALARM -> RtcWakeScheduler(context).rescheduleIfEnabled().let { true }
         }
         if (started) enabledSources.add(source) else enabledSources.remove(source)
         return started

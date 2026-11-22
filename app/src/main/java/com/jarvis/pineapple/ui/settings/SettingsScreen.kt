@@ -1140,6 +1140,49 @@ private fun GeneralTab(showMsg: (String) -> Unit) {
         }
     })
 
+    Spacer(Modifier.height(12.dp))
+    val rtcScheduler = remember { com.jarvis.pineapple.wake.RtcWakeScheduler(context) }
+    var rtcEnabled by remember { mutableStateOf(rtcScheduler.isEnabled()) }
+    var rtcHour by remember { mutableStateOf(rtcScheduler.savedHour()) }
+    var rtcMinute by remember { mutableStateOf(rtcScheduler.savedMinute()) }
+    SettingSwitch("定时唤醒（闹钟式）", rtcEnabled, { requested ->
+        if (requested) {
+            if (rtcScheduler.scheduleDaily(rtcHour, rtcMinute)) {
+                rtcEnabled = true
+                showMsg("已设置每天 %02d:%02d 定时唤醒".format(rtcHour, rtcMinute))
+            } else {
+                showMsg(rtcScheduler.lastError ?: "定时唤醒设置失败")
+            }
+        } else {
+            rtcScheduler.cancel()
+            rtcEnabled = false
+            showMsg("已关闭定时唤醒")
+        }
+    })
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("唤醒时间：%02d:%02d".format(rtcHour, rtcMinute), fontSize = 13.sp)
+        Spacer(Modifier.width(8.dp))
+        OutlinedButton(onClick = {
+            android.app.TimePickerDialog(context, { _, hour, minute ->
+                rtcHour = hour
+                rtcMinute = minute
+                if (rtcEnabled) {
+                    if (rtcScheduler.scheduleDaily(hour, minute)) {
+                        showMsg("已更新为每天 %02d:%02d".format(hour, minute))
+                    } else {
+                        showMsg(rtcScheduler.lastError ?: "更新时间失败")
+                        rtcEnabled = false
+                    }
+                }
+            }, rtcHour, rtcMinute, true).show()
+        }) { Text("设置时间") }
+    }
+    Text(
+        "闹钟式唤醒可在待机/深度休眠后按时拉起 JARVIS。设备完全关机时，Android 不允许第三方应用设置 RTC 开机闹钟，该场景无法实现（需系统时钟/预装应用权限）。",
+        fontSize = 11.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
     Spacer(Modifier.height(16.dp))
     Text("界面自定义", style = MaterialTheme.typography.bodyMedium)
     Spacer(Modifier.height(8.dp))

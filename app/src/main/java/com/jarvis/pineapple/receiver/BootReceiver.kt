@@ -15,6 +15,9 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 // 开机/更新后自启：属于允许的后台启动场景，但厂商限制仍可能抛异常，故安全启动
                 KeepAliveService.startSafely(context, "BootReceiver")
+                // 系统重启会清除所有 AlarmManager 闹钟，重新登记用户的定时唤醒。
+                runCatching { com.jarvis.pineapple.wake.RtcWakeScheduler(context).rescheduleIfEnabled() }
+                    .onFailure { android.util.Log.e("BootReceiver", "恢复定时唤醒失败", it) }
             }
             "com.jarvis.pineapple.WAKE" -> {
                 // 通知栏唤醒按钮
