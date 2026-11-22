@@ -8,7 +8,6 @@ import android.net.Uri
 import android.os.Build
 import android.provider.CallLog
 import android.telecom.TelecomManager
-import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 
 /** 接听来电的前置条件状态（纯逻辑，便于单测）。 */
@@ -28,9 +27,11 @@ class PhoneController(private val context: Context) {
         return runCatching { context.startActivity(intent); true }.getOrDefault(false)
     }
 
-    @RequiresApi(Build.VERSION_CODES.O)
     @SuppressLint("MissingPermission")
     fun answerCall(): Boolean {
+        // acceptRingingCall() 仅 API 26+ 可用；低版本直接诚实返回失败，不伪装成功。
+        // 显式 SDK 守卫也让 lint 不再把 acceptRingingCall 与调用方标记为 NewApi。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
         if (!hasAnswerPermission()) return false
         return try {
             val telecom = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
