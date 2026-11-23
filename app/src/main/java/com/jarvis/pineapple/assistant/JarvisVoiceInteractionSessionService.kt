@@ -199,7 +199,8 @@ class JarvisVoiceInteractionSession(context: Context) : VoiceInteractionSession(
         answerJob = sessionScope.launch {
             val reply = runCatching {
                 withContext(Dispatchers.Default) {
-                    OverlayReplyCoordinator.collectReply(engine.sendUserMessage(prompt))
+                    // 语音为不可信通道：显式禁止本地指令，ASR 误差/关键词误判都不会触发硬编码动作。
+                    OverlayReplyCoordinator.collectReply(engine.sendUserMessage(prompt, allowLocalCommands = false))
                 }
             }.getOrElse { "回答失败：${it.message ?: it.javaClass.simpleName}" }
             hint?.text = reply

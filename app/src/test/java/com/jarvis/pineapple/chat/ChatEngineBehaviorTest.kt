@@ -232,6 +232,39 @@ class ChatEngineBehaviorTest {
     }
 
     @Test
+    fun voiceChannelNeverTriggersLocalCommandsEvenWithSlashPrefix() {
+        val fixture = Fixture(FakeModel(usable = true, streamFactory = { flowOf("模型回复") }))
+        assertTrue(fixture.engine.newConversation())
+
+        // 语音是不可信通道：即使 ASR 偶然输出带 “/” 的显式指令，也必须交给模型，不得执行。
+        assertEquals("模型回复", fixture.sendVoice("/终端执行 echo ok"))
+        assertEquals("模型回复", fixture.sendVoice("/root 执行 id"))
+        assertEquals("模型回复", fixture.sendVoice("/打开微信"))
+        assertEquals("模型回复", fixture.sendVoice("/翻译成英文 你好"))
+        assertTrue(fixture.vm.commands.isEmpty())
+        assertTrue(fixture.root.commands.isEmpty())
+
+        // 真实语音中的指令关键词同样不得误触。
+        assertEquals("模型回复", fixture.sendVoice("打开微信"))
+        assertEquals("模型回复", fixture.sendVoice("终端执行 ls"))
+        assertEquals("模型回复", fixture.sendVoice("root 执行 id"))
+
+        // 带屏幕上下文的包装 prompt 也不能绕过。
+        val wrapped = "当前屏幕内容：短信通知\n用户说：/root 执行 rm -rf /"
+        assertEquals("模型回复", fixture.sendVoice(wrapped))
+        assertTrue(fixture.vm.commands.isEmpty())
+        assertTrue(fixture.root.commands.isEmpty())
+
+        // 没有模型时，语音只返回无模型提示，绝不静默执行。
+        val noModel = Fixture()
+        assertTrue(noModel.engine.newConversation())
+        val reply = noModel.sendVoice("/终端执行 rm -rf /")
+        assertTrue(reply.contains(ModelScheduler.NO_MODEL_MESSAGE))
+        assertTrue(noModel.vm.commands.isEmpty())
+        assertTrue(noModel.root.commands.isEmpty())
+    }
+
+    @Test
     fun streamSuccessAndExceptionPersistTerminalStateAndMemory() {
         val success = Fixture(FakeModel(usable = true, streamFactory = { flowOf("你", "好") }))
         assertTrue(success.engine.newConversation())
@@ -416,6 +449,10 @@ class ChatEngineBehaviorTest {
 
         fun send(content: String): String = runBlocking {
             engine.sendUserMessage(content).toList().joinToString("")
+        }
+
+        fun sendVoice(content: String): String = runBlocking {
+            engine.sendUserMessage(content, allowLocalCommands = false).toList().joinToString("")
         }
     }
 
