@@ -347,7 +347,9 @@ fun ChatScreen(
                 TextButton(
                     onClick = {
                         if (!isGenerating) {
-                            scope.launch { viewModel.sendMessage(command) }
+                            scope.launch {
+                                viewModel.sendMessage(AssistantCommandParser.asExplicitCommand(command))
+                            }
                         }
                     },
                     enabled = !isGenerating
@@ -393,7 +395,7 @@ fun ChatScreen(
                     value = input,
                     onValueChange = { input = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("与 JARVIS 对话...") },
+                    placeholder = { Text("与 JARVIS 对话（/ 开头执行本机指令）") },
                     maxLines = 4,
                     shape = RoundedCornerShape(20.dp)
                 )

@@ -208,39 +208,50 @@ class ChatEngine private constructor(
             }
         }
 
-        // ===== 宿主机 root 指令：真实 su 执行，未授权/未 root 如实告知 =====
-        RootCommandParser.parse(content)?.let { command ->
-            val reply = executeRootCommand(command)
-            return finishDirectReply(content, reply, "宿主机 root 指令：${content.take(50)}")
-        }
-
-        // ===== 翻译指令（#12/#13）：直接调用翻译引擎，无需经过大模型 =====
-        parseTranslationRequest(content)?.let { (text, target) ->
-            val result = conversationEnhancer.translate(text, targetLang = target)
-            val reply = if (result.isSuccess) result.translatedText else "翻译失败：${result.errorMessage}"
-            return finishDirectReply(content, reply, "翻译请求：${content.take(50)}")
-        }
-
-        // ===== 虚拟机桌面/浏览器：命中后直接调用真实桌面管理 =====
-        VmDesktopCommandParser.parse(content)?.let { request ->
-            val reply = executeVmDesktop(request)
-            return finishDirectReply(content, reply, "虚拟机桌面：${content.take(50)}")
-        }
-
-        // ===== 虚拟机操控：命中“虚拟机/终端执行”指令时转发到真实 PRoot =====
-        VmCommandParser.parse(content)?.let { execution ->
-            val reply = executeVmCommand(execution)
-            return finishDirectReply(content, reply, "虚拟机指令：${content.take(50)}")
-        }
-
-        if (AssistantCommandParser.isDirectCommand(content)) {
-            val parsedCommand = AssistantCommandParser.parse(content)
-            val reply = if (commandExecutor != null) {
-                commandExecutor.execute(parsedCommand)
-            } else {
-                "无法执行该指令：系统控制器不可用"
+        // ===== 本地指令统一入口：仅当消息以 “/” 或 “／” 开头时才解析执行 =====
+        // 正常对话一律交给模型，避免硬编码关键词误判劫持真实聊天。
+        val commandBody = AssistantCommandParser.explicitCommandBody(content)
+        if (commandBody != null) {
+            // 宿主机 root 指令：真实 su 执行，未授权/未 root 如实告知。
+            RootCommandParser.parse(commandBody)?.let { command ->
+                val reply = executeRootCommand(command)
+                return finishDirectReply(content, reply, "宿主机 root 指令：${content.take(50)}")
             }
-            return finishDirectReply(content, reply, "快捷指令：${content.take(50)}")
+
+            // 翻译指令（#12/#13）：直接调用翻译引擎，无需经过大模型。
+            parseTranslationRequest(commandBody)?.let { (text, target) ->
+                val result = conversationEnhancer.translate(text, targetLang = target)
+                val reply = if (result.isSuccess) result.translatedText else "翻译失败：${result.errorMessage}"
+                return finishDirectReply(content, reply, "翻译请求：${content.take(50)}")
+            }
+
+            // 虚拟机桌面/浏览器：命中后直接调用真实桌面管理。
+            VmDesktopCommandParser.parse(commandBody)?.let { request ->
+                val reply = executeVmDesktop(request)
+                return finishDirectReply(content, reply, "虚拟机桌面：${content.take(50)}")
+            }
+
+            // 虚拟机操控：命中“虚拟机/终端执行”指令时转发到真实 PRoot。
+            VmCommandParser.parse(commandBody)?.let { execution ->
+                val reply = executeVmCommand(execution)
+                return finishDirectReply(content, reply, "虚拟机指令：${content.take(50)}")
+            }
+
+            if (AssistantCommandParser.isDirectCommand(commandBody)) {
+                val parsedCommand = AssistantCommandParser.parse(commandBody)
+                val reply = if (commandExecutor != null) {
+                    commandExecutor.execute(parsedCommand)
+                } else {
+                    "无法执行该指令：系统控制器不可用"
+                }
+                return finishDirectReply(content, reply, "快捷指令：${content.take(50)}")
+            }
+
+            return finishDirectReply(
+                content,
+                AssistantCommandParser.unknownCommandMessage(commandBody),
+                "未识别的本地指令：${content.take(50)}"
+            )
         }
 
         val loadedModel = modelScheduler.resolveOrLoad()

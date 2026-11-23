@@ -3,6 +3,7 @@ package com.jarvis.pineapple.chat
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -80,7 +81,19 @@ class AssistantCommandParserTest {
         AssistantCommandParser.CHAT_SHORTCUTS.forEach { (command, _) ->
             val parsed = AssistantCommandParser.parse(command)
             assertTrue("$command 应可解析", parsed.action != "UNKNOWN")
+            assertEquals("/$command", AssistantCommandParser.asExplicitCommand(command))
         }
+    }
+
+    @Test
+    fun onlyExplicitSlashPrefixedMessagesAreLocalCommands() {
+        assertEquals("打开微信", AssistantCommandParser.explicitCommandBody("/打开微信"))
+        assertEquals("打开微信", AssistantCommandParser.explicitCommandBody("  ／打开微信  "))
+        assertEquals("音量 50", AssistantCommandParser.explicitCommandBody("/音量 50"))
+        assertNull(AssistantCommandParser.explicitCommandBody("打开微信"))
+        assertNull(AssistantCommandParser.explicitCommandBody("我想打开窗户透透气"))
+        assertNull(AssistantCommandParser.explicitCommandBody("/   "))
+        assertNull(AssistantCommandParser.explicitCommandBody(""))
     }
 
     @Test

@@ -144,12 +144,12 @@ internal class LoadSubsystemStress(private val root: File, private val round: In
                 }
             }
 
-            assertTrue(send(engine, "终端执行 echo chat-$round").contains("vm-output"))
-            assertTrue(send(engine, "root 执行 id").contains("root-output"))
-            assertTrue(send(engine, "终端执行 rm -rf /").contains("二次确认"))
+            assertTrue(send(engine, "/终端执行 echo chat-$round").contains("vm-output"))
+            assertTrue(send(engine, "/root 执行 id").contains("root-output"))
+            assertTrue(send(engine, "/终端执行 rm -rf /").contains("二次确认"))
             assertTrue(send(engine, "取消").contains("未执行任何命令"))
             assertTrue(vm.commands.none { it.second.contains("rm -rf") })
-            assertTrue(send(engine, "root 执行 rm -rf /").contains("二次确认"))
+            assertTrue(send(engine, "/root 执行 rm -rf /").contains("二次确认"))
             assertTrue(send(engine, "确认执行").contains("root-output"))
             assertTrue(rootBridge.commands.contains("rm -rf /"))
 

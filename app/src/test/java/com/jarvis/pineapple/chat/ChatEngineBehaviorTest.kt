@@ -161,7 +161,7 @@ class ChatEngineBehaviorTest {
         assertTrue(fixture.engine.newConversation())
         blockDirectory(fixture.conversationDir)
 
-        val reply = fixture.send("终端执行 echo ok")
+        val reply = fixture.send("/终端执行 echo ok")
 
         assertEquals(1, fixture.vm.commands.size)
         assertTrue(reply.contains("vm-output"))
@@ -187,6 +187,48 @@ class ChatEngineBehaviorTest {
         val error = fixture.engine.persistenceError.value.orEmpty()
         assertTrue(error.contains("对话保存失败"))
         assertTrue(error.contains("记忆保存失败"))
+    }
+
+    @Test
+    fun localCommandsRequireExplicitSlashPrefixAndNeverHijackChat() {
+        val fixture = Fixture(FakeModel(usable = true, streamFactory = { flowOf("模型回复") }))
+        assertTrue(fixture.engine.newConversation())
+
+        // 普通聊天里出现指令关键词时不得触发本地执行，必须交给模型。
+        assertEquals("模型回复", fixture.send("终端执行 echo ok"))
+        assertEquals("模型回复", fixture.send("root 执行 id"))
+        assertEquals("模型回复", fixture.send("打开微信"))
+        assertTrue(fixture.vm.commands.isEmpty())
+        assertTrue(fixture.root.commands.isEmpty())
+
+        // 只有显式前缀才进入本地指令流程。
+        assertTrue(fixture.send("/终端执行 echo ok").contains("vm-output"))
+        assertEquals(1, fixture.vm.commands.size)
+        assertTrue(fixture.send("/root 执行 id").contains("root-output"))
+        assertEquals(listOf("id"), fixture.root.commands)
+        assertTrue(fixture.send("/打开微信").contains("系统控制器不可用"))
+
+        // 未识别的显式指令给出可读提示，不伪装成模型回答。
+        val unknown = fixture.send("/不存在的指令")
+        assertTrue(unknown.contains("未识别的本地指令"))
+        assertFalse(unknown.contains("模型回复"))
+        assertTrue(fixture.vm.commands.size == 1)
+        assertEquals(listOf("id"), fixture.root.commands)
+    }
+
+    @Test
+    fun modelAbsentBlocksBareChatCommandsButAllowsExplicitOnes() {
+        val fixture = Fixture()
+        assertTrue(fixture.engine.newConversation())
+
+        val chat = fixture.send("打开微信")
+        assertTrue(chat.contains(ModelScheduler.NO_MODEL_MESSAGE))
+        assertTrue(fixture.vm.commands.isEmpty())
+        assertTrue(fixture.root.commands.isEmpty())
+
+        // 显式指令是用户主动选择，没有模型时也可以执行。
+        assertTrue(fixture.send("/终端执行 echo ok").contains("vm-output"))
+        assertEquals(1, fixture.vm.commands.size)
     }
 
     @Test
@@ -452,7 +494,7 @@ class ChatEngineBehaviorTest {
     }
 
     private companion object {
-        const val ROOT_DANGEROUS = "root 执行 rm -rf /"
-        const val VM_DANGEROUS = "终端执行 rm -rf /"
+        const val ROOT_DANGEROUS = "/root 执行 rm -rf /"
+        const val VM_DANGEROUS = "/终端执行 rm -rf /"
     }
 }

@@ -48,6 +48,29 @@ object AssistantCommandParser {
         "浏览器" to "com.android.chrome"
     )
 
+    /** 本地指令的显式前缀：只有用户主动输入时才解析执行，避免劫持正常对话。 */
+    private val EXPLICIT_COMMAND_PREFIXES = listOf("/", "／")
+
+    /**
+     * 返回去掉显式前缀后的指令正文；非显式指令（普通聊天）返回 null。
+     * 这是本地指令进入执行流程的唯一入口，模型缺失时也不会误触发。
+     */
+    fun explicitCommandBody(message: String): String? {
+        val trimmed = message.trim()
+        if (trimmed.isEmpty()) return null
+        val prefix = EXPLICIT_COMMAND_PREFIXES.firstOrNull { trimmed.startsWith(it) } ?: return null
+        return trimmed.removePrefix(prefix).trim().takeIf { it.isNotEmpty() }
+    }
+
+    /** 将内部快捷键转换为用户可识别的显式指令。 */
+    fun asExplicitCommand(message: String): String = "/" + message.trim()
+
+    fun unknownCommandMessage(command: String): String =
+        "未识别的本地指令：${command.take(50)}\n" +
+            "可用示例：/音量 50、/打开微信、/翻译成英文 你好、" +
+            "/虚拟机 Ubuntu 执行 ls、/root 执行 id。\n" +
+            "如需普通对话，请不要以 / 开头。"
+
     fun isDirectCommand(message: String): Boolean {
         val trimmed = message.trim()
         if (trimmed.isEmpty() || trimmed.length > 48) return false
