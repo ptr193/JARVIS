@@ -172,8 +172,10 @@ class VncClient internal constructor(
             }
         }
         val reason = failure ?: return true
-        runCatching { socket?.close() }
+        // 先上报真实的发送失败原因，再关闭 socket 唤醒读循环；
+        // 否则读循环可能抢先以“连接已关闭”覆盖本原因（高负载下的竞态）。
         notifyDisconnected(reason)
+        runCatching { socket?.close() }
         return false
     }
 
