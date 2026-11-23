@@ -5,6 +5,8 @@
 ### Fixed
 - 本地指令（系统控制/翻译/root/虚拟机）改为仅以 `/` 或 `／` 显式触发，普通对话不再被硬编码关键词劫持；无模型时普通聊天返回明确无模型提示
 - 压力测试与 UI 快捷指令同步改为显式前缀，新增指令入口与无模型回归用例
+- 语音通道（ASR 文本）禁用本地硬编码指令：`ChatEngine.sendUserMessage` 新增 `allowLocalCommands` 参数，语音入口传 `false`，即使 ASR 偶然输出带 `/` 前缀的文本也不触发 root/翻译/虚拟机/系统快捷指令，统一走模型或无模型提示
+- 修复 VNC 写失败原因被读循环以“连接已关闭”覆盖的高负载竞态：`VncClient.writeEvent` 改为先 `notifyDisconnected(reason)` 再关闭 socket
 
 ## Unreleased (2026-10-30)
 

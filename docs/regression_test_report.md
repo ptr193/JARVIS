@@ -1,8 +1,8 @@
 # JARVIS 回归测试报告
 
 > 最终回归日期：2026-11-23（Asia/Shanghai）
-> 代码基线：`ce7dd48`（`origin/main`，APK 对应源码提交）
-> 文档版本：v5.2
+> 代码基线：`0ec2f07`（`origin/main`，APK 对应源码提交）
+> 文档版本：v5.3
 
 ## 1. 范围与结论
 
@@ -34,8 +34,8 @@
 
 | 检查 | 最终结果 | 证据 |
 |---|---|---|
-| 全量 Debug JVM 测试 | 440/440 通过，72 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 249.322s |
-| 40 轮混合加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 239.365s；逐轮结果见第 4 节 |
+| 全量 Debug JVM 测试 | 441/441 通过，72 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 222.322s |
+| 40 轮混合加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 212.967s；逐轮结果见第 4 节 |
 | 递增约束 | 通过 | `LoadEscalationTest` 1/1；`weight` 从 31 严格增至 487382，各分项按阶段非递减 |
 | Lint | 0 error / 43 warning / 3 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
 | Debug 构建 | 通过 | `testDebugUnitTest lintDebug assembleDebug` 同次 BUILD SUCCESSFUL |
@@ -49,8 +49,8 @@
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `apk/jarvis-debug.apk` | 219,978,337 B | `3462ecdcbc2d064c6c1158eb2a39e0df5ed52d6debebc20831e80ec30c766993` |
-| `apk/jarvis-debug.apk.7z` | 80,451,252 B | `efeb70b8ac1ff81a0474354dfc2769c2756d2472f15f08478fdff4373fd36523` |
+| `apk/jarvis-debug.apk` | 219,978,337 B | `ed9cbaa35d931197c64f1a64b839fe894b00a199e8d63542e7869c7f4cd4b9ad` |
+| `apk/jarvis-debug.apk.7z` | 80,444,857 B | `748162cb59032d42e6d15e6afc3667b0d8dc02ba2c151b3df46577d8b623ec67` |
 
 ## 4. 40 轮加压逐轮结果
 
@@ -205,4 +205,14 @@
 - 修复：新增唯一显式入口 `AssistantCommandParser.explicitCommandBody`，仅消息以 `/` 或 `／` 开头时进入本地指令流程；其余内容一律交给模型。UI 快捷指令按钮自动补 `/`；显式但未识别的指令返回可用示例。
 - 新增回归：`onlyExplicitSlashPrefixedMessagesAreLocalCommands`、`localCommandsRequireExplicitSlashPrefixAndNeverHijackChat`、`modelAbsentBlocksBareChatCommandsButAllowsExplicitOnes`，并更新压力套件中的 root/VM 指令为显式前缀。
 - 结果：440/440 JVM 测试通过（72 个测试类），40/40 轮加压通过，Lint 0 error / 43 warning / 3 information，Debug 构建成功。该修复只改变指令入口判定，不代表真机功能验收完成。
+
+## 9. 2026-11-23 语音通道误触与 VNC 竞态回归
+
+用户追加要求：除文字输入外，语音输入也要避免误触——ASR 识别出的文本即使偶然带 `/` 前缀，也不能触发本地硬编码指令。
+
+- 根因：文字侧已改为仅 `/` 或 `／` 显式前缀触发，但语音入口 `JarvisVoiceInteractionSessionService.answer` 与文字共用 `ChatEngine.sendUserMessage`，ASR 输出是不可信通道，可能偶然产生 `/终端执行`、`/root`、`/打开微信`、`/翻译` 等内容。
+- 修复：`ChatEngine.sendUserMessage` 新增 `allowLocalCommands: Boolean = true`，把“危险操作二次确认 + 本地指令统一入口”整体收进 `if (allowLocalCommands)` 分支；语音唯一入口传 `false`，即使内容以 `/` 开头也直接跳过本地指令，走模型或无模型提示。核查确认全仓库仅此一条语音入口路径（`onResults` → `answer` → `buildPrompt` → `sendUserMessage`），无其它旁路直接调用 parser/executor。
+- 新增回归：`voiceChannelNeverTriggersLocalCommandsEvenWithSlashPrefix`（`Fixture.sendVoice` 传 `allowLocalCommands = false`），覆盖 `/终端执行`、`/root`、`/打开微信`、`/翻译`、带屏幕上下文的包装 prompt 与无模型场景。
+- 顺带修复：`VncClient.writeEvent` 高负载竞态——原顺序先关 socket 再 `notifyDisconnected`，读循环被唤醒后以“连接已关闭”覆盖应上报的“VNC 发送失败”，导致 `writeFailureReturnsFalseDisconnectsAndNotifiesOnlyOnce` 在全量高负载下连续失败。修复为先 `notifyDisconnected(reason)` 再关 socket（真实生产竞态修复，非放宽测试），单独跑与全量跑均通过。
+- 结果：441/441 JVM 测试通过（72 个测试类，全量汇总 222.322s），40/40 轮加压通过（ProgressiveLoadTest 套件 212.967s），Lint 0 error / 43 warning / 3 information，Debug 构建成功。该修复只改变语音通道的指令入口判定与 VNC 失败上报顺序，不代表真机语音/ASR 或真实 VNC 验收完成。
 

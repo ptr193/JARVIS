@@ -398,4 +398,15 @@
 
 ---
 
-*文档版本：v3.7 | 生成日期：2026-11-23 | 上一版本：v3.6（2026-11-23）*
+## 16. 2026-11-23 语音输入误触与 VNC 竞态修复
+
+| 问题 | 根因与修复 | 提交 | 验证 |
+|---|---|---|---|
+| 语音输入（ASR 文本）也可能误触本地硬编码指令 | 文字侧已要求 `/` 显式前缀，但语音识别结果是不可信通道：ASR 偶然输出带 `/` 的文本（如“/打开微信”“/root”）仍会走同一解析入口并触发 root/翻译/虚拟机/系统快捷指令 | `ChatEngine.sendUserMessage` 新增 `allowLocalCommands` 参数，把“危险操作二次确认 + 本地指令统一入口”整体收进该分支；语音唯一入口 `JarvisVoiceInteractionSessionService.answer` 传 `false`，即使 ASR 输出以 `/` 开头也直接跳过本地指令，只走模型或无模型提示。核查确认全仓库仅此一条语音入口路径，无旁路 | `c071af4` | 新增 `voiceChannelNeverTriggersLocalCommandsEvenWithSlashPrefix`，覆盖 `/终端执行`、`/root`、`/打开微信`、`/翻译`、带屏幕上下文包装与无模型场景；441/441 JVM 测试通过 |
+| VNC 写失败原因被读循环以“连接已关闭”覆盖（高负载竞态） | `VncClient.writeEvent` 先关闭 socket 唤醒读循环，再调用 `notifyDisconnected(reason)`；高负载下读循环抢先以“连接已关闭”覆盖应上报的“VNC 发送失败”，导致失败原因丢失 | 调整顺序：先 `notifyDisconnected(reason)` 上报真实原因，再关闭 socket 唤醒读循环 | `0ec2f07` | `VncClientTest.writeFailureReturnsFalseDisconnectsAndNotifiesOnlyOnce` 单独与全量高负载均通过；441/441 JVM 测试通过 |
+
+最终验证：441/441 JVM 测试、72 个测试类、0 失败/错误/跳过；40/40 轮加压（ProgressiveLoadTest 套件 212.967s）；Lint 0 error / 43 warning / 3 information；Debug 构建成功。最新压缩包为 80,444,857 B，SHA-256 `748162cb59032d42e6d15e6afc3667b0d8dc02ba2c151b3df46577d8b623ec67`；APK 为 219,978,337 B，SHA-256 `ed9cbaa35d931197c64f1a64b839fe894b00a199e8d63542e7869c7f4cd4b9ad`；`7z t` 与包内哈希一致性均通过。语音通道真实触发率与 ASR 行为仍需真机验收，不因 JVM 回归通过而视为已完成。
+
+---
+
+*文档版本：v3.8 | 生成日期：2026-11-23 | 上一版本：v3.7（2026-11-23）*
