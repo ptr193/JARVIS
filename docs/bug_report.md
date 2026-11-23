@@ -388,4 +388,14 @@
 
 ---
 
-*文档版本：v3.6 | 生成日期：2026-11-23 | 上一版本：v3.5（2026-11-22）*
+## 15. 2026-11-23 硬编码指令劫持风险修复
+
+| 问题 | 根因与修复 | 提交 | 验证 |
+|---|---|---|---|
+| 没有 AI 模型也能执行部分功能，说明正常对话被硬编码关键词直接接管 | `ChatEngine.sendUserMessage` 在模型调用前依次执行 root/翻译/虚拟机桌面/虚拟机/系统快捷指令的关键词解析；`打开…`、`关闭…`、`提醒…`、`翻译…` 等自然语言容易被误判为指令，模型缺失时也会静默执行 | 新增显式指令入口：仅当消息以 `/` 或 `／` 开头时才解析本地指令；普通对话一律交给模型。UI 快捷指令按钮自动补 `/`；以 `/` 开头但未识别的内容返回可用示例，不再进入模型或伪装执行 | `ce7dd48` | 新增 `onlyExplicitSlashPrefixedMessagesAreLocalCommands`、`localCommandsRequireExplicitSlashPrefixAndNeverHijackChat`、`modelAbsentBlocksBareChatCommandsButAllowsExplicitOnes`；440/440 JVM 测试通过 |
+
+最终验证：440/440 JVM 测试、72 个测试类、0 失败/错误/跳过；40/40 轮加压；Lint 0 error / 43 warning / 3 information；Debug 构建成功。最新压缩包为 80,451,252 B，SHA-256 `efeb70b8ac1ff81a0474354dfc2769c2756d2472f15f08478fdff4373fd36523`；APK 为 219,978,337 B，SHA-256 `3462ecdcbc2d064c6c1158eb2a39e0df5ed52d6debebc20831e80ec30c766993`；`7z t` 与包内哈希一致性均通过。
+
+---
+
+*文档版本：v3.7 | 生成日期：2026-11-23 | 上一版本：v3.6（2026-11-23）*

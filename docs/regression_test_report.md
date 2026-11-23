@@ -1,8 +1,8 @@
 # JARVIS 回归测试报告
 
 > 最终回归日期：2026-11-23（Asia/Shanghai）
-> 代码基线：`46b9f00`（`origin/main`，APK 对应源码提交）
-> 文档版本：v5.1
+> 代码基线：`ce7dd48`（`origin/main`，APK 对应源码提交）
+> 文档版本：v5.2
 
 ## 1. 范围与结论
 
@@ -34,8 +34,8 @@
 
 | 检查 | 最终结果 | 证据 |
 |---|---|---|
-| 全量 Debug JVM 测试 | 437/437 通过，72 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 210.860s |
-| 40 轮混合加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 202.215s；逐轮结果见第 4 节 |
+| 全量 Debug JVM 测试 | 440/440 通过，72 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 249.322s |
+| 40 轮混合加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 239.365s；逐轮结果见第 4 节 |
 | 递增约束 | 通过 | `LoadEscalationTest` 1/1；`weight` 从 31 严格增至 487382，各分项按阶段非递减 |
 | Lint | 0 error / 43 warning / 3 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
 | Debug 构建 | 通过 | `testDebugUnitTest lintDebug assembleDebug` 同次 BUILD SUCCESSFUL |
@@ -49,8 +49,8 @@
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `apk/jarvis-debug.apk` | 219,961,953 B | `8667ed07a9643ce836bb85bdd89c15277193d50a9e760a963e330026e927de2f` |
-| `apk/jarvis-debug.apk.7z` | 80,444,493 B | `2ed004367eebbb45d7f520c4e295067fa4b6e96bce7c600f3852bd45065e8e96` |
+| `apk/jarvis-debug.apk` | 219,978,337 B | `3462ecdcbc2d064c6c1158eb2a39e0df5ed52d6debebc20831e80ec30c766993` |
+| `apk/jarvis-debug.apk.7z` | 80,451,252 B | `efeb70b8ac1ff81a0474354dfc2769c2756d2472f15f08478fdff4373fd36523` |
 
 ## 4. 40 轮加压逐轮结果
 
@@ -161,6 +161,7 @@
 | TensorFlow 未实现声明移除，`.pb` 后缀不能替代结构校验 | `a9162e6` | 通过 |
 | 发行版下载资产/校验修正、HTTP 错误不落盘 | `8eef87a` | 通过 |
 | 首启权限申请、图片视觉输入、长按增强与流式节流 | `46b9f00` | 通过 |
+| 本地指令改为 `/` 显式触发，普通聊天不再被硬编码关键词劫持 | `ce7dd48` | 通过 |
 
 > `574667a` 同步修正需求追踪矩阵的错误引用与状态；`71bc370` 忽略本地 SDK 安装目录（不影响构建产物）。
 > 本轮新增 ARCore 依赖（`com.google.ar:core:1.43.0`）仅用于**真实探测**设备/ARCore 可用性：不支持时如实返回不支持，绝不伪造 AR、全息或手势能力；#97 手势与 #115 AR 渲染因此保持 PARTIAL。
@@ -194,5 +195,14 @@
 | 5 | 图片附件只发送文件名、位置和哈希 | 附件处理只生成文本描述，未把图片内容交给模型 | 图片读取真实字节（≤6MB，JPEG/PNG/WebP/GIF），base64 后经 OpenAI vision `content` 数组发送；非视觉模型明确回复“不支持图片输入” | `ApiModelTest.generateWithImage`、`ChatEngineBehaviorTest` 图片用例及全量门禁通过；真实视觉回答仍待真机复测 |
 | 6 | 对话长按操作过少 | 消息气泡仅支持复制 | 长按新增复制、引用、删除、重新生成（重新生成需满足最后一条已完成助手消息） | `ChatEngineBehaviorTest` 删除/重新生成用例及全量门禁通过；真机交互仍待复测 |
 
-修复后的最终门禁：437/437 JVM 测试、72 个测试类、0 失败/错误/跳过；40/40 轮加压，`weight` 31→487382；Lint 0 error / 43 warning；Debug 构建成功。上述“真机待复测”项目不因 JVM 测试通过而视为已完成验收。
+修复后再次执行最终门禁：440/440 JVM 测试、72 个测试类、0 失败/错误/跳过；40/40 轮加压，`weight` 31→487382；Lint 0 error / 43 warning；Debug 构建成功。上述“真机待复测”项目不因 JVM 测试通过而视为已完成验收。
+
+## 8. 2026-11-23 硬编码指令劫持风险回归
+
+用户指出：没有 AI 模型时仍能执行部分功能，说明这些能力由关键词硬编码直接触发，正常对话存在被误判劫持的风险。
+
+- 根因：`ChatEngine.sendUserMessage` 在调用模型前，按 root、翻译、虚拟机桌面、虚拟机终端、系统快捷指令的顺序做关键词解析；`打开…`、`关闭…`、`提醒…`、`翻译…` 等普通表达也可能命中。
+- 修复：新增唯一显式入口 `AssistantCommandParser.explicitCommandBody`，仅消息以 `/` 或 `／` 开头时进入本地指令流程；其余内容一律交给模型。UI 快捷指令按钮自动补 `/`；显式但未识别的指令返回可用示例。
+- 新增回归：`onlyExplicitSlashPrefixedMessagesAreLocalCommands`、`localCommandsRequireExplicitSlashPrefixAndNeverHijackChat`、`modelAbsentBlocksBareChatCommandsButAllowsExplicitOnes`，并更新压力套件中的 root/VM 指令为显式前缀。
+- 结果：440/440 JVM 测试通过（72 个测试类），40/40 轮加压通过，Lint 0 error / 43 warning / 3 information，Debug 构建成功。该修复只改变指令入口判定，不代表真机功能验收完成。
 

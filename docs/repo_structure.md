@@ -16,7 +16,7 @@ JARVIS/
 │       │   ├── AndroidManifest.xml
 │       │   ├── java/com/jarvis/pineapple/   # Kotlin 源码（见第 2 节）
 │       │   └── res/           # 资源文件（布局、图标、主题、字符串）
-│       └── test/              # JVM 单元/集成/压力测试（72 个测试类，437 个用例）
+│       └── test/              # JVM 单元/集成/压力测试（72 个测试类，440 个用例）
 ├── apk/                       # Debug 交付目录
 │   ├── jarvis-debug.apk       # 本地构建/解压产物（*.apk 不入 Git）
 │   └── jarvis-debug.apk.7z    # 唯一提交的安装包，含 SHA-256
