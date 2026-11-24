@@ -305,7 +305,12 @@ class ModelCapabilityScheduler(
                 )
             )
         )
-        registerProfiles(profiles)
+        val profiledIds = profiles.mapTo(mutableSetOf()) { it.modelId }
+        // 新增模型没有基准测试证据时使用中性画像，不凭空宣称某能力为强项。
+        val neutralProfiles = ModelDownloadManager.DEFAULT_MODELS
+            .filterNot { it.id in profiledIds }
+            .map { ModelCapabilityProfile(modelId = it.id, modelName = it.name) }
+        registerProfiles(profiles + neutralProfiles)
     }
 
     private fun String.containsAny(vararg keywords: String): Boolean {

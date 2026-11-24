@@ -311,35 +311,53 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
     }) { Text("保存服务器配置") }
 
     Spacer(Modifier.height(16.dp))
-    Text("模型下载管理", style = MaterialTheme.typography.titleMedium)
+    Text("模型安装管理", style = MaterialTheme.typography.titleMedium)
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "随包模型直接解压，不消耗网络流量；其他模型从国内镜像优先下载。",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
     Spacer(Modifier.height(8.dp))
 
-    // 模型下载列表
     val models = remember {
         runCatching { org.koin.core.context.GlobalContext.get().get<ModelDownloadManager>() }
             .getOrElse { ModelDownloadManager(context) }
     }
     val downloadStates by models.downloadStates.collectAsState()
+    val modelConfigs = remember { models.getModelConfigs() }
+    val groups = listOf(
+        "可本地解压（随 APK 内置）" to modelConfigs.filter { it.isBundled },
+        "需联网获取" to modelConfigs.filterNot { it.isBundled }
+    )
 
     Column {
-        models.getModelConfigs().forEach { config ->
-            val state = downloadStates[config.id] ?: ModelDownloadState(
-                modelId = config.id,
-                modelName = config.name
-            )
-            ModelDownloadItem(
-                state = state,
-                onDownload = {
-                    scope.launch {
-                        models.downloadModel(config.id)
-                    }
-                },
-                onDelete = {
-                    val deleted = models.deleteModel(config.id)
-                    showMsg(if (deleted) "模型已删除: ${config.name}" else "模型删除失败: ${config.name}")
-                },
-                onCancel = { models.cancelDownload(config.id) }
-            )
+        groups.forEach { (title, configs) ->
+            Text("$title · ${configs.size} 款", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(8.dp))
+            configs.forEach { config ->
+                val state = downloadStates[config.id] ?: ModelDownloadState(
+                    modelId = config.id,
+                    modelName = config.name,
+                    totalBytes = config.sizeBytes
+                )
+                ModelDownloadItem(
+                    state = state,
+                    isBundled = config.isBundled,
+                    archiveBytes = config.archiveBytes,
+                    onInstall = {
+                        scope.launch {
+                            models.installModel(config.id)
+                        }
+                    },
+                    onDelete = {
+                        val deleted = models.deleteModel(config.id)
+                        showMsg(if (deleted) "模型已删除: ${config.name}" else "模型删除失败: ${config.name}")
+                    },
+                    onCancel = { models.cancelDownload(config.id) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             Spacer(Modifier.height(8.dp))
         }
     }
@@ -348,7 +366,9 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
 @Composable
 private fun ModelDownloadItem(
     state: ModelDownloadState,
-    onDownload: () -> Unit,
+    isBundled: Boolean,
+    archiveBytes: Long,
+    onInstall: () -> Unit,
     onDelete: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -367,12 +387,25 @@ private fun ModelDownloadItem(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(state.modelName, fontWeight = FontWeight.Bold)
                     Text(
+                        text = buildString {
+                            if (isBundled && archiveBytes > 0) {
+                                append("压缩包 ${archiveBytes / (1024 * 1024)} MB · ")
+                            }
+                            append("模型 ${state.totalBytes / (1024 * 1024)} MB")
+                        },
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
                         text = when (state.status) {
-                            DownloadStatus.NOT_DOWNLOADED -> "未下载"
+                            DownloadStatus.NOT_DOWNLOADED -> if (isBundled) "未解压（无需联网）" else "未下载"
                             DownloadStatus.DOWNLOADING -> "下载中... ${(state.progress * 100).toInt()}%"
-                            DownloadStatus.COMPLETED -> "已下载"
-                            DownloadStatus.FAILED -> "下载失败: ${state.errorMessage}"
-                            DownloadStatus.VERIFYING -> "校验中..."
+                            DownloadStatus.EXTRACTING -> "本地解压中... ${(state.progress * 100).toInt()}%"
+                            DownloadStatus.COMPLETED -> if (isBundled) "已解压，可离线使用" else "已下载"
+                            DownloadStatus.FAILED -> state.errorMessage.ifBlank {
+                                if (isBundled) "解压失败" else "下载失败"
+                            }
+                            DownloadStatus.VERIFYING -> "完整性校验中..."
                             DownloadStatus.CANCELLED -> "已取消: ${state.errorMessage}"
                         },
                         fontSize = 12.sp,
@@ -383,13 +416,18 @@ private fun ModelDownloadItem(
                     if (state.status == DownloadStatus.NOT_DOWNLOADED ||
                         state.status == DownloadStatus.FAILED || state.status == DownloadStatus.CANCELLED
                     ) {
-                        IconButton(onClick = onDownload) {
-                            Icon(Icons.Filled.Download, contentDescription = "下载")
+                        IconButton(onClick = onInstall) {
+                            Icon(
+                                Icons.Filled.Download,
+                                contentDescription = if (isBundled) "本地解压" else "联网下载"
+                            )
                         }
                     }
-                    if (state.status == DownloadStatus.DOWNLOADING || state.status == DownloadStatus.VERIFYING) {
+                    if (state.status == DownloadStatus.DOWNLOADING ||
+                        state.status == DownloadStatus.EXTRACTING || state.status == DownloadStatus.VERIFYING
+                    ) {
                         IconButton(onClick = onCancel) {
-                            Icon(Icons.Filled.Close, contentDescription = "取消下载")
+                            Icon(Icons.Filled.Close, contentDescription = "取消安装")
                         }
                     }
                     if (state.status == DownloadStatus.COMPLETED) {
@@ -399,7 +437,7 @@ private fun ModelDownloadItem(
                     }
                 }
             }
-            if (state.status == DownloadStatus.DOWNLOADING) {
+            if (state.status == DownloadStatus.DOWNLOADING || state.status == DownloadStatus.EXTRACTING) {
                 Spacer(Modifier.height(4.dp))
                 LinearProgressIndicator(
                     progress = { state.progress },

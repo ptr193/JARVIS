@@ -65,6 +65,10 @@ android {
         compose = true
         buildConfig = true
     }
+    // 模型已经过 7z 压缩，APK 不再重复压缩，避免增加构建耗时。
+    androidResources {
+        noCompress += "7z"
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"

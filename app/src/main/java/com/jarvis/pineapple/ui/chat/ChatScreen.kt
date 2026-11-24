@@ -441,10 +441,10 @@ fun ChatScreen(
                     )
                 }
 
-                // 添加附件：只暂存，不发送；也可直接粘贴手机文件管理器的绝对路径。
-                val pickFile = rememberLauncherForActivityResult(
-                    ActivityResultContracts.OpenDocument()
-                ) { uri -> uri?.let { viewModel.addAttachment(it) } }
+                // 添加附件：支持一次多选，只暂存不发送；也可直接输入绝对路径。
+                val pickFiles = rememberLauncherForActivityResult(
+                    ActivityResultContracts.OpenMultipleDocuments()
+                ) { uris -> viewModel.addAttachments(uris) }
                 var attachMenuExpanded by remember { mutableStateOf(false) }
                 var pathDialogVisible by remember { mutableStateOf(false) }
                 var pathInput by remember { mutableStateOf("") }
@@ -460,7 +460,7 @@ fun ChatScreen(
                             text = { Text("选择图片/文件") },
                             onClick = {
                                 attachMenuExpanded = false
-                                pickFile.launch(arrayOf("*/*"))
+                                pickFiles.launch(arrayOf("*/*"))
                             }
                         )
                         DropdownMenuItem(

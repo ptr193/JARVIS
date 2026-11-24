@@ -5,6 +5,8 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.headersOf
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
+import org.apache.commons.compress.archivers.sevenz.SevenZOutputFile
 import java.io.File
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
@@ -16,6 +18,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -30,16 +33,24 @@ class ModelDownloadManagerTest {
 
     @Test
     fun defaultModelsHaveOfficialSizesAndChecksums() {
+        val ids = ModelDownloadManager.DEFAULT_MODELS.map { it.id }
+        assertEquals(29, ids.size)
+        assertEquals(ids.size, ids.toSet().size)
+        assertTrue(
+            ids.containsAll(
+                setOf(
+                    "qwen3_0_6b",
+                    "qwen2_5_1_5b",
+                    "deepseek_r1_distill_qwen_1_5b",
+                    "gemma4_e2b_2_5b",
+                    "gemma4_12b",
+                    "lfm2_5_1_7b"
+                )
+            )
+        )
         assertEquals(
-            setOf(
-                "qwen3_0_6b",
-                "qwen2_5_1_5b",
-                "deepseek_r1_distill_qwen_1_5b",
-                "gemma4_e2b_2_5b",
-                "gemma4_12b",
-                "lfm2_5_1_7b"
-            ),
-            ModelDownloadManager.DEFAULT_MODELS.map { it.id }.toSet()
+            1,
+            ModelDownloadManager.DEFAULT_MODELS.count { it.isBundled }
         )
         ModelDownloadManager.DEFAULT_MODELS.forEach { config ->
             assertTrue("${config.id} 缺少真实大小", config.sizeBytes > 1024)
@@ -96,6 +107,46 @@ class ModelDownloadManagerTest {
         assertTrue(delete.contains("if (failedDeletions(candidates).isNotEmpty()) return false"))
         assertTrue(delete.indexOf("return false") < delete.indexOf("updateState("))
         assertTrue(delete.contains("return true"))
+    }
+
+    @Test
+    fun bundledModelExtractsAndVerifiesWithoutNetwork() = runBlocking {
+        val payload = ByteArray(2048) { (it % 37).toByte() }
+        val archive = temp.newFile("tiny.7z")
+        SevenZOutputFile(archive).use { output ->
+            val entry = SevenZArchiveEntry().apply {
+                name = "tiny.litertlm"
+                size = payload.size.toLong()
+            }
+            output.putArchiveEntry(entry)
+            output.write(payload)
+            output.closeArchiveEntry()
+        }
+        val requests = AtomicInteger()
+        val modelDirectory = temp.newFolder("bundled-models")
+        val config = testConfig(payload).copy(
+            bundledAsset = "models/tiny.7z",
+            archiveBytes = archive.length()
+        )
+        val manager = ModelDownloadManager(
+            modelDirectory,
+            HttpClient(MockEngine {
+                requests.incrementAndGet()
+                respond(ByteArray(0))
+            }),
+            listOf(config),
+            bundledAssetOpener = { path ->
+                if (path == "models/tiny.7z") archive.inputStream() else null
+            },
+            cacheDir = temp.newFolder("bundled-cache")
+        )
+
+        assertTrue(manager.installModel("tiny"))
+        assertArrayEquals(payload, File(modelDirectory, "tiny.litertlm").readBytes())
+        assertEquals(0, requests.get())
+        assertEquals(DownloadStatus.COMPLETED, manager.getDownloadProgress("tiny")?.status)
+        assertFalse(File(modelDirectory, "tiny.litertlm.extracting").exists())
+        assertEquals(File(modelDirectory, "tiny.litertlm").absolutePath, manager.getModelFilePath("tiny"))
     }
 
     @Test

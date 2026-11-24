@@ -52,40 +52,64 @@ fun ModelOnboardingScreen(
         Text("首次模型安装", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            "本地尚无可用模型。请选择一个默认模型并确认后开始下载。未确认前不会自动下载。",
+            "本地尚无可用模型。随包模型选择后直接解压；联网模型确认后才下载。未确认前不会自动安装。",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(16.dp))
-        configs.forEach { config ->
-            androidx.compose.foundation.layout.Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            ) {
-                RadioButton(
-                    selected = selectedId == config.id,
-                    onClick = { selectedId = config.id }
-                )
-                Column(modifier = Modifier.padding(start = 8.dp)) {
-                    Text(config.name, style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "约 ${config.sizeBytes / (1024 * 1024)} MB",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+        val groups = listOf(
+            "可本地解压（无需联网）" to configs.filter { it.isBundled },
+            "需联网获取" to configs.filterNot { it.isBundled }
+        )
+        groups.forEach { (title, groupConfigs) ->
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            groupConfigs.forEach { config ->
+                androidx.compose.foundation.layout.Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                ) {
+                    RadioButton(
+                        selected = selectedId == config.id,
+                        onClick = { selectedId = config.id }
                     )
+                    Column(modifier = Modifier.padding(start = 8.dp)) {
+                        Text(config.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            buildString {
+                                if (config.archiveBytes > 0) {
+                                    append("压缩包 ${config.archiveBytes / (1024 * 1024)} MB · ")
+                                }
+                                if (config.isBundled) append("解压后 ") else append("下载后占用 ")
+                                append("${config.sizeBytes / (1024 * 1024)} MB")
+                            },
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
+            Spacer(Modifier.height(12.dp))
         }
         val progress = states[selectedId]
         if (downloading && progress != null) {
             Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(progress = { progress.progress }, modifier = Modifier.fillMaxWidth())
-            Text("下载中 ${(progress.progress * 100).toInt()}%", fontSize = 12.sp)
+            Text(
+                when (progress.status) {
+                    com.jarvis.pineapple.model.DownloadStatus.EXTRACTING ->
+                        "本地解压中 ${(progress.progress * 100).toInt()}%"
+                    com.jarvis.pineapple.model.DownloadStatus.VERIFYING -> "完整性校验中"
+                    else -> "下载中 ${(progress.progress * 100).toInt()}%"
+                },
+                fontSize = 12.sp
+            )
         }
         error?.let {
             Spacer(Modifier.height(8.dp))
             Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
         }
         Spacer(Modifier.height(16.dp))
+        val selectedBundled = configs.firstOrNull { it.id == selectedId }?.isBundled == true
         Button(
             onClick = {
                 if (selectedId.isBlank()) {
@@ -98,22 +122,34 @@ fun ModelOnboardingScreen(
                 error = null
                 scope.launch {
                     val ok = withTimeoutOrNull(OnboardingGate.TIMEOUT_MS) {
-                        downloadManager.downloadModel(selectedId)
+                        downloadManager.installModel(selectedId)
                     }
                     downloading = false
                     when (ok) {
                         true -> onFinished()
-                        null -> error = OnboardingGate.timeoutError()
+                        null -> error = if (selectedBundled) "模型解压超时" else OnboardingGate.timeoutError()
                         else -> {
                             val cause = downloadManager.getDownloadProgress(selectedId)?.errorMessage
-                            error = OnboardingGate.failureError(cause)
+                            error = if (selectedBundled) {
+                                "模型解压失败：${cause ?: "未知原因"}"
+                            } else {
+                                OnboardingGate.failureError(cause)
+                            }
                         }
                     }
                 }
             },
             enabled = !downloading,
             modifier = Modifier.fillMaxWidth()
-        ) { Text(if (error != null) "重试下载" else "开始下载") }
+        ) {
+            Text(
+                when {
+                    error != null -> if (selectedBundled) "重试本地解压" else "重试联网下载"
+                    selectedBundled -> "开始本地解压"
+                    else -> "开始联网下载"
+                }
+            )
+        }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = {

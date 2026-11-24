@@ -171,58 +171,32 @@ class LiteRtModel(
 )
 
 /**
- * 默认内置的 5 个 LiteRT 模型。
+ * 下载目录中的模型与调度器共用同一份配置，避免下载成功后找不到对应本地模型。
  */
 object BuiltInModels {
-    fun liteRtModels(context: Context): List<LiteRtModel> = listOf(
-        LiteRtModel(
-            context = context,
-            id = "gemma4_e2b_2_5b",
-            name = "Gemma 4 E2B 2.5B",
-            description = "Google Gemma 4 2.5B Edge-to-Cloud",
-            maxTokens = 2048, temperature = 0.7f, topP = 0.95f, topK = 40
-        ),
-        LiteRtModel(
-            context = context,
-            id = "gemma4_12b",
-            name = "Gemma 4 12B",
-            description = "Google Gemma 4 12B",
-            maxTokens = 4096, temperature = 0.7f, topP = 0.95f, topK = 40
-        ),
-        LiteRtModel(
-            context = context,
-            id = "lfm2_5_1_7b",
-            name = "LFM 2.5 1.2B Instruct",
-            description = "Liquid AI LFM2.5-1.2B-Instruct int8",
-            maxTokens = 2048, temperature = 0.7f, topP = 0.9f, topK = 50
-        ),
-        LiteRtModel(
-            context = context,
-            id = "qwen3_0_6b",
-            name = "Qwen 3 0.6B",
-            description = "通义千问 Qwen 3 0.6B",
-            maxTokens = 1024, temperature = 0.7f, topP = 0.9f, topK = 50
-        ),
-        LiteRtModel(
-            context = context,
-            id = "qwen2_5_1_5b",
-            name = "Qwen 2.5 1.5B Instruct",
-            description = "通义千问 Qwen 2.5 1.5B（q8，国产开源）",
-            maxTokens = 2048, temperature = 0.7f, topP = 0.9f, topK = 50
-        ),
-        LiteRtModel(
-            context = context,
-            id = "deepseek_r1_distill_qwen_1_5b",
-            name = "DeepSeek R1 Distill Qwen 1.5B",
-            description = "DeepSeek R1 蒸馏 Qwen 1.5B（q8，国产开源）",
-            maxTokens = 2048, temperature = 0.7f, topP = 0.9f, topK = 50
-        ),
-        LiteRtModel(
+    fun liteRtModels(context: Context): List<LiteRtModel> =
+        ModelDownloadManager.DEFAULT_MODELS.map { config ->
+            val chatSampling = config.id.startsWith("qwen") || config.id.startsWith("lfm") ||
+                config.id.startsWith("deepseek")
+            LiteRtModel(
+                context = context,
+                id = config.id,
+                name = config.name,
+                description = "${config.name}（LiteRT-LM）",
+                maxTokens = when {
+                    config.id == "gemma4_12b" -> 4096
+                    config.id.startsWith("qwen3_0_6b") -> 1024
+                    else -> 2048
+                },
+                temperature = 0.7f,
+                topP = if (chatSampling) 0.9f else 0.95f,
+                topK = if (chatSampling) 50 else 40
+            )
+        } + LiteRtModel(
             context = context,
             id = "phi4_1_5b",
             name = "Phi-4 1.5B",
             description = "Microsoft Phi-4 1.5B",
             maxTokens = 2048, temperature = 0.7f, topP = 0.9f, topK = 50
         )
-    )
 }
