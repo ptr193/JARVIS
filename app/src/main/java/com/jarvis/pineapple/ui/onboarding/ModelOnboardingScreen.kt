@@ -52,17 +52,28 @@ fun ModelOnboardingScreen(
         Text("首次模型安装", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            "本地尚无可用模型。随包模型选择后直接解压；联网模型确认后才下载。未确认前不会自动安装。",
+            "本地尚无可用模型。推荐包与次要包随 APK 内置，选中后直接解压；其余模型确认后才联网下载。未确认前不会自动安装。",
             fontSize = 14.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(16.dp))
         val groups = listOf(
-            "可本地解压（无需联网）" to configs.filter { it.isBundled },
+            "推荐包（随 APK 内置，无需联网）" to
+                configs.filter { it.bundledAsset == ModelDownloadManager.BUNDLE_RECOMMENDED },
+            "次要推荐包（随 APK 内置，无需联网）" to
+                configs.filter { it.bundledAsset == ModelDownloadManager.BUNDLE_SECONDARY },
             "需联网获取" to configs.filterNot { it.isBundled }
         )
         groups.forEach { (title, groupConfigs) ->
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            val bundleBytes = groupConfigs.firstOrNull()?.archiveBytes?.takeIf { it > 0 }
+            Text(
+                buildString {
+                    append(title)
+                    append(" · ${groupConfigs.size} 款")
+                    if (bundleBytes != null) append(" · 压缩包 ${bundleBytes / (1024 * 1024)} MB")
+                },
+                style = MaterialTheme.typography.titleMedium
+            )
             Spacer(Modifier.height(4.dp))
             groupConfigs.forEach { config ->
                 androidx.compose.foundation.layout.Row(
@@ -76,10 +87,11 @@ fun ModelOnboardingScreen(
                         Text(config.name, style = MaterialTheme.typography.bodyLarge)
                         Text(
                             buildString {
-                                if (config.archiveBytes > 0) {
-                                    append("压缩包 ${config.archiveBytes / (1024 * 1024)} MB · ")
+                                when (config.bundledAsset) {
+                                    ModelDownloadManager.BUNDLE_RECOMMENDED -> append("推荐包 · 解压后 ")
+                                    ModelDownloadManager.BUNDLE_SECONDARY -> append("次要包 · 解压后 ")
+                                    else -> append("下载后占用 ")
                                 }
-                                if (config.isBundled) append("解压后 ") else append("下载后占用 ")
                                 append("${config.sizeBytes / (1024 * 1024)} MB")
                             },
                             fontSize = 12.sp,

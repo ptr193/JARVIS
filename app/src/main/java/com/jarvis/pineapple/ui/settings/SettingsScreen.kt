@@ -327,13 +327,23 @@ private fun ServiceTab(showMsg: (String) -> Unit) {
     val downloadStates by models.downloadStates.collectAsState()
     val modelConfigs = remember { models.getModelConfigs() }
     val groups = listOf(
-        "可本地解压（随 APK 内置）" to modelConfigs.filter { it.isBundled },
+        "推荐包（随 APK 内置）" to
+            modelConfigs.filter { it.bundledAsset == ModelDownloadManager.BUNDLE_RECOMMENDED },
+        "次要推荐包（随 APK 内置）" to
+            modelConfigs.filter { it.bundledAsset == ModelDownloadManager.BUNDLE_SECONDARY },
         "需联网获取" to modelConfigs.filterNot { it.isBundled }
     )
 
     Column {
         groups.forEach { (title, configs) ->
-            Text("$title · ${configs.size} 款", style = MaterialTheme.typography.titleSmall)
+            val bundleBytes = configs.firstOrNull()?.archiveBytes?.takeIf { it > 0 }
+            Text(
+                buildString {
+                    append("$title · ${configs.size} 款")
+                    if (bundleBytes != null) append(" · 压缩包 ${bundleBytes / (1024 * 1024)} MB")
+                },
+                style = MaterialTheme.typography.titleSmall
+            )
             Spacer(Modifier.height(8.dp))
             configs.forEach { config ->
                 val state = downloadStates[config.id] ?: ModelDownloadState(

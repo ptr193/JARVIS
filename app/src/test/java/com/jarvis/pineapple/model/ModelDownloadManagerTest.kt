@@ -49,9 +49,20 @@ class ModelDownloadManagerTest {
             )
         )
         assertEquals(
-            1,
+            5,
             ModelDownloadManager.DEFAULT_MODELS.count { it.isBundled }
         )
+        val bundled = ModelDownloadManager.DEFAULT_MODELS.filter { it.isBundled }
+        bundled.forEach { config ->
+            assertTrue("${config.id} 缺少归档大小", config.archiveBytes > 0)
+            assertTrue(
+                "${config.id} 归档路径非法",
+                config.bundledAsset == ModelDownloadManager.BUNDLE_RECOMMENDED ||
+                    config.bundledAsset == ModelDownloadManager.BUNDLE_SECONDARY
+            )
+        }
+        assertEquals(3, bundled.count { it.bundledAsset == ModelDownloadManager.BUNDLE_RECOMMENDED })
+        assertEquals(2, bundled.count { it.bundledAsset == ModelDownloadManager.BUNDLE_SECONDARY })
         ModelDownloadManager.DEFAULT_MODELS.forEach { config ->
             assertTrue("${config.id} 缺少真实大小", config.sizeBytes > 1024)
             assertTrue(
@@ -147,6 +158,67 @@ class ModelDownloadManagerTest {
         assertEquals(DownloadStatus.COMPLETED, manager.getDownloadProgress("tiny")?.status)
         assertFalse(File(modelDirectory, "tiny.litertlm.extracting").exists())
         assertEquals(File(modelDirectory, "tiny.litertlm").absolutePath, manager.getModelFilePath("tiny"))
+    }
+
+    @Test
+    fun sharedArchiveExtractsOnlyRequestedEntryAndCopiesOnce() = runBlocking {
+        val alphaPayload = ByteArray(2048) { (it % 17).toByte() }
+        val betaPayload = ByteArray(4096) { (it % 23).toByte() }
+        val archive = temp.newFile("shared.7z")
+        SevenZOutputFile(archive).use { output ->
+            listOf("alpha.litertlm" to alphaPayload, "beta.litertlm" to betaPayload).forEach { (name, payload) ->
+                val entry = SevenZArchiveEntry().apply {
+                    this.name = name
+                    size = payload.size.toLong()
+                }
+                output.putArchiveEntry(entry)
+                output.write(payload)
+                output.closeArchiveEntry()
+            }
+        }
+        val requests = AtomicInteger()
+        val openerCalls = AtomicInteger()
+        val modelDirectory = temp.newFolder("shared-models")
+        val cacheDir = temp.newFolder("shared-cache")
+        val alpha = ModelDownloadManager.ModelConfig(
+            id = "alpha", name = "Alpha", fileName = "alpha.litertlm",
+            downloadUrl = "https://models.test/alpha",
+            sha256 = sha256(alphaPayload), sizeBytes = alphaPayload.size.toLong(),
+            bundledAsset = "models/shared.7z", archiveBytes = archive.length()
+        )
+        val beta = alpha.copy(
+            id = "beta", name = "Beta", fileName = "beta.litertlm",
+            downloadUrl = "https://models.test/beta",
+            sha256 = sha256(betaPayload), sizeBytes = betaPayload.size.toLong()
+        )
+        val manager = ModelDownloadManager(
+            modelDirectory,
+            HttpClient(MockEngine {
+                requests.incrementAndGet()
+                respond(ByteArray(0))
+            }),
+            listOf(alpha, beta),
+            bundledAssetOpener = { path ->
+                openerCalls.incrementAndGet()
+                if (path == "models/shared.7z") archive.inputStream() else null
+            },
+            cacheDir = cacheDir
+        )
+
+        assertTrue(manager.installModel("alpha"))
+        assertTrue(manager.installModel("beta"))
+
+        // 同一压缩包内两款模型共享同一份缓存，assets 只读取一次，且全程不发起网络请求。
+        assertEquals(1, openerCalls.get())
+        assertEquals(0, requests.get())
+        assertArrayEquals(alphaPayload, File(modelDirectory, "alpha.litertlm").readBytes())
+        assertArrayEquals(betaPayload, File(modelDirectory, "beta.litertlm").readBytes())
+        assertFalse(File(modelDirectory, "alpha.litertlm.extracting").exists())
+        assertFalse(File(modelDirectory, "beta.litertlm.extracting").exists())
+        assertEquals(DownloadStatus.COMPLETED, manager.getDownloadProgress("alpha")?.status)
+        assertEquals(DownloadStatus.COMPLETED, manager.getDownloadProgress("beta")?.status)
+        // 解压成功后缓存归档保留，供同包其它模型复用。
+        assertTrue(File(cacheDir, "models_shared.7z").exists())
     }
 
     @Test

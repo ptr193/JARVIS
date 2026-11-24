@@ -66,8 +66,9 @@ enum class DownloadStatus {
  * - 下载支持断点续传，解压与下载后均校验真实大小和 SHA-256
  * - 模型安装到应用私有目录 context.filesDir/models/
  *
- * 模型目录共 29 款，均来自 litert-community；SmolLM2 135M 随 APK 内置，
- * 其余模型按 DownloadMirrors 的国内优先顺序获取。
+ * 模型目录共 29 款，均来自 litert-community；其中 5 款随 APK 内置为两个压缩包
+ * （推荐包 recommended.7z、次要包 secondary.7z），选中后直接本地解压；
+ * 其余模型按 DownloadMirrors 的国内优先顺序联网获取。
  *
  * 下载地址按 [DownloadMirrors] 展开为「ModelScope → hf-mirror → HuggingFace 直连」，
  * 国内网络下优先走魔搭，避免 huggingface.co 被墙导致“下不了”。
@@ -105,6 +106,8 @@ class ModelDownloadManager internal constructor(
 
     private val downloadLocks = ConcurrentHashMap<String, Mutex>()
     private val downloadJobs = ConcurrentHashMap<String, Job>()
+    // 同一压缩包内多款模型共享同一份缓存归档，按 assets 路径加锁，避免重复拷贝。
+    private val archiveLocks = ConcurrentHashMap<String, Mutex>()
     private val activeDownloads = AtomicInteger()
     private val stateLock = Any()
     private val verificationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -125,33 +128,42 @@ class ModelDownloadManager internal constructor(
     }
 
     companion object {
+        /** 随 APK 内置的推荐模型压缩包（assets 路径）。 */
+        const val BUNDLE_RECOMMENDED = "models/recommended.7z"
+        /** 随 APK 内置的次要推荐模型压缩包（assets 路径）。 */
+        const val BUNDLE_SECONDARY = "models/secondary.7z"
+
         /** 默认模型配置；大小与 SHA-256 来自 litert-community 发布仓库的 LFS 元数据。 */
         val DEFAULT_MODELS = listOf(
             litertCommunityModel(
                 "smollm2_135m_instruct", "SmolLM2 135M Instruct",
                 "SmolLM2-135M-Instruct", "SmolLM2_135M_Instruct.litertlm",
                 142_819_328L, "ccdc5c85735743f081b7d44ca309cab569f76c0f2f0e8e163449a63721969c37",
-                bundledAsset = "models/smollm2_135m_instruct.7z", archiveBytes = 121_604_221L
+                bundledAsset = BUNDLE_RECOMMENDED, archiveBytes = 658_171_610L
             ),
             litertCommunityModel(
                 "smollm2_360m_instruct", "SmolLM2 360M Instruct",
                 "SmolLM2-360M-Instruct", "SmolLM2_360M_instruct.litertlm",
-                373_719_040L, "8e2834da211b439751af968ed650febdde5a8cb8d88bc6c1a3059f049caa5c2e"
+                373_719_040L, "8e2834da211b439751af968ed650febdde5a8cb8d88bc6c1a3059f049caa5c2e",
+                bundledAsset = BUNDLE_SECONDARY, archiveBytes = 562_153_787L
             ),
             litertCommunityModel(
                 "functiongemma_270m_mobile_actions", "FunctionGemma 270M Mobile Actions",
                 "functiongemma-270m-ft-mobile-actions", "mobile_actions_q8_ekv1024.litertlm",
-                288_964_608L, "33e295cbd996b419bb1de8f3f85c5b6b01ee058a2c89bdb2173cf3e6ff4ce9d0"
+                288_964_608L, "33e295cbd996b419bb1de8f3f85c5b6b01ee058a2c89bdb2173cf3e6ff4ce9d0",
+                bundledAsset = BUNDLE_SECONDARY, archiveBytes = 562_153_787L
             ),
             litertCommunityModel(
                 "gemma3_270m_it", "Gemma 3 270M IT q8",
                 "gemma-3-270m-it", "gemma3-270m-it-q8.litertlm",
-                304_005_120L, "757e9119fa5bd667a2774fb470ac4afcd3190a21c677f8e69a5d6bc908abdd63"
+                304_005_120L, "757e9119fa5bd667a2774fb470ac4afcd3190a21c677f8e69a5d6bc908abdd63",
+                bundledAsset = BUNDLE_RECOMMENDED, archiveBytes = 658_171_610L
             ),
             litertCommunityModel(
                 "qwen3_0_6b_int4", "Qwen 3 0.6B int4",
                 "Qwen3-0.6B", "Qwen3-0.6B_dynamic_wi4b32_afp32.litertlm",
-                343_490_560L, "bf1aba9ce8d963124407353c6aa4cbf72eba78db21ae133de983eac672ce83e0"
+                343_490_560L, "bf1aba9ce8d963124407353c6aa4cbf72eba78db21ae133de983eac672ce83e0",
+                bundledAsset = BUNDLE_RECOMMENDED, archiveBytes = 658_171_610L
             ),
             litertCommunityModel(
                 "qwen3_0_6b", "Qwen 3 0.6B q8",
@@ -411,10 +423,12 @@ class ModelDownloadManager internal constructor(
         }
     }
 
-    private fun extractBundledModelLocked(config: ModelConfig, job: Job?): Boolean {
+    private suspend fun extractBundledModelLocked(config: ModelConfig, job: Job?): Boolean {
         val file = File(modelsDir, config.fileName)
         val staged = File(modelsDir, "${config.fileName}.extracting")
-        val archive = File(cacheDir, "${config.id}.bundled.7z")
+        val assetPath = config.bundledAsset ?: throw IllegalStateException("不是随包模型")
+        // 缓存键按归档路径而非 modelId，使同一压缩包内的多款模型只拷贝一次。
+        val archive = File(cacheDir, assetPath.replace('/', '_').replace('\\', '_'))
         try {
             if (file.exists() && isExpectedSize(config, file.length()) &&
                 calculateSha256(file) { job?.ensureActive() }.equals(config.sha256, ignoreCase = true)
@@ -444,11 +458,17 @@ class ModelDownloadManager internal constructor(
                 totalBytes = config.sizeBytes
             ))
 
-            val assetPath = config.bundledAsset ?: throw IllegalStateException("不是随包模型")
             val opener = bundledAssetOpener ?: throw IllegalStateException("安装包未提供模型 assets 读取器")
-            val input = opener(assetPath) ?: throw IllegalStateException("APK 中缺少 $assetPath")
-            input.use { source ->
-                archive.outputStream().use { output -> source.copyTo(output) }
+            archiveLocks.computeIfAbsent(assetPath) { Mutex() }.withLock {
+                if (archive.exists() && config.archiveBytes > 0 && archive.length() != config.archiveBytes) {
+                    archive.delete()
+                }
+                if (!archive.exists()) {
+                    val input = opener(assetPath) ?: throw IllegalStateException("APK 中缺少 $assetPath")
+                    input.use { source ->
+                        archive.outputStream().use { output -> source.copyTo(output) }
+                    }
+                }
             }
             job?.ensureActive()
             if (config.archiveBytes > 0 && archive.length() != config.archiveBytes) {
@@ -529,6 +549,8 @@ class ModelDownloadManager internal constructor(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            // 失败时清掉缓存归档，下次重试会重新从 APK 拷贝；成功则保留以便同包其它模型复用。
+            archive.delete()
             updateState(config.id, ModelDownloadState(
                 modelId = config.id,
                 modelName = config.name,
@@ -539,7 +561,6 @@ class ModelDownloadManager internal constructor(
             return false
         } finally {
             staged.delete()
-            archive.delete()
         }
     }
 
