@@ -64,11 +64,16 @@ enum class DownloadStatus {
  * - 下载后校验 SHA-256
  * - 下载到应用私有目录 context.filesDir/models/
  *
- * 四个默认模型下载地址（硬编码在代码中）：
- * 1. Gemma 4 E2B 2.5B: https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm
- * 2. Gemma 4 12B: https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm/resolve/main/gemma-4-12B-it.litertlm
- * 3. LFM2.5 1.2B Instruct: https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm
- * 4. Qwen 3 0.6B: https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm
+ * 默认模型（国内模型优先，均来自 litert-community，并由 ModelScope 镜像）：
+ * 1. Qwen 3 0.6B
+ * 2. Qwen 2.5 1.5B Instruct
+ * 3. DeepSeek R1 Distill Qwen 1.5B
+ * 4. Gemma 4 E2B 2.5B
+ * 5. Gemma 4 12B
+ * 6. LFM2.5 1.2B Instruct
+ *
+ * 下载地址按 [DownloadMirrors] 展开为「ModelScope → hf-mirror → HuggingFace 直连」，
+ * 国内网络下优先走魔搭，避免 huggingface.co 被墙导致“下不了”。
  */
 class ModelDownloadManager internal constructor(
     private val modelsDir: File,
@@ -115,8 +120,34 @@ class ModelDownloadManager internal constructor(
     )
 
     companion object {
-        /** 四个默认模型配置；大小与 SHA-256 来自发布仓库的 LFS 元数据。 */
+        /** 默认模型配置；大小与 SHA-256 来自发布仓库的 LFS 元数据。 */
         val DEFAULT_MODELS = listOf(
+            ModelConfig(
+                id = "qwen3_0_6b",
+                name = "Qwen 3 0.6B",
+                fileName = "qwen3_0_6b.litertlm",
+                downloadUrl = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
+                sha256 = "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108",
+                sizeBytes = 613_722_264L
+            ),
+            ModelConfig(
+                id = "qwen2_5_1_5b",
+                name = "Qwen 2.5 1.5B Instruct",
+                fileName = "qwen2_5_1_5b.litertlm",
+                downloadUrl = "https://huggingface.co/litert-community/Qwen2.5-1.5B-Instruct/resolve/main/" +
+                    "Qwen2.5-1.5B-Instruct_multi-prefill-seq_q8_ekv4096.litertlm",
+                sha256 = "c4a9b7289365ab80fe599b844b77ad253eb3c53fb0e5d963d699146a6f01255e",
+                sizeBytes = 1_597_922_856L
+            ),
+            ModelConfig(
+                id = "deepseek_r1_distill_qwen_1_5b",
+                name = "DeepSeek R1 Distill Qwen 1.5B",
+                fileName = "deepseek_r1_distill_qwen_1_5b.litertlm",
+                downloadUrl = "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/" +
+                    "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+                sha256 = "69b35f01759eed765641ab4af589bbe98131fd2825662a086d9037409b8c1295",
+                sizeBytes = 1_833_451_520L
+            ),
             ModelConfig(
                 id = "gemma4_e2b_2_5b",
                 name = "Gemma 4 E2B 2.5B",
@@ -140,14 +171,6 @@ class ModelDownloadManager internal constructor(
                 downloadUrl = "https://huggingface.co/litert-community/LFM2.5-1.2B-Instruct/resolve/main/LFM2.5-1.2B-Instruct_int8.litertlm",
                 sha256 = "ed8201f88a1a116218bf03cf7cc5c33accdc2f6f502aa8d682f616beea1ec870",
                 sizeBytes = 1_247_091_440L
-            ),
-            ModelConfig(
-                id = "qwen3_0_6b",
-                name = "Qwen 3 0.6B",
-                fileName = "qwen3_0_6b.litertlm",
-                downloadUrl = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm",
-                sha256 = "c5f39b4191926786c3e6668b62af4d6eb15248dfc7a5348252a9b406f33f2108",
-                sizeBytes = 613_722_264L
             )
         )
 
@@ -341,14 +364,25 @@ class ModelDownloadManager internal constructor(
         if (!modelsDir.isDirectory && !modelsDir.mkdirs()) {
             throw IllegalStateException("模型目录不可用：${modelsDir.absolutePath}")
         }
+        // 残留分片不小于目标大小时续传会一直得到 416，直接重置后重下。
+        var start = resumeFrom
+        if (config.sizeBytes in 1..start) {
+            partFile.delete()
+            start = 0L
+        }
         httpClient.prepareGet(url) {
-            if (resumeFrom > 0) header(HttpHeaders.Range, "bytes=$resumeFrom-")
+            header(HttpHeaders.AcceptEncoding, "identity")
+            if (start > 0) header(HttpHeaders.Range, "bytes=$start-")
         }.execute { response ->
+            if (response.status == HttpStatusCode.RequestedRangeNotSatisfiable) {
+                partFile.delete()
+                throw IllegalStateException("断点续传位置无效（HTTP 416），已重置分片")
+            }
             if (response.status != HttpStatusCode.OK && response.status != HttpStatusCode.PartialContent) {
                 throw IllegalStateException("模型下载 HTTP ${response.status.value}")
             }
-            val append = resumeFrom > 0 && response.status == HttpStatusCode.PartialContent
-            val startBytes = if (append) resumeFrom else 0L
+            val append = start > 0 && response.status == HttpStatusCode.PartialContent
+            val startBytes = if (append) start else 0L
             if (!append) partFile.delete()
             val totalLength = response.contentLength()?.let { it + startBytes } ?: config.sizeBytes
 

@@ -266,6 +266,32 @@ class ModelCapabilityScheduler(
                 )
             ),
             ModelCapabilityProfile(
+                modelId = "qwen2_5_1_5b",
+                modelName = "Qwen 2.5 1.5B Instruct",
+                ratings = mapOf(
+                    CapabilityDomain.CODE to CapabilityRating.MEDIUM,
+                    CapabilityDomain.MATH_LOGIC to CapabilityRating.MEDIUM,
+                    CapabilityDomain.CHINESE_WRITING to CapabilityRating.STRONG,
+                    CapabilityDomain.MULTILINGUAL_TRANSLATION to CapabilityRating.STRONG,
+                    CapabilityDomain.PROFESSIONAL_KNOWLEDGE to CapabilityRating.MEDIUM,
+                    CapabilityDomain.IMAGE_MULTIMODAL to CapabilityRating.DEFICIENT,
+                    CapabilityDomain.LONG_TEXT_PROCESSING to CapabilityRating.MEDIUM
+                )
+            ),
+            ModelCapabilityProfile(
+                modelId = "deepseek_r1_distill_qwen_1_5b",
+                modelName = "DeepSeek R1 Distill Qwen 1.5B",
+                ratings = mapOf(
+                    CapabilityDomain.CODE to CapabilityRating.MEDIUM,
+                    CapabilityDomain.MATH_LOGIC to CapabilityRating.STRONG,
+                    CapabilityDomain.CHINESE_WRITING to CapabilityRating.STRONG,
+                    CapabilityDomain.MULTILINGUAL_TRANSLATION to CapabilityRating.MEDIUM,
+                    CapabilityDomain.PROFESSIONAL_KNOWLEDGE to CapabilityRating.MEDIUM,
+                    CapabilityDomain.IMAGE_MULTIMODAL to CapabilityRating.DEFICIENT,
+                    CapabilityDomain.LONG_TEXT_PROCESSING to CapabilityRating.MEDIUM
+                )
+            ),
+            ModelCapabilityProfile(
                 modelId = "phi4_1_5b",
                 modelName = "Phi-4 1.5B",
                 ratings = mapOf(

@@ -1,21 +1,52 @@
 package com.jarvis.pineapple.net
 
 /**
- * 主源失败后改写为国内镜像。HuggingFace → hf-mirror，GitHub → ghproxy。
+ * 国内镜像改写。
+ *
+ * 中国大陆网络直连 huggingface.co / github.com 经常超时，因此候选地址按“国内优先、直连兜底”排列：
+ * - HuggingFace → ModelScope（魔搭，国内）→ hf-mirror.com → huggingface.co
+ * - GitHub → ghproxy.net → github.com
+ *
+ * 调用方按顺序尝试，任一地址成功即停止。
  */
 object DownloadMirrors {
     const val HF_MIRROR_HOST = "hf-mirror.com"
+    const val MODELSCOPE_ORIGIN = "https://modelscope.cn"
     const val GH_PROXY = "https://ghproxy.net/"
     const val SWITCHING = "主源超时，正在切换国内镜像"
     const val ALL_FAILED = "全部镜像均失败"
 
+    fun isHuggingFace(url: String): Boolean =
+        url.contains("huggingface.co")
+
     fun hfMirror(url: String): String? {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return null
-        if (!trimmed.contains("huggingface.co")) return null
+        if (!isHuggingFace(trimmed)) return null
         return trimmed
             .replace("https://huggingface.co", "https://$HF_MIRROR_HOST")
             .replace("http://huggingface.co", "https://$HF_MIRROR_HOST")
+    }
+
+    /**
+     * 将 HuggingFace 下载地址改写为 ModelScope（魔搭）地址：
+     * `https://huggingface.co/{repo}/resolve/{rev}/{file}` →
+     * `https://modelscope.cn/models/{repo}/resolve/master/{file}`
+     *
+     * ModelScope 只镜像了部分仓库；未镜像时返回 404，调用方会继续尝试后续地址。
+     */
+    fun modelScope(url: String): String? {
+        val trimmed = url.trim()
+        if (!isHuggingFace(trimmed)) return null
+        val path = trimmed.substringAfter("huggingface.co", "").trimStart('/')
+        val parts = path.split('/').filter { it.isNotEmpty() }
+        val resolveIndex = parts.indexOf("resolve")
+        // resolve 后紧跟 revision（main/master/...），文件名从 revision 之后开始。
+        if (resolveIndex < 2 || resolveIndex + 2 >= parts.size) return null
+        val repo = parts.subList(0, resolveIndex).joinToString("/")
+        val file = parts.subList(resolveIndex + 2, parts.size).joinToString("/")
+        if (repo.isBlank() || file.isBlank()) return null
+        return "$MODELSCOPE_ORIGIN/models/$repo/resolve/master/$file"
     }
 
     fun ghProxy(url: String): String? {
@@ -31,11 +62,13 @@ object DownloadMirrors {
     }
 
     fun expand(url: String): List<String> {
-        val result = linkedSetOf<String>()
         val trimmed = url.trim()
-        if (trimmed.isNotEmpty()) result += trimmed
+        if (trimmed.isEmpty()) return emptyList()
+        val result = linkedSetOf<String>()
+        modelScope(trimmed)?.let { result += it }
         hfMirror(trimmed)?.let { result += it }
         ghProxy(trimmed)?.let { result += it }
+        result += trimmed
         return result.toList()
     }
 

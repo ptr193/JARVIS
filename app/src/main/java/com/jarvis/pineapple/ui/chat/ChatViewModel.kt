@@ -11,10 +11,16 @@ import com.jarvis.pineapple.chat.Conversation
 import com.jarvis.pineapple.model.ImageInput
 import com.jarvis.pineapple.model.ModelScheduler
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.InputStream
 import java.security.MessageDigest
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -60,32 +66,116 @@ class ChatViewModel(
         }
     }
 
+    /** 已选择但尚未发送的附件。发送前只展示，不调用模型。 */
+    data class PendingAttachment(
+        val id: String,
+        val displayName: String,
+        val summary: String,
+        val textBlock: String,
+        val image: ImageInput? = null
+    )
+
+    private val _pendingAttachments = MutableStateFlow<List<PendingAttachment>>(emptyList())
+    val pendingAttachments: StateFlow<List<PendingAttachment>> = _pendingAttachments.asStateFlow()
+
+    private val _attachmentNotice = MutableStateFlow<String?>(null)
+    val attachmentNotice: StateFlow<String?> = _attachmentNotice.asStateFlow()
+
+    fun clearAttachmentNotice() {
+        _attachmentNotice.value = null
+    }
+
     /**
-     * 上传文件/图片（规格书 3.1 主界面底部 [📎上传]）。
+     * 选择一个附件但**不发送**：先放入输入框上方的待发送区，等用户确认文字后按发送。
      *
      * - 图片：读取真实字节并以 base64 交给支持视觉的模型；不支持的模型会得到明确解释。
      * - 文本：流式读取并附带真实内容摘要。
      * - 其他二进制：只计算摘要，不谎称模型可读取内容。
      */
-    fun sendAttachment(uri: Uri) {
+    fun addAttachment(uri: Uri) {
         viewModelScope.launch {
-            when (val payload = withContext(Dispatchers.IO) { readAttachment(uri) }) {
-                is AttachmentPayload.Text -> chatEngine.sendUserMessage(payload.description).collect { }
-                is AttachmentPayload.Image -> chatEngine.sendUserMessage(
-                    payload.description,
-                    image = payload.image
-                ).collect { }
-                null -> Unit
+            val payload = withContext(Dispatchers.IO) {
+                runCatching { readAttachment(uri) }.getOrNull()
+            }
+            if (payload == null) {
+                _attachmentNotice.value = "附件读取失败，请重试或换一个文件"
+            } else {
+                stage(payload)
             }
         }
     }
 
-    private sealed interface AttachmentPayload {
-        data class Text(val description: String) : AttachmentPayload
-        data class Image(val description: String, val image: ImageInput) : AttachmentPayload
+    /**
+     * 按绝对路径添加附件（如 `/storage/emulated/0/DCIM/Camera/IMG_001.jpg`）。
+     * 用户可以先让 AI 在文件管理器中找到文件，再把路径贴进来。
+     */
+    fun addAttachment(path: String) {
+        val trimmed = path.trim()
+        if (!trimmed.startsWith("/")) {
+            _attachmentNotice.value = "请输入以 / 开头的绝对路径"
+            return
+        }
+        val file = File(trimmed)
+        if (!file.isFile) {
+            _attachmentNotice.value = "文件不存在：$trimmed"
+            return
+        }
+        if (!file.canRead()) {
+            _attachmentNotice.value = "无权读取该路径。请在系统设置中授予“所有文件访问权限”，或改用文件选择器。"
+            return
+        }
+        viewModelScope.launch {
+            val payload = withContext(Dispatchers.IO) {
+                runCatching { readAttachment(file) }.getOrNull()
+            }
+            if (payload == null) {
+                _attachmentNotice.value = "附件读取失败：$trimmed"
+            } else {
+                stage(payload)
+            }
+        }
     }
 
-    private fun readAttachment(uri: Uri): AttachmentPayload? {
+    fun removeAttachment(id: String) {
+        _pendingAttachments.value = _pendingAttachments.value.filterNot { it.id == id }
+    }
+
+    fun clearAttachments() {
+        _pendingAttachments.value = emptyList()
+    }
+
+    private fun stage(payload: PendingAttachment) {
+        val current = _pendingAttachments.value
+        if (payload.image != null && current.any { it.image != null }) {
+            _attachmentNotice.value = "每条消息最多附加 1 张图片，请分多条发送或在下方移除当前图片"
+            return
+        }
+        _pendingAttachments.value = current + payload
+    }
+
+    /**
+     * 发送输入框文字 + 待发送附件。附件按顺序拼进消息正文；
+     * 图片作为视觉输入单独传给支持视觉的模型。
+     */
+    fun sendPendingMessage(text: String) {
+        val pending = _pendingAttachments.value
+        if (pending.isEmpty()) {
+            sendMessage(text)
+            return
+        }
+        val content = composeMessageText(text, pending.map { it.textBlock })
+        if (content.isBlank()) {
+            _attachmentNotice.value = "请输入要发送的内容，或移除附件"
+            return
+        }
+        val image = pending.firstOrNull { it.image != null }?.image
+        _pendingAttachments.value = emptyList()
+        viewModelScope.launch {
+            chatEngine.sendUserMessage(content, image = image).collect { }
+        }
+    }
+
+    private fun readAttachment(uri: Uri): PendingAttachment? {
         val resolver = context.contentResolver
         val meta = resolver.query(uri, null, null, null, null)?.use { c ->
             if (!c.moveToFirst()) return@use null
@@ -98,19 +188,51 @@ class ChatViewModel(
         } ?: return null
         val (name, declaredSize) = meta
         val type = resolver.getType(uri) ?: "application/octet-stream"
+        return readPayload(name, type, declaredSize) { resolver.openInputStream(uri) }
+    }
 
+    private fun readAttachment(file: File): PendingAttachment {
+        val name = file.name
+        val type = guessMimeType(name)
+        return readPayload(name, type, file.length()) { FileInputStream(file) }
+            ?: PendingAttachment(
+                id = UUID.randomUUID().toString(),
+                displayName = name,
+                summary = "读取失败",
+                textBlock = "【附件】$name（读取失败，请重试）"
+            )
+    }
+
+    private fun readPayload(
+        name: String,
+        type: String,
+        declaredSize: Long,
+        open: () -> InputStream?
+    ): PendingAttachment? {
+        val base = { summary: String, block: String, image: ImageInput? ->
+            PendingAttachment(
+                id = UUID.randomUUID().toString(),
+                displayName = name,
+                summary = summary,
+                textBlock = block,
+                image = image
+            )
+        }
         if (type.startsWith("image/")) {
-            val bytes = resolver.openInputStream(uri)
-                ?.use { readBounded(it, MAX_IMAGE_BYTES + 1) }
-                ?: return AttachmentPayload.Text("【附件】$name（读取失败，请重试）")
+            val bytes = open()?.use { readBounded(it, MAX_IMAGE_BYTES + 1) }
+                ?: return base("读取失败", "【附件】$name（读取失败，请重试）", null)
             if (bytes.size > MAX_IMAGE_BYTES) {
-                return AttachmentPayload.Text(
-                    "【图片附件】$name 超过 ${MAX_IMAGE_BYTES / 1024 / 1024}MB 上限，未上传。请压缩后重试。"
+                return base(
+                    "超过 ${MAX_IMAGE_BYTES / 1024 / 1024}MB",
+                    "【图片附件】$name 超过 ${MAX_IMAGE_BYTES / 1024 / 1024}MB 上限，未上传。请压缩后重试。",
+                    null
                 )
             }
             if (type !in SUPPORTED_IMAGE_TYPES) {
-                return AttachmentPayload.Text(
-                    "【图片附件】$name（$type）暂不支持模型识别，请转换为 JPEG/PNG/WebP 后重试。"
+                return base(
+                    "不支持的图片格式",
+                    "【图片附件】$name（$type）暂不支持模型识别，请转换为 JPEG/PNG/WebP 后重试。",
+                    null
                 )
             }
             val sha = digest(bytes)
@@ -118,12 +240,10 @@ class ChatViewModel(
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
             val description = "【图片附件】$name（${opts.outWidth}x${opts.outHeight}，" +
                 "${bytes.size} 字节，SHA-256: $sha）。请识别并回答图片内容。"
-            return AttachmentPayload.Image(
+            return base(
+                "图片 ${opts.outWidth}x${opts.outHeight} · ${formatSize(bytes.size.toLong())}",
                 description,
-                ImageInput(
-                    base64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
-                    mimeType = type
-                )
+                ImageInput(base64 = Base64.encodeToString(bytes, Base64.NO_WRAP), mimeType = type)
             )
         }
 
@@ -131,7 +251,8 @@ class ChatViewModel(
         val digest = MessageDigest.getInstance("SHA-256")
         val textBuffer = ByteArrayOutputStream()
         var total = 0L
-        resolver.openInputStream(uri)?.use { input ->
+        val stream = open() ?: return base("读取失败", "【附件】$name（读取失败，请重试）", null)
+        stream.use { input ->
             val buffer = ByteArray(64 * 1024)
             while (true) {
                 val n = input.read(buffer)
@@ -142,7 +263,7 @@ class ChatViewModel(
                     textBuffer.write(buffer, 0, minOf(n, MAX_TEXT_BYTES - textBuffer.size()))
                 }
             }
-        } ?: return AttachmentPayload.Text("【附件】$name（读取失败，请重试）")
+        }
 
         val sha = digest.digest().joinToString("") { "%02x".format(it) }
         val size = if (declaredSize > 0) declaredSize else total
@@ -153,14 +274,35 @@ class ChatViewModel(
             } else {
                 text
             }
-            AttachmentPayload.Text(
-                "【文件附件】$name（$type，$size 字节，SHA-256: $sha）内容如下：\n$excerpt"
+            base(
+                "文本 · ${formatSize(size)}",
+                "【文件附件】$name（$type，$size 字节，SHA-256: $sha）内容如下：\n$excerpt",
+                null
             )
         } else {
-            AttachmentPayload.Text(
-                "【文件附件】$name（$type，$size 字节，SHA-256: $sha）。该类型不支持直接预览内容。"
+            base(
+                "文件 · ${formatSize(size)}",
+                "【文件附件】$name（$type，$size 字节，SHA-256: $sha）。该类型不支持直接预览内容。",
+                null
             )
         }
+    }
+
+    private fun guessMimeType(name: String): String = when (name.substringAfterLast('.', "").lowercase()) {
+        "jpg", "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "heic", "heif" -> "image/heic"
+        "txt", "log", "md", "csv" -> "text/plain"
+        "json" -> "application/json"
+        else -> "application/octet-stream"
+    }
+
+    private fun formatSize(bytes: Long): String = when {
+        bytes >= 1024L * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+        bytes >= 1024L -> "%.0f KB".format(bytes / 1024.0)
+        else -> "$bytes B"
     }
 
     private fun isTextFile(name: String, type: String): Boolean =
@@ -225,6 +367,20 @@ class ChatViewModel(
     fun clearConversation(): Boolean = chatEngine.clearConversation()
 
     companion object {
+        /**
+         * 把用户输入与附件块合并为一条消息：文字在前，附件按选择顺序追加。
+         * 只有附件时直接发送附件内容，避免产生空消息。
+         */
+        internal fun composeMessageText(userText: String, attachmentBlocks: List<String>): String {
+            val blocks = attachmentBlocks.map { it.trim() }.filter { it.isNotEmpty() }
+            val text = userText.trim()
+            return when {
+                blocks.isEmpty() -> text
+                text.isEmpty() -> blocks.joinToString("\n\n")
+                else -> text + "\n\n" + blocks.joinToString("\n\n")
+            }
+        }
+
         private const val MAX_TEXT_CHARS = 24_000
         private const val MAX_TEXT_BYTES = 1_000_000
         private const val MAX_IMAGE_BYTES = 6 * 1024 * 1024

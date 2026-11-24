@@ -31,7 +31,14 @@ class ModelDownloadManagerTest {
     @Test
     fun defaultModelsHaveOfficialSizesAndChecksums() {
         assertEquals(
-            setOf("gemma4_e2b_2_5b", "gemma4_12b", "lfm2_5_1_7b", "qwen3_0_6b"),
+            setOf(
+                "qwen3_0_6b",
+                "qwen2_5_1_5b",
+                "deepseek_r1_distill_qwen_1_5b",
+                "gemma4_e2b_2_5b",
+                "gemma4_12b",
+                "lfm2_5_1_7b"
+            ),
             ModelDownloadManager.DEFAULT_MODELS.map { it.id }.toSet()
         )
         ModelDownloadManager.DEFAULT_MODELS.forEach { config ->

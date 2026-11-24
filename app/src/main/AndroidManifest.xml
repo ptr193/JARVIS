@@ -15,6 +15,12 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- 按绝对路径添加附件（如 /sdcard/DCIM/...）：Android 13+ 读取媒体文件 -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <!-- 非媒体文件（文档、压缩包等）的绝对路径读取；需用户在系统设置中手动开启 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
 
     <!-- System control -->
     <uses-permission android:name="android.permission.CALL_PHONE" />

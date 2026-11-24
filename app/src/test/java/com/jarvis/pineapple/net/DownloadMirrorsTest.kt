@@ -16,9 +16,27 @@ class DownloadMirrorsTest {
             mirrored
         )
         val urls = DownloadMirrors.candidates(src)
-        assertEquals(src, urls[0])
+        // 国内镜像优先，直连兜底：ModelScope → hf-mirror → huggingface.co
+        assertEquals(
+            "https://modelscope.cn/models/litert-community/Qwen3-0.6B/resolve/master/Qwen3-0.6B.litertlm",
+            urls[0]
+        )
         assertEquals(mirrored, urls[1])
-        assertTrue(urls.size >= 2)
+        assertEquals(src, urls[2])
+        assertTrue(urls.size >= 3)
+    }
+
+    @Test
+    fun modelScopeRewriteKeepsRepoAndFile() {
+        assertEquals(
+            "https://modelscope.cn/models/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/master/" +
+                "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm",
+            DownloadMirrors.modelScope(
+                "https://huggingface.co/litert-community/DeepSeek-R1-Distill-Qwen-1.5B/resolve/main/" +
+                    "DeepSeek-R1-Distill-Qwen-1.5B_multi-prefill-seq_q8_ekv4096.litertlm"
+            )
+        )
+        assertNull(DownloadMirrors.modelScope("https://dl-cdn.alpinelinux.org/a.tar.gz"))
     }
 
     @Test
@@ -27,8 +45,9 @@ class DownloadMirrorsTest {
         val proxied = DownloadMirrors.ghProxy(src)
         assertEquals("https://ghproxy.net/$src", proxied)
         val urls = DownloadMirrors.candidates(src)
-        assertEquals(src, urls[0])
-        assertTrue(urls[1].startsWith("https://ghproxy.net/https://github.com/"))
+        // GitHub 直连在国内不稳定，代理优先。
+        assertTrue(urls[0].startsWith("https://ghproxy.net/https://github.com/"))
+        assertEquals(src, urls[1])
     }
 
     @Test

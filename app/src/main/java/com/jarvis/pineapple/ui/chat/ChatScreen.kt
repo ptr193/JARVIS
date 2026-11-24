@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DrawerValue
@@ -106,6 +108,8 @@ fun ChatScreen(
     val currentConversationId by viewModel.currentConversationId.collectAsState()
     val persistenceError by viewModel.persistenceError.collectAsState()
     val wakeUnavailable by wakeEngine.unavailableReasons.collectAsState()
+    val pendingAttachments by viewModel.pendingAttachments.collectAsState()
+    val attachmentNotice by viewModel.attachmentNotice.collectAsState()
     var input by remember { mutableStateOf("") }
     var voiceNotice by remember { mutableStateOf<String?>(null) }
     var ioNotice by remember { mutableStateOf<String?>(null) }
@@ -359,6 +363,60 @@ fun ChatScreen(
             }
         }
 
+        // ===== 待发送附件（选择后不立即发送，等用户确认文字再发） =====
+        if (pendingAttachments.isNotEmpty()) {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(pendingAttachments, key = { it.id }) { attachment ->
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${attachment.displayName} · ${attachment.summary}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            IconButton(
+                                onClick = { viewModel.removeAttachment(attachment.id) },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "移除附件",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        attachmentNotice?.let { notice ->
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clickable { viewModel.clearAttachmentNotice() },
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = notice,
+                    modifier = Modifier.padding(12.dp),
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+
         // ===== 底部：输入区 =====
         Card(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -383,12 +441,65 @@ fun ChatScreen(
                     )
                 }
 
-                // 上传文件/图片（真实 SAF 文件选择器）
+                // 添加附件：只暂存，不发送；也可直接粘贴手机文件管理器的绝对路径。
                 val pickFile = rememberLauncherForActivityResult(
                     ActivityResultContracts.OpenDocument()
-                ) { uri -> uri?.let { viewModel.sendAttachment(it) } }
-                IconButton(onClick = { pickFile.launch(arrayOf("*/*")) }) {
-                    Icon(Icons.Filled.AttachFile, contentDescription = "上传文件/图片")
+                ) { uri -> uri?.let { viewModel.addAttachment(it) } }
+                var attachMenuExpanded by remember { mutableStateOf(false) }
+                var pathDialogVisible by remember { mutableStateOf(false) }
+                var pathInput by remember { mutableStateOf("") }
+                Box {
+                    IconButton(onClick = { attachMenuExpanded = true }) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = "添加附件")
+                    }
+                    DropdownMenu(
+                        expanded = attachMenuExpanded,
+                        onDismissRequest = { attachMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("选择图片/文件") },
+                            onClick = {
+                                attachMenuExpanded = false
+                                pickFile.launch(arrayOf("*/*"))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("输入绝对路径") },
+                            onClick = {
+                                attachMenuExpanded = false
+                                pathDialogVisible = true
+                            }
+                        )
+                    }
+                }
+
+                if (pathDialogVisible) {
+                    AlertDialog(
+                        onDismissRequest = { pathDialogVisible = false },
+                        title = { Text("按绝对路径添加附件") },
+                        text = {
+                            OutlinedTextField(
+                                value = pathInput,
+                                onValueChange = { pathInput = it },
+                                placeholder = {
+                                    Text("/storage/emulated/0/DCIM/Camera/IMG_001.jpg")
+                                },
+                                singleLine = true
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    pathDialogVisible = false
+                                    viewModel.addAttachment(pathInput)
+                                    pathInput = ""
+                                }
+                            ) { Text("添加") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { pathDialogVisible = false }) { Text("取消") }
+                        }
+                    )
                 }
 
                 OutlinedTextField(
@@ -405,14 +516,12 @@ fun ChatScreen(
                 FilledIconButton(
                     onClick = {
                         val text = input.trim()
-                        if (text.isNotEmpty()) {
-                            scope.launch {
-                                viewModel.sendMessage(text)
-                                input = ""
-                            }
+                        if (text.isNotEmpty() || pendingAttachments.isNotEmpty()) {
+                            viewModel.sendPendingMessage(text)
+                            input = ""
                         }
                     },
-                    enabled = !isGenerating && input.isNotBlank()
+                    enabled = !isGenerating && (input.isNotBlank() || pendingAttachments.isNotEmpty())
                 ) {
                     Icon(Icons.Filled.Send, contentDescription = "发送")
                 }

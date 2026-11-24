@@ -98,6 +98,9 @@ class ProotManager internal constructor(
     companion object {
         const val PROOT_VERSION = "2.3.1"
 
+        /** 单次下载失败后的最大尝试次数（含首次）。 */
+        private const val MAX_DOWNLOAD_ATTEMPTS = 3
+
         /**
          * 获取进程 PID（多路真实获取，全部失败返回 null）：
          * 1. 解析 ProcessImpl.toString() 中的 `pid=`；
@@ -723,43 +726,79 @@ class ProotManager internal constructor(
 
     /**
      * 通用文件下载（带进度回调）。
+     *
+     * 参照 Haven 的下载体验：
+     * - 写入固定目标文件，失败后保留下载分片，下次从断点续传
+     * - 网络中断自动重试（最多 3 次）
+     * - 关闭 gzip 协商，保证 Content-Length 与磁盘字节一致
      */
     private fun downloadToFile(url: String, target: File, onProgress: (Float) -> Unit = {}) {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        connection.instanceFollowRedirects = true
-        connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
-        connection.setRequestProperty("User-Agent", "JARVIS/1.0")
-        connection.connect()
-
-        val code = connection.responseCode
-        if (code !in 200..299) {
-            connection.disconnect()
-            throw IOException("HTTP $code：$url")
-        }
-        val total = connection.contentLengthLong
-        var lastPercent = -1
-        connection.inputStream.use { input ->
-            target.outputStream().use { output ->
-                val buffer = ByteArray(1 shl 16)
-                var read: Int
-                var totalRead = 0L
-                while (true) {
-                    read = input.read(buffer)
-                    if (read <= 0) break
-                    output.write(buffer, 0, read)
-                    totalRead += read
-                    val p = if (total > 0) (totalRead.toFloat() / total).coerceIn(0f, 1f) else 0f
-                    // 仅在百分比变化时上报，避免每个 64KB 分块都触发 UI 重组。
-                    val percent = (p * 100).toInt()
-                    if (percent != lastPercent) {
-                        lastPercent = percent
-                        _downloadProgress.value = p
-                        onProgress(p)
-                    }
+        var lastError: IOException? = null
+        for (attempt in 1..MAX_DOWNLOAD_ATTEMPTS) {
+            try {
+                downloadOnce(url, target, onProgress)
+                return
+            } catch (e: IOException) {
+                lastError = e
+                if (attempt < MAX_DOWNLOAD_ATTEMPTS) {
+                    runCatching { Thread.sleep(attempt * 1_000L) }
                 }
             }
         }
-        connection.disconnect()
+        throw lastError ?: IOException("下载失败：$url")
+    }
+
+    private fun downloadOnce(url: String, target: File, onProgress: (Float) -> Unit) {
+        target.parentFile?.mkdirs()
+        val resumeFrom = if (target.exists()) target.length() else 0L
+        val connection = URL(url).openConnection() as HttpURLConnection
+        try {
+            connection.instanceFollowRedirects = true
+            connection.connectTimeout = 20_000
+            connection.readTimeout = 60_000
+            connection.setRequestProperty("User-Agent", "JARVIS/1.0")
+            connection.setRequestProperty("Accept-Encoding", "identity")
+            if (resumeFrom > 0) {
+                connection.setRequestProperty("Range", "bytes=$resumeFrom-")
+            }
+            connection.connect()
+
+            val code = connection.responseCode
+            if (code == 416) {
+                // 分片位置超出远端文件大小，删除后由重试逻辑从头下载。
+                target.delete()
+                throw IOException("断点续传位置无效，已重置分片：$url")
+            }
+            if (code !in 200..299) {
+                throw IOException("HTTP $code：$url")
+            }
+            val append = resumeFrom > 0 && code == HttpURLConnection.HTTP_PARTIAL
+            val startBytes = if (append) resumeFrom else 0L
+            if (!append && target.exists()) target.delete()
+            val total = connection.contentLengthLong.let { if (it > 0) it + startBytes else -1L }
+            var written = startBytes
+            var lastPercent = -1
+            connection.inputStream.use { input ->
+                FileOutputStream(target, append).use { output ->
+                    val buffer = ByteArray(1 shl 16)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) break
+                        output.write(buffer, 0, read)
+                        written += read
+                        val p = if (total > 0) (written.toFloat() / total).coerceIn(0f, 1f) else 0f
+                        // 仅在百分比变化时上报，避免每个 64KB 分块都触发 UI 重组。
+                        val percent = (p * 100).toInt()
+                        if (percent != lastPercent) {
+                            lastPercent = percent
+                            _downloadProgress.value = p
+                            onProgress(p)
+                        }
+                    }
+                }
+            }
+        } finally {
+            connection.disconnect()
+        }
     }
 }

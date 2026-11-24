@@ -148,23 +148,24 @@ class VmDistroManager internal constructor(
             } else {
                 resolveSidecarChecksum(urls)
             }
-            if (expectedChecksum == null) {
-                fail(distroId, "该发行版未发布可用校验和，已停止下载")
-                return@withContext false
-            }
+            // 滚动发行版（Arch/Void 等）上游未必发布校验和。以前这里直接失败，
+            // 导致「下载不了」；现在照常下载，但在进度中明确标注“未校验”。
+            val unverifiedNote = if (expectedChecksum == null) "上游未提供校验和，本次下载未校验" else ""
 
             var success = false
             var lastError = ""
 
             for (url in urls) {
-                val archive = File(cacheDir, "${distroId}_${System.currentTimeMillis()}.archive")
+                // 固定文件名，失败后保留分片，后续地址/重试可断点续传。
+                val archive = File(cacheDir, "${distroId}.archive")
                 try {
                     updateProgress(
                         DownloadProgress(
                             distroId = distroId,
                             status = DownloadStatus.DOWNLOADING,
                             totalBytes = distro.sizeBytes,
-                            currentUrl = url
+                            currentUrl = url,
+                            errorMessage = unverifiedNote
                         )
                     )
 
@@ -176,7 +177,8 @@ class VmDistroManager internal constructor(
                                 downloadedBytes = (p * distro.sizeBytes).toLong().coerceAtLeast(0),
                                 totalBytes = distro.sizeBytes,
                                 status = DownloadStatus.DOWNLOADING,
-                                currentUrl = url
+                                currentUrl = url,
+                                errorMessage = unverifiedNote
                             )
                         )
                     }
@@ -189,18 +191,25 @@ class VmDistroManager internal constructor(
                             totalBytes = archive.length(),
                             downloadedBytes = archive.length(),
                             currentUrl = url,
-                            errorMessage = if (expectedChecksum.algorithm == "MD5") "上游仅提供 MD5 校验" else ""
+                            errorMessage = when {
+                                expectedChecksum == null -> unverifiedNote
+                                expectedChecksum.algorithm == "MD5" -> "上游仅提供 MD5 校验"
+                                else -> ""
+                            }
                         )
                     )
-                    val actual = if (expectedChecksum.algorithm == "MD5") {
-                        TarExtractor.md5(archive)
-                    } else {
-                        TarExtractor.sha256(archive)
-                    }
-                    if (!actual.equals(expectedChecksum.value, ignoreCase = true)) {
-                        lastError = "${expectedChecksum.algorithm} 校验失败（期望 ${expectedChecksum.value}, 实际 $actual）"
-                        archive.delete()
-                        continue
+                    if (expectedChecksum != null) {
+                        val actual = if (expectedChecksum.algorithm == "MD5") {
+                            TarExtractor.md5(archive)
+                        } else {
+                            TarExtractor.sha256(archive)
+                        }
+                        if (!actual.equals(expectedChecksum.value, ignoreCase = true)) {
+                            lastError =
+                                "${expectedChecksum.algorithm} 校验失败（期望 ${expectedChecksum.value}, 实际 $actual）"
+                            archive.delete()
+                            continue
+                        }
                     }
 
                     // 解压
@@ -210,7 +219,7 @@ class VmDistroManager internal constructor(
                             progress = 0.98f,
                             status = DownloadStatus.VERIFYING,
                             currentUrl = url,
-                            errorMessage = ""
+                            errorMessage = unverifiedNote
                         )
                     )
                     if (targetDir.exists()) targetDir.deleteRecursively()
@@ -219,9 +228,12 @@ class VmDistroManager internal constructor(
                     archive.delete()
                     success = true
                     break
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     lastError = e.message ?: e.toString()
-                    if (archive.exists()) archive.delete()
+                    // 已下满却解压失败说明文件损坏，删除后重下；未下满则保留分片续传。
+                    if (archive.exists() && archive.length() >= distro.sizeBytes) archive.delete()
                 }
             }
 
@@ -388,11 +400,12 @@ class VmDistroManager internal constructor(
                     name = "Arch Linux",
                     version = "latest",
                     architecture = "aarch64",
-                    downloadUrl = "http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz",
+                    // 官方 os.archlinuxarm.org 在国内经常 502，直接以清华镜像为主源。
+                    downloadUrl = "https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz",
                     mirrorUrls = listOf(
-                        "https://mirrors.tuna.tsinghua.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
+                        "https://mirrors.bfsu.edu.cn/archlinuxarm/os/ArchLinuxARM-aarch64-latest.tar.gz"
                     ),
-                    sizeBytes = 70_913_104L,
+                    sizeBytes = 829_367_415L,
                     category = DistroCategory.GENERAL,
                     description = "Arch Linux ARM 滚动更新",
                     packageManager = "pacman",

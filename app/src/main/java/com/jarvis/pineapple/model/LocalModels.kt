@@ -205,6 +205,20 @@ object BuiltInModels {
         ),
         LiteRtModel(
             context = context,
+            id = "qwen2_5_1_5b",
+            name = "Qwen 2.5 1.5B Instruct",
+            description = "通义千问 Qwen 2.5 1.5B（q8，国产开源）",
+            maxTokens = 2048, temperature = 0.7f, topP = 0.9f, topK = 50
+        ),
+        LiteRtModel(
+            context = context,
+            id = "deepseek_r1_distill_qwen_1_5b",
+            name = "DeepSeek R1 Distill Qwen 1.5B",
+            description = "DeepSeek R1 蒸馏 Qwen 1.5B（q8，国产开源）",
+            maxTokens = 2048, temperature = 0.7f, topP = 0.9f, topK = 50
+        ),
+        LiteRtModel(
+            context = context,
             id = "phi4_1_5b",
             name = "Phi-4 1.5B",
             description = "Microsoft Phi-4 1.5B",
