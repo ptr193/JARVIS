@@ -16,7 +16,7 @@ JARVIS/
 │       │   ├── AndroidManifest.xml
 │       │   ├── java/com/jarvis/pineapple/   # Kotlin 源码（见第 2 节）
 │       │   └── res/           # 资源文件（布局、图标、主题、字符串）
-│       └── test/              # JVM 单元/集成/压力测试（72 个测试类，441 个用例）
+│       └── test/              # JVM 单元/集成/压力测试（73 个测试类，446 个用例）
 ├── apk/                       # Debug 交付目录
 │   ├── jarvis-debug.apk       # 本地构建/解压产物（*.apk 不入 Git）
 │   └── jarvis-debug.apk.7z    # 唯一提交的安装包，含 SHA-256
@@ -95,7 +95,7 @@ context.filesDir/models/
 └── qwen3_0_6b.litertlm        # ~586 MB
 ```
 
-`configs/models/files/` 中的配置、分片或 Git LFS 指针不等于权重已完整入库，也不证明可加载推理。默认模型应在应用内下载并通过大小与 SHA-256 校验；四个默认模型的真机下载和冒烟推理仍为 NOT_RUN。
+`configs/models/files/` 中的配置、分片或 Git LFS 指针不等于权重已完整入库，也不证明可加载推理。默认模型应在应用内下载并通过大小与 SHA-256 校验；六个默认模型（含 Qwen 2.5 1.5B、DeepSeek R1 Distill Qwen 1.5B）的真机下载和冒烟推理仍为 NOT_RUN。
 
 ---
 
@@ -109,4 +109,4 @@ app/build/outputs/apk/
 
 ---
 
-*文档版本：v2.2 | 更新日期：2026-11-23 | 上一版本：v2.1（2026-11-22）*
+*文档版本：v2.3 | 更新日期：2026-11-24 | 上一版本：v2.2（2026-11-23）*

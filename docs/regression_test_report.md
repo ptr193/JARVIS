@@ -1,8 +1,8 @@
 # JARVIS 回归测试报告
 
-> 最终回归日期：2026-11-23（Asia/Shanghai）
-> 代码基线：`0ec2f07`（`origin/main`，APK 对应源码提交）
-> 文档版本：v5.3
+> 最终回归日期：2026-11-24（Asia/Shanghai）
+> 代码基线：`5f0f595`（`origin/main`，APK 对应源码提交）
+> 文档版本：v5.4
 
 ## 1. 范围与结论
 
@@ -34,10 +34,10 @@
 
 | 检查 | 最终结果 | 证据 |
 |---|---|---|
-| 全量 Debug JVM 测试 | 441/441 通过，72 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 222.322s |
-| 40 轮混合加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 212.967s；逐轮结果见第 4 节 |
+| 全量 Debug JVM 测试 | 446/446 通过，73 个测试类，0 失败、0 错误、0 跳过 | XML 汇总时间 226.729s |
+| 40 轮混合加压 | 40/40 通过，0 失败、0 错误、0 跳过 | 套件时间 217.152s；逐轮结果见第 4 节 |
 | 递增约束 | 通过 | `LoadEscalationTest` 1/1；`weight` 从 31 严格增至 487382，各分项按阶段非递减 |
-| Lint | 0 error / 43 warning / 3 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
+| Lint | 0 error / 45 warning / 3 information | `lintDebug` 任务成功，不以 baseline 隐藏错误 |
 | Debug 构建 | 通过 | `testDebugUnitTest lintDebug assembleDebug` 同次 BUILD SUCCESSFUL |
 | 占位符扫描 | 0 命中 | `app/src/main` 中 `TODO`、`FIXME`、`UnsupportedOperationException` |
 | 空点击扫描 | 通过 | 仅消息气泡为长按菜单保留空 `onClick`，点击不触发动作，属设计行为 |
@@ -49,8 +49,8 @@
 
 | 产物 | 大小 | SHA-256 |
 |---|---:|---|
-| `apk/jarvis-debug.apk` | 219,978,337 B | `ed9cbaa35d931197c64f1a64b839fe894b00a199e8d63542e7869c7f4cd4b9ad` |
-| `apk/jarvis-debug.apk.7z` | 80,444,857 B | `748162cb59032d42e6d15e6afc3667b0d8dc02ba2c151b3df46577d8b623ec67` |
+| `apk/jarvis-debug.apk` | 219,994,793 B | `ce0416b2eb3cc3ed82f120682de61902c249324998d606a0d9211c87e2408184` |
+| `apk/jarvis-debug.apk.7z` | 80,466,475 B | `03c4742127020410bfd444c4061e2604894109e641f1299f0a7d57c70090b18c` |
 
 ## 4. 40 轮加压逐轮结果
 
@@ -215,4 +215,21 @@
 - 新增回归：`voiceChannelNeverTriggersLocalCommandsEvenWithSlashPrefix`（`Fixture.sendVoice` 传 `allowLocalCommands = false`），覆盖 `/终端执行`、`/root`、`/打开微信`、`/翻译`、带屏幕上下文的包装 prompt 与无模型场景。
 - 顺带修复：`VncClient.writeEvent` 高负载竞态——原顺序先关 socket 再 `notifyDisconnected`，读循环被唤醒后以“连接已关闭”覆盖应上报的“VNC 发送失败”，导致 `writeFailureReturnsFalseDisconnectsAndNotifiesOnlyOnce` 在全量高负载下连续失败。修复为先 `notifyDisconnected(reason)` 再关 socket（真实生产竞态修复，非放宽测试），单独跑与全量跑均通过。
 - 结果：441/441 JVM 测试通过（72 个测试类，全量汇总 222.322s），40/40 轮加压通过（ProgressiveLoadTest 套件 212.967s），Lint 0 error / 43 warning / 3 information，Debug 构建成功。该修复只改变语音通道的指令入口判定与 VNC 失败上报顺序，不代表真机语音/ASR 或真实 VNC 验收完成。
+
+## 10. 2026-11-24 附件暂存、下载镜像与虚拟机下载回归
+
+本轮处理两项实机反馈：
+
+1. **附件不应选完即发**：原实现 `ChatScreen` 选择文件后立即调用 `sendAttachment`，用户无法先补充文字。现改为待发送区：
+   - `ChatViewModel.pendingAttachments` 持有已选附件，`addAttachment(uri)` 只读取与暂存，不触发模型；
+   - 发送按钮在“有文字或有附件”时可用，`sendPendingMessage` 用 `composeMessageText` 把用户文字放在前、附件块按选择顺序追加；
+   - 支持 `addAttachment(path)` 按绝对路径附加，便于先让 AI 在文件管理器中定位、再把路径贴回；
+   - 图片仍以 base64 交给支持视觉的模型；每条消息最多 1 张图片，超出时明确提示分多条发送。
+2. **模型/虚拟机下载失败**：
+   - 模型：`DownloadMirrors` 改为 ModelScope（魔搭）→ hf-mirror → HuggingFace 直连；新增 Qwen 2.5 1.5B Instruct、DeepSeek R1 Distill Qwen 1.5B 两个国产开源模型（含真实大小与 SHA-256）及能力画像；
+   - 模型分片续传遇到 HTTP 416 时重置分片并给出明确错误；
+   - 虚拟机：`ProotManager` 下载改为固定分片、断点续传、最多 3 次重试、`Accept-Encoding: identity`、20s/60s 超时；`VmDistroManager` 对无上游校验和的滚动发行版（Arch）不再直接拒绝，改为照常下载并标注“未校验”；Arch 主源切换为清华镜像并修正体积。
+
+- 新增回归：`AttachmentComposerTest`（4 项：纯文字、纯附件、文字在附件前、空块过滤）；同步更新 `DownloadMirrorsTest` 的国内优先顺序与 ModelScope 改写用例、`ModelDownloadManagerTest` 的 6 个默认模型集合。
+- 结果：446/446 JVM 测试通过（73 个测试类，全量汇总 226.729s），40/40 轮加压通过（ProgressiveLoadTest 套件 217.152s），Lint 0 error / 45 warning / 3 information，Debug 构建成功。附件真实选择/发送、绝对路径读取权限、ModelScope/镜像实际带宽、真机模型推理与虚拟机启动仍需实机验收，均为 NOT_RUN。
 

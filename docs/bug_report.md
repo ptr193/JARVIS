@@ -409,4 +409,17 @@
 
 ---
 
-*文档版本：v3.8 | 生成日期：2026-11-23 | 上一版本：v3.7（2026-11-23）*
+## 17. 2026-11-24 附件交互、模型/虚拟机下载修复
+
+| 问题 | 根因与修复 | 提交 | 验证 |
+|---|---|---|---|
+| 选择附件后立即发送，用户无法先补充文字 | `ChatScreen` 的文件选择回调直接调用 `sendAttachment`，选中即发；无法把图片/文件与文字一起发送 | 改为待发送区：`ChatViewModel.pendingAttachments` 暂存已选附件，`addAttachment` 只读取不发送；输入框可继续编辑，按发送时 `sendPendingMessage` 用 `composeMessageText` 合并（文字在前、附件按顺序追加），发送后清空待发送区。每条消息最多 1 张图片，超出时明确提示 | `5f0f595` | 新增 `AttachmentComposerTest` 4 项；446/446 JVM 测试通过 |
+| 无法直接附加手机文件管理器中的文件 | 只能通过 SAF 选择器，无法用 AI 找到的绝对路径 | 新增「输入绝对路径」入口与 `addAttachment(path)`；读取前校验绝对路径、存在性与可读性，失败时给出明确提示；声明 `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO`、`MANAGE_EXTERNAL_STORAGE` | `5f0f595` | 编译/单测通过；真机权限与读取为 NOT_RUN |
+| 模型下载失败（含 Qwen），国内模型也下不了 | 模型托管在 huggingface.co，国内直连被墙；Qwen 虽为国产模型，但权重文件仍在 HF | `DownloadMirrors` 改为 ModelScope（魔搭）→ hf-mirror → HuggingFace 直连；新增 Qwen 2.5 1.5B Instruct、DeepSeek R1 Distill Qwen 1.5B（真实大小/SHA-256）；416 时重置分片并明确报错 | `5f0f595` | `DownloadMirrorsTest`、`ModelDownloadManagerTest` 更新并通过；实际带宽/下载为 NOT_RUN |
+| 虚拟机镜像下载失败 | Arch 官方源国内 502、体积元数据错误，且无上游校验和时被直接拒绝；下载无断点续传/重试 | Arch 主源改清华镜像并修正体积；无校验和改为照常下载并标注“未校验”；`ProotManager` 增加固定分片续传、3 次重试、identity 编码与更长超时 | `5f0f595` | `VmDistroCatalogTest` 与 40 轮加压通过；真机下载/启动为 NOT_RUN |
+
+最终验证：446/446 JVM 测试、73 个测试类、0 失败/错误/跳过；40/40 轮加压（ProgressiveLoadTest 套件 217.152s）；Lint 0 error / 45 warning / 3 information；Debug 构建成功。最新压缩包为 80,466,475 B，SHA-256 `03c4742127020410bfd444c4061e2604894109e641f1299f0a7d57c70090b18c`；APK 为 219,994,793 B，SHA-256 `ce0416b2eb3cc3ed82f120682de61902c249324998d606a0d9211c87e2408184`；`7z t` 与包内哈希一致性均通过。附件真实选择/发送、绝对路径权限、镜像带宽、模型推理与虚拟机启动仍需真机验收，不因 JVM 回归通过而视为已完成。
+
+---
+
+*文档版本：v3.9 | 生成日期：2026-11-24 | 上一版本：v3.8（2026-11-23）*

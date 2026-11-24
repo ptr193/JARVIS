@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased (2026-11-24)
+
+### Added
+- 附件改为「先暂存、后发送」：选择图片/文件后只进入输入框上方的待发送区，用户可继续输入文字，按发送才随消息一起发出
+- 支持按绝对路径添加附件（如 `/storage/emulated/0/DCIM/Camera/IMG_001.jpg`），便于让 AI 在文件管理器中定位后再手动附加；同时声明 `READ_MEDIA_IMAGES`、`READ_MEDIA_VIDEO` 与 `MANAGE_EXTERNAL_STORAGE`
+- 新增国产开源模型：Qwen 2.5 1.5B Instruct、DeepSeek R1 Distill Qwen 1.5B（均含完整大小与 SHA-256），并补齐能力画像
+
+### Changed
+- HuggingFace 模型下载改为「国内优先」：ModelScope（魔搭）→ hf-mirror → HuggingFace 直连，解决国内网络下 Qwen 等模型“下不了”的问题
+- GitHub 资产（PRoot/Debian 等）下载改走 ghproxy 优先
+- 虚拟机镜像下载参照 Haven 增强：断点续传、失败自动重试 3 次、固定分片文件、60s 读超时
+- Arch Linux 改用清华镜像为主源（官方源国内常 502），并修正镜像体积
+
+### Fixed
+- 滚动发行版（Arch 等）上游无校验和时不再直接拒绝下载，改为照常下载并明确标注“未校验”
+- 修复模型下载分片位置无效（HTTP 416）时未重置分片、错误信息缺失的问题
+
 ## Unreleased (2026-11-23)
 
 ### Fixed
