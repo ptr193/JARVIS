@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -65,10 +67,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jarvis.pineapple.chat.AssistantCommandParser
@@ -419,25 +423,43 @@ fun ChatScreen(
 
         // ===== 底部：输入区 =====
         Card(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .imePadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceVariant
             ),
             shape = RoundedCornerShape(24.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // 输入区随内容自适应高度；模型名单独一行，避免长名称把输入框挤到只剩一条缝。
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)
             ) {
-                // 模型选择按钮（规格书 3.1：模型选择按钮，默认：本地模型）
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    IconButton(onClick = onNavigateToModelSelection) {
-                        Icon(Icons.Filled.Settings, contentDescription = "模型选择")
-                    }
+                // 当前模型：单行小标签，点击进入模型选择；不参与输入行的高度计算。
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onNavigateToModelSelection() }
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = "模型选择",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        "默认：$activeModelName",
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = activeModelName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
                 }
 
@@ -448,82 +470,99 @@ fun ChatScreen(
                 var attachMenuExpanded by remember { mutableStateOf(false) }
                 var pathDialogVisible by remember { mutableStateOf(false) }
                 var pathInput by remember { mutableStateOf("") }
-                Box {
-                    IconButton(onClick = { attachMenuExpanded = true }) {
-                        Icon(Icons.Filled.AttachFile, contentDescription = "添加附件")
-                    }
-                    DropdownMenu(
-                        expanded = attachMenuExpanded,
-                        onDismissRequest = { attachMenuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("选择图片/文件") },
-                            onClick = {
-                                attachMenuExpanded = false
-                                pickFiles.launch(arrayOf("*/*"))
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("输入绝对路径") },
-                            onClick = {
-                                attachMenuExpanded = false
-                                pathDialogVisible = true
-                            }
-                        )
-                    }
-                }
 
-                if (pathDialogVisible) {
-                    AlertDialog(
-                        onDismissRequest = { pathDialogVisible = false },
-                        title = { Text("按绝对路径添加附件") },
-                        text = {
-                            OutlinedTextField(
-                                value = pathInput,
-                                onValueChange = { pathInput = it },
-                                placeholder = {
-                                    Text("/storage/emulated/0/DCIM/Camera/IMG_001.jpg")
-                                },
-                                singleLine = true
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Box {
+                        IconButton(
+                            onClick = { attachMenuExpanded = true },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.AttachFile,
+                                contentDescription = "添加附件",
+                                modifier = Modifier.size(20.dp)
                             )
-                        },
-                        confirmButton = {
-                            TextButton(
+                        }
+                        DropdownMenu(
+                            expanded = attachMenuExpanded,
+                            onDismissRequest = { attachMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("选择图片/文件") },
                                 onClick = {
-                                    pathDialogVisible = false
-                                    viewModel.addAttachment(pathInput)
-                                    pathInput = ""
+                                    attachMenuExpanded = false
+                                    pickFiles.launch(arrayOf("*/*"))
                                 }
-                            ) { Text("添加") }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { pathDialogVisible = false }) { Text("取消") }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("输入绝对路径") },
+                                onClick = {
+                                    attachMenuExpanded = false
+                                    pathDialogVisible = true
+                                }
+                            )
                         }
+                    }
+
+                    if (pathDialogVisible) {
+                        AlertDialog(
+                            onDismissRequest = { pathDialogVisible = false },
+                            title = { Text("按绝对路径添加附件") },
+                            text = {
+                                OutlinedTextField(
+                                    value = pathInput,
+                                    onValueChange = { pathInput = it },
+                                    placeholder = {
+                                        Text("/storage/emulated/0/DCIM/Camera/IMG_001.jpg")
+                                    },
+                                    singleLine = true
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        pathDialogVisible = false
+                                        viewModel.addAttachment(pathInput)
+                                        pathInput = ""
+                                    }
+                                ) { Text("添加") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { pathDialogVisible = false }) { Text("取消") }
+                            }
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("与 JARVIS 对话（/ 开头执行本机指令）", fontSize = 14.sp) },
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        minLines = 1,
+                        maxLines = 4,
+                        shape = RoundedCornerShape(18.dp)
                     )
-                }
 
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("与 JARVIS 对话（/ 开头执行本机指令）") },
-                    maxLines = 4,
-                    shape = RoundedCornerShape(20.dp)
-                )
+                    Spacer(Modifier.width(6.dp))
 
-                Spacer(Modifier.width(8.dp))
-
-                FilledIconButton(
-                    onClick = {
-                        val text = input.trim()
-                        if (text.isNotEmpty() || pendingAttachments.isNotEmpty()) {
-                            viewModel.sendPendingMessage(text)
-                            input = ""
-                        }
-                    },
-                    enabled = !isGenerating && (input.isNotBlank() || pendingAttachments.isNotEmpty())
-                ) {
-                    Icon(Icons.Filled.Send, contentDescription = "发送")
+                    FilledIconButton(
+                        onClick = {
+                            val text = input.trim()
+                            if (text.isNotEmpty() || pendingAttachments.isNotEmpty()) {
+                                viewModel.sendPendingMessage(text)
+                                input = ""
+                            }
+                        },
+                        enabled = !isGenerating && (input.isNotBlank() || pendingAttachments.isNotEmpty()),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Send,
+                            contentDescription = "发送",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }

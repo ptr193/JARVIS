@@ -1,5 +1,6 @@
 package com.jarvis.pineapple.model
 
+import android.app.ActivityManager
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Conversation
@@ -8,10 +9,13 @@ import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.ExperimentalApi
 import com.google.ai.edge.litertlm.SamplerConfig
+import com.jarvis.pineapple.util.DownloadLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -29,17 +33,41 @@ abstract class LocalModel(
     private var engine: Engine? = null
     private var conversation: Conversation? = null
 
+    /** 最近一次加载失败的原因；用于把“文件缺失”和“内存不足/加载失败”区分开。 */
+    var lastLoadError: String? = null
+        protected set
+
     protected open fun modelFile(): File =
         File(context.filesDir, "models/$modelFileName")
 
-    override suspend fun load() {
+    /**
+     * 加载模型。
+     *
+     * 关键约束：`Engine.initialize()` 会映射上百 MB 模型并初始化 native 运行时，
+     * 必须在 IO 线程执行；之前在主线程执行会长时间卡住 UI，严重时被系统判定无响应。
+     * 同时这里捕获 `Throwable`（含 UnsatisfiedLinkError / OutOfMemoryError），
+     * 避免异常逃逸到全局未捕获处理器导致整进程闪退。
+     */
+    override suspend fun load(): Unit = withContext(Dispatchers.IO) {
         state = ModelState.LOADING
+        lastLoadError = null
         val file = modelFile()
         if (!file.exists()) {
             state = ModelState.ERROR
-            return
+            lastLoadError = modelMissingMessage()
+            return@withContext
+        }
+        checkMemoryBudget(file)?.let { reason ->
+            state = ModelState.ERROR
+            lastLoadError = reason
+            DownloadLogger.safeLog("LocalModel", "${info.name} 未加载：$reason")
+            return@withContext
         }
         try {
+            DownloadLogger.safeLog(
+                "LocalModel",
+                "开始加载 ${info.name}（${file.length() / (1024 * 1024)} MB）"
+            )
             val config = EngineConfig(
                 modelPath = file.absolutePath,
                 backend = Backend.CPU()
@@ -56,13 +84,38 @@ abstract class LocalModel(
             )
             conversation = engine?.createConversation(convConfig)
             state = ModelState.READY
-        } catch (e: Exception) {
+            DownloadLogger.safeLog("LocalModel", "${info.name} 加载完成")
+        } catch (e: CancellationException) {
+            runCatching { conversation?.close() }
+            runCatching { engine?.close() }
+            state = ModelState.UNLOADED
+            engine = null
+            conversation = null
+            throw e
+        } catch (e: Throwable) {
             runCatching { conversation?.close() }
             runCatching { engine?.close() }
             state = ModelState.ERROR
             engine = null
             conversation = null
+            lastLoadError = "模型加载失败：${e.message ?: e.javaClass.simpleName}"
+            DownloadLogger.safeLog("LocalModel", lastLoadError!!, e)
         }
+    }
+
+    /** 峰值内存粗估约为模型文件的 1.5 倍；明显不足时直接给结论，避免 OOM 把进程杀掉。 */
+    private fun checkMemoryBudget(file: File): String? {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            ?: return null
+        val info = ActivityManager.MemoryInfo()
+        runCatching { manager.getMemoryInfo(info) }
+        if (info.availMem <= 0L) return null
+        val required = file.length() * 3 / 2
+        if (info.availMem < required) {
+            return "可用内存不足：加载该模型约需 ${required / (1024 * 1024)} MB，" +
+                "当前可用 ${info.availMem / (1024 * 1024)} MB。请关闭其他应用后重试，或改选更小的模型。"
+        }
+        return null
     }
 
     override suspend fun unload() {
